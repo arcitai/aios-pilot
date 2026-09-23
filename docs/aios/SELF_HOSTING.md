@@ -142,6 +142,9 @@ running. Since Buzz maps a local community to its host and port, restore moves
 that mapping inside the fresh Postgres volume before starting the relay. With
 `--no-start`, it starts only the isolated Postgres service briefly for this
 update, then stops the project; all restored volumes remain in place.
+Before extracting, restore rejects absolute or parent-traversing member paths
+and archives containing symbolic or hard links. If a backup uses links, keep it
+intact and use a separately reviewed recovery procedure.
 
 ## Continue the runtime from another checkout
 

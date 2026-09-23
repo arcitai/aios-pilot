@@ -524,16 +524,17 @@ def safe_archive(path: Path) -> None:
                 if entries > MAX_ARCHIVE_ENTRIES or total_size > MAX_ARCHIVE_BYTES:
                     fail(f"Backup archive exceeds the safety limits: {path.name}")
                 name = member.name
-                normalized = str(PurePosixPath(name))
-                if name.startswith("/") or normalized == ".." or normalized.startswith("../"):
+                member_path = PurePosixPath(name)
+                if member_path.is_absolute() or ".." in member_path.parts:
                     fail(f"Backup archive contains an unsafe path: {path.name}")
-                if not (member.isdir() or member.isfile() or member.issym() or member.islnk()):
-                    fail(f"Backup archive contains an unsupported file type: {path.name}")
                 if member.issym() or member.islnk():
-                    link = member.linkname
-                    resolved = os.path.normpath(os.path.join(os.path.dirname(normalized), link))
-                    if link.startswith("/") or resolved == ".." or resolved.startswith("../"):
-                        fail(f"Backup archive contains an unsafe link: {path.name}")
+                    fail(
+                        f"Backup archive contains a symbolic or hard link: {path.name}. "
+                        "This restore supports regular files and directories only; keep the backup intact "
+                        "and use a separately reviewed recovery procedure."
+                    )
+                if not (member.isdir() or member.isfile()):
+                    fail(f"Backup archive contains an unsupported file type: {path.name}")
     except (OSError, tarfile.TarError) as exc:
         fail(f"Could not validate backup archive {path.name}: {exc}")
 
