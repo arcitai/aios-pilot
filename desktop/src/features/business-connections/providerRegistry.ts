@@ -1,4 +1,7 @@
-import type { BusinessConnectionSource } from "@/shared/api/tauriBusinessConnections";
+import type {
+  BusinessConnectionScope,
+  BusinessConnectionSource,
+} from "@/shared/api/tauriBusinessConnections";
 
 export type BusinessConnectionProviderId = "github" | "google" | "notion";
 export type ProviderAvailability = "available" | "planned";
@@ -22,11 +25,17 @@ export type ProviderConnectionStatus =
 /** Small adapter contract shared by real provider modules. */
 export interface BusinessConnectionAdapter<Credential, Resource> {
   readonly descriptor: BusinessConnectionProviderDescriptor;
-  connect(credential: Credential): Promise<ProviderAccount>;
-  status(): Promise<ProviderConnectionStatus>;
-  revoke(): Promise<void>;
-  listResources(): Promise<readonly Resource[]>;
-  importResource(resource: Resource): Promise<BusinessConnectionSource>;
+  connect(
+    scope: BusinessConnectionScope,
+    credential: Credential,
+  ): Promise<ProviderAccount>;
+  status(scope: BusinessConnectionScope): Promise<ProviderConnectionStatus>;
+  revoke(scope: BusinessConnectionScope): Promise<void>;
+  listResources(scope: BusinessConnectionScope): Promise<readonly Resource[]>;
+  importResource(
+    scope: BusinessConnectionScope,
+    resource: Resource,
+  ): Promise<BusinessConnectionSource>;
 }
 
 /** Planned providers have no adapter and cannot be used as active connections. */

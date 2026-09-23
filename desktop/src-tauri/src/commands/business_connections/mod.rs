@@ -36,11 +36,11 @@ fn active_scope(state: &AppState) -> Result<ConnectionScope, String> {
 
 fn require_active_scope(
     expected_relay_url: &str,
-    expected_pubkey: &str,
+    expected_signer_pubkey: &str,
     state: &AppState,
 ) -> Result<ConnectionScope, String> {
     let active = active_scope(state)?;
-    require_matching_scope(expected_relay_url, expected_pubkey, &active)?;
+    require_matching_scope(expected_relay_url, expected_signer_pubkey, &active)?;
     Ok(active)
 }
 
@@ -63,10 +63,10 @@ fn github_adapter() -> Result<GitHubAdapter<'static>, String> {
 #[tauri::command]
 pub async fn get_github_connection_status(
     expected_relay_url: String,
-    expected_pubkey: String,
+    expected_signer_pubkey: String,
     state: State<'_, AppState>,
 ) -> Result<GitHubConnectionStatus, String> {
-    let scope = require_active_scope(&expected_relay_url, &expected_pubkey, &state)?;
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
     let status = github_adapter()?
         .status(&scope)
         .await
@@ -80,10 +80,10 @@ pub async fn get_github_connection_status(
 pub async fn connect_github_connection(
     token: String,
     expected_relay_url: String,
-    expected_pubkey: String,
+    expected_signer_pubkey: String,
     state: State<'_, AppState>,
 ) -> Result<GitHubAccount, String> {
-    let scope = require_active_scope(&expected_relay_url, &expected_pubkey, &state)?;
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
     let adapter = github_adapter()?;
     let mut submitted = Zeroizing::new(token);
     let normalized_token = submitted.trim().to_string();
@@ -106,10 +106,10 @@ pub async fn connect_github_connection(
 #[tauri::command]
 pub fn revoke_github_connection(
     expected_relay_url: String,
-    expected_pubkey: String,
+    expected_signer_pubkey: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let scope = require_active_scope(&expected_relay_url, &expected_pubkey, &state)?;
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
     github_adapter()?
         .revoke(&scope)
         .map_err(|error| error.to_string())
@@ -119,10 +119,10 @@ pub fn revoke_github_connection(
 #[tauri::command]
 pub async fn list_github_repositories(
     expected_relay_url: String,
-    expected_pubkey: String,
+    expected_signer_pubkey: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<GitHubRepository>, String> {
-    let scope = require_active_scope(&expected_relay_url, &expected_pubkey, &state)?;
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
     let adapter = github_adapter()?;
     let token = Zeroizing::new(
         adapter
@@ -145,10 +145,10 @@ pub async fn list_github_repositories(
 pub async fn import_github_readme(
     repository_id: u64,
     expected_relay_url: String,
-    expected_pubkey: String,
+    expected_signer_pubkey: String,
     state: State<'_, AppState>,
 ) -> Result<ImportedReadme, String> {
-    let scope = require_active_scope(&expected_relay_url, &expected_pubkey, &state)?;
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
     let adapter = github_adapter()?;
     let token = Zeroizing::new(
         adapter

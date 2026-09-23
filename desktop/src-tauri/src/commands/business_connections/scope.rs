@@ -37,13 +37,13 @@ impl ConnectionScope {
 /// Reject a frontend request whose claimed scope is no longer the native scope.
 pub(super) fn require_matching_scope(
     expected_relay_url: &str,
-    expected_pubkey: &str,
+    expected_signer_pubkey: &str,
     active: &ConnectionScope,
 ) -> Result<(), String> {
     if expected_relay_url != active.relay_url {
         return Err("active community changed; reload and retry".to_string());
     }
-    if !expected_pubkey.eq_ignore_ascii_case(&active.pubkey) {
+    if !expected_signer_pubkey.eq_ignore_ascii_case(&active.pubkey) {
         return Err("active identity changed; reload and retry".to_string());
     }
     Ok(())

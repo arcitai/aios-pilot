@@ -22,12 +22,12 @@ export const githubConnectionAdapter: BusinessConnectionAdapter<
   GitHubRepository
 > = {
   descriptor: githubDescriptor,
-  async connect(token) {
-    const account = await connectGitHubConnection(token);
+  async connect(scope, token) {
+    const account = await connectGitHubConnection(scope, token);
     return { id: account.login, label: `@${account.login}` };
   },
-  async status() {
-    const status = await getGitHubConnectionStatus();
+  async status(scope) {
+    const status = await getGitHubConnectionStatus(scope);
     return status.connected
       ? {
           connected: true,
@@ -35,9 +35,13 @@ export const githubConnectionAdapter: BusinessConnectionAdapter<
         }
       : { connected: false };
   },
-  revoke: revokeGitHubConnection,
-  listResources: listGitHubRepositories,
-  async importResource(repository) {
-    return importGitHubReadme(repository.id);
+  revoke(scope) {
+    return revokeGitHubConnection(scope);
+  },
+  listResources(scope) {
+    return listGitHubRepositories(scope);
+  },
+  async importResource(scope, repository) {
+    return importGitHubReadme(scope, repository.id);
   },
 };

@@ -1,7 +1,10 @@
 import * as React from "react";
 
-import type { BusinessConnectionSource } from "@/shared/api/tauriBusinessConnections";
-import type { GitHubRepository } from "@/shared/api/tauriBusinessConnections";
+import type {
+  BusinessConnectionScope,
+  BusinessConnectionSource,
+  GitHubRepository,
+} from "@/shared/api/tauriBusinessConnections";
 import { Button } from "@/shared/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
@@ -18,7 +21,7 @@ import { sanitizeGitHubSource } from "./sourceImport";
 
 type ConnectionView = "checking" | "not_configured" | "connected" | "error";
 
-export type BusinessConnectionsPanelProps = {
+export type BusinessConnectionsPanelProps = BusinessConnectionScope & {
   onImportSource: (source: BusinessConnectionSource) => Promise<void>;
   onConnectionStatus?: (status: BusinessConnectionStatusReport) => void;
 };
@@ -31,10 +34,16 @@ function errorMessage(error: unknown, fallback: string): string {
 
 /** Local, read-only provider connections for importing source material. */
 export function BusinessConnectionsPanel({
+  expectedRelayUrl,
+  expectedSignerPubkey,
   onImportSource,
   onConnectionStatus,
 }: BusinessConnectionsPanelProps) {
   const tokenInputId = React.useId();
+  const connectionScope = React.useMemo(
+    () => ({ expectedRelayUrl, expectedSignerPubkey }),
+    [expectedRelayUrl, expectedSignerPubkey],
+  );
   const statusCallbackRef = React.useRef(onConnectionStatus);
   const [connectionView, setConnectionView] =
     React.useState<ConnectionView>("checking");
@@ -72,11 +81,12 @@ export function BusinessConnectionsPanel({
   );
 
   const refreshStatus = React.useCallback(async () => {
+    const requestScope = connectionScope;
     setConnectionView("checking");
     setError(null);
     reportConnectionStatus(checkingGitHubStatus());
     try {
-      const status = await githubConnectionAdapter.status();
+      const status = await githubConnectionAdapter.status(requestScope);
       setConnectionView(status.connected ? "connected" : "not_configured");
       setAccountLabel(status.connected ? status.account.label : null);
       reportConnectionStatus(
@@ -94,13 +104,14 @@ export function BusinessConnectionsPanel({
         errorMessage(statusError, "Could not verify the GitHub connection."),
       );
     }
-  }, [reportConnectionStatus]);
+  }, [connectionScope, reportConnectionStatus]);
 
   React.useEffect(() => {
     let current = true;
+    const requestScope = connectionScope;
     reportConnectionStatus(checkingGitHubStatus());
     void githubConnectionAdapter
-      .status()
+      .status(requestScope)
       .then((status) => {
         if (!current) return;
         setConnectionView(status.connected ? "connected" : "not_configured");
@@ -124,16 +135,20 @@ export function BusinessConnectionsPanel({
     return () => {
       current = false;
     };
-  }, [reportConnectionStatus]);
+  }, [connectionScope, reportConnectionStatus]);
 
   async function handleConnect(event: React.FormEvent<HTMLFormElement>) {
+    const requestScope = connectionScope;
     event.preventDefault();
     if (!token.trim() || isConnecting) return;
     setIsConnecting(true);
     setError(null);
     setNotice(null);
     try {
-      const account = await githubConnectionAdapter.connect(token);
+      const account = await githubConnectionAdapter.connect(
+        requestScope,
+        token,
+      );
       setAccountLabel(account.label);
       setConnectionView("connected");
       setRepositories(null);
@@ -149,12 +164,15 @@ export function BusinessConnectionsPanel({
   }
 
   async function handleLoadRepositories() {
+    const requestScope = connectionScope;
     if (isLoadingRepositories) return;
     setIsLoadingRepositories(true);
     setError(null);
     setNotice(null);
     try {
-      setRepositories(await githubConnectionAdapter.listResources());
+      setRepositories(
+        await githubConnectionAdapter.listResources(requestScope),
+      );
     } catch (listError) {
       setError(errorMessage(listError, "Could not load GitHub repositories."));
     } finally {
@@ -163,13 +181,14 @@ export function BusinessConnectionsPanel({
   }
 
   async function handleImport(repository: GitHubRepository) {
+    const requestScope = connectionScope;
     if (importingRepositoryId !== null) return;
     setImportingRepositoryId(repository.id);
     setError(null);
     setNotice(null);
     try {
       const source = sanitizeGitHubSource(
-        await githubConnectionAdapter.importResource(repository),
+        await githubConnectionAdapter.importResource(requestScope, repository),
       );
       await onImportSource(source);
       setNotice(`Imported the README from ${repository.fullName}.`);
@@ -181,12 +200,13 @@ export function BusinessConnectionsPanel({
   }
 
   async function handleRevoke() {
+    const requestScope = connectionScope;
     if (isRevoking) return;
     setIsRevoking(true);
     setError(null);
     setNotice(null);
     try {
-      await githubConnectionAdapter.revoke();
+      await githubConnectionAdapter.revoke(requestScope);
       setConnectionView("not_configured");
       setAccountLabel(null);
       setRepositories(null);

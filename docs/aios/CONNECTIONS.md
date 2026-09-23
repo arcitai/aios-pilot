@@ -49,7 +49,13 @@ separate integration point; it has no credential-vault role in this pilot.
 ## Desktop surface
 
 `BusinessConnectionsPanel` is exported from
-`desktop/src/features/business-connections`. Its caller supplies
+`desktop/src/features/business-connections`. Its caller passes the scope from
+the rendered workspace as required `expectedRelayUrl` and
+`expectedSignerPubkey` props (for example, by spreading
+`workspace.canvasScope`). Each status, connect, browse, import, and revoke
+request uses that captured scope directly; native commands compare it against
+the currently active workspace and reject stale requests. The UI does not
+refresh the active scope after an operation starts. Its caller also supplies
 `onImportSource`, which receives `{ title, content, url?, kind: "url" }` only
 after a user chooses a listed repository and selects **Import README**. The
 caller remains responsible for storing that source through the shared business

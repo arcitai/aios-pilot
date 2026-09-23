@@ -7,6 +7,12 @@ export type BusinessConnectionSource = {
   kind: "url";
 };
 
+/** Scope captured from the parent workspace render that owns this request. */
+export type BusinessConnectionScope = {
+  expectedRelayUrl: string;
+  expectedSignerPubkey: string;
+};
+
 export type GitHubConnectionStatus =
   | { connected: false; login: null }
   | { connected: true; login: string };
@@ -25,54 +31,80 @@ export type GitHubRepository = {
   url: string;
 };
 
-type ActiveWorkspace = {
-  relay_url: string;
-  pubkey: string;
-};
-
-async function invokeInActiveScope<T>(
+type BusinessConnectionInvoker = <T>(
   command: string,
-  args: Record<string, unknown> = {},
-): Promise<T> {
-  const active = await invokeTauri<ActiveWorkspace>("get_active_workspace");
-  return invokeTauri<T>(command, {
-    ...args,
-    expectedRelayUrl: active.relay_url,
-    expectedPubkey: active.pubkey,
-  });
-}
+  args?: Record<string, unknown>,
+) => Promise<T>;
 
-/** Verify the saved token with GitHub before returning a connected status. */
-export async function getGitHubConnectionStatus(): Promise<GitHubConnectionStatus> {
-  const status = await invokeInActiveScope<{
-    connected: boolean;
-    login?: string | null;
-  }>("get_github_connection_status");
-  if (!status.connected) return { connected: false, login: null };
-  if (typeof status.login !== "string" || !status.login.trim()) {
-    throw new Error("GitHub status did not include a verified account.");
+/** Build the provider API around an invoker so scope binding is directly testable. */
+export function createBusinessConnectionsApi(
+  invoke: BusinessConnectionInvoker,
+) {
+  function invokeInScope<T>(
+    scope: BusinessConnectionScope,
+    command: string,
+    args: Record<string, unknown> = {},
+  ): Promise<T> {
+    return invoke<T>(command, {
+      ...args,
+      expectedRelayUrl: scope.expectedRelayUrl,
+      expectedSignerPubkey: scope.expectedSignerPubkey,
+    });
   }
-  return { connected: true, login: status.login };
+
+  return {
+    async getGitHubConnectionStatus(
+      scope: BusinessConnectionScope,
+    ): Promise<GitHubConnectionStatus> {
+      const status = await invokeInScope<{
+        connected: boolean;
+        login?: string | null;
+      }>(scope, "get_github_connection_status");
+      if (!status.connected) return { connected: false, login: null };
+      if (typeof status.login !== "string" || !status.login.trim()) {
+        throw new Error("GitHub status did not include a verified account.");
+      }
+      return { connected: true, login: status.login };
+    },
+
+    /** Verify a user-entered PAT, then save it in the OS keyring. */
+    connectGitHubConnection(
+      scope: BusinessConnectionScope,
+      token: string,
+    ): Promise<GitHubAccount> {
+      return invokeInScope(scope, "connect_github_connection", { token });
+    },
+
+    /** Remove only the credential for the caller's captured workspace scope. */
+    revokeGitHubConnection(scope: BusinessConnectionScope): Promise<void> {
+      return invokeInScope(scope, "revoke_github_connection");
+    },
+
+    /** Return at most 25 repositories the connected account can access. */
+    listGitHubRepositories(
+      scope: BusinessConnectionScope,
+    ): Promise<GitHubRepository[]> {
+      return invokeInScope(scope, "list_github_repositories");
+    },
+
+    /** Import a README for a repository in the bounded accessible list. */
+    importGitHubReadme(
+      scope: BusinessConnectionScope,
+      repositoryId: number,
+    ): Promise<BusinessConnectionSource> {
+      return invokeInScope(scope, "import_github_readme", { repositoryId });
+    },
+  };
 }
 
-/** Verify a user-entered PAT with GitHub, then save it in the OS keyring. */
-export function connectGitHubConnection(token: string): Promise<GitHubAccount> {
-  return invokeInActiveScope("connect_github_connection", { token });
-}
+const businessConnectionsApi = createBusinessConnectionsApi(invokeTauri);
 
-/** Remove the current community and identity's GitHub token from the keyring. */
-export function revokeGitHubConnection(): Promise<void> {
-  return invokeInActiveScope("revoke_github_connection");
-}
-
-/** Return at most 25 repositories the connected account can access. */
-export function listGitHubRepositories(): Promise<GitHubRepository[]> {
-  return invokeInActiveScope("list_github_repositories");
-}
-
-/** Import a README for a repository in the bounded accessible-repository list. */
-export function importGitHubReadme(
-  repositoryId: number,
-): Promise<BusinessConnectionSource> {
-  return invokeInActiveScope("import_github_readme", { repositoryId });
-}
+export const getGitHubConnectionStatus =
+  businessConnectionsApi.getGitHubConnectionStatus;
+export const connectGitHubConnection =
+  businessConnectionsApi.connectGitHubConnection;
+export const revokeGitHubConnection =
+  businessConnectionsApi.revokeGitHubConnection;
+export const listGitHubRepositories =
+  businessConnectionsApi.listGitHubRepositories;
+export const importGitHubReadme = businessConnectionsApi.importGitHubReadme;
