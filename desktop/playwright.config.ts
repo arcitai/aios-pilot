@@ -24,6 +24,7 @@ export default defineConfig({
         "**/business-slack.spec.ts",
         "**/business-onboarding.spec.ts",
         "**/business-apps.spec.ts",
+        "**/business-sites.spec.ts",
         "**/business-voice.spec.ts",
         "**/agent-permissions.spec.ts",
         "**/aios-apps-access.spec.ts",

@@ -87,9 +87,25 @@ test("slides save to a separate private app document and survive leaving the app
     .getByLabel("Supporting text", { exact: true })
     .fill("We use company context to prepare relevant customer questions.");
   const apps = page.getByTestId("aios-apps-workspace");
-  await expect(apps.getByRole("status")).toContainText(
-    "Saved · Private Buzz app channels",
-  );
+  await expect(apps.getByRole("status")).toContainText("Saved privately");
+  const preview = page.getByRole("region", {
+    name: "Slide preview",
+    exact: true,
+  });
+  const stageBox = await preview.boundingBox();
+  const copyBox = await preview.locator(".aios-slide-stage-copy").boundingBox();
+  expect(stageBox).not.toBeNull();
+  expect(copyBox).not.toBeNull();
+  if (stageBox && copyBox) {
+    expect(copyBox.y + copyBox.height).toBeLessThanOrEqual(
+      stageBox.y + stageBox.height,
+    );
+    expect(
+      await preview.evaluate(
+        (element) => element.scrollHeight <= element.clientHeight + 1,
+      ),
+    ).toBe(true);
+  }
   await page.screenshot({
     path: "test-results/aios-apps-slides.png",
     animations: "disabled",
@@ -263,7 +279,7 @@ test("an older save cannot report the newer pending draft as saved", async ({
   await page.clock.runFor(600);
   await expect(
     page.getByTestId("aios-apps-workspace").getByRole("status"),
-  ).toHaveText("Saved · Private Buzz app channels");
+  ).toHaveText("Saved privately");
   const writes = await page.evaluate(
     () => (window as SaveFixtureWindow).__AIOS_SAVE_FIXTURE__.calls,
   );
