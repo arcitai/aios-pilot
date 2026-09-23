@@ -3,15 +3,15 @@ import * as React from "react";
 import type {
   BusinessConnectionScope,
   BusinessConnectionSource,
-  NotionPageSummary,
+  SlackChannel,
 } from "@/shared/api/tauriBusinessConnections";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import {
-  checkingNotionStatus,
-  reportNotionStatus,
-  reportVerifiedNotionName,
-  unknownNotionStatus,
+  checkingSlackStatus,
+  reportSlackStatus,
+  reportVerifiedSlackWorkspace,
+  unknownSlackStatus,
   type BusinessConnectionStatusReport,
 } from "./connectionStatus";
 import {
@@ -19,12 +19,12 @@ import {
   type RunConnectionAction,
   type SharedConnectionAction,
 } from "./ProviderCard";
-import { notionConnectionAdapter } from "./providers/notion";
+import { slackConnectionAdapter } from "./providers/slack";
+import { sanitizeSlackImport } from "./sourceImport";
 import {
-  MAX_NOTION_PAGE_RESULTS,
-  mergeNotionPageResults,
-} from "./notionResults";
-import { sanitizeNotionImport } from "./sourceImport";
+  MAX_SLACK_CHANNEL_RESULTS,
+  mergeSlackChannelResults,
+} from "./slackResults";
 
 type ConnectionView = "checking" | "not_configured" | "connected" | "error";
 
@@ -34,7 +34,7 @@ function errorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-export function NotionConnectionCard({
+export function SlackConnectionCard({
   scope,
   busyAction,
   runAction,
@@ -48,19 +48,17 @@ export function NotionConnectionCard({
   onConnectionStatus: (status: BusinessConnectionStatusReport) => void;
 }) {
   const tokenInputId = React.useId();
-  const searchInputId = React.useId();
+  const channelFilterId = React.useId();
   const statusCallback = React.useRef(onConnectionStatus);
   const [connectionView, setConnectionView] =
     React.useState<ConnectionView>("checking");
-  const [integrationName, setIntegrationName] = React.useState<string | null>(
-    null,
-  );
+  const [workspaceName, setWorkspaceName] = React.useState<string | null>(null);
   const [token, setToken] = React.useState("");
   const [showTokenEntry, setShowTokenEntry] = React.useState(false);
-  const [query, setQuery] = React.useState("");
-  const [pages, setPages] = React.useState<readonly NotionPageSummary[] | null>(
-    null,
-  );
+  const [channelFilter, setChannelFilter] = React.useState("");
+  const [channels, setChannels] = React.useState<
+    readonly SlackChannel[] | null
+  >(null);
   const [nextCursor, setNextCursor] = React.useState<string | null>(null);
   const [hasMore, setHasMore] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -81,14 +79,14 @@ export function NotionConnectionCard({
   }, []);
 
   const applyStatus = React.useCallback(
-    (status: Awaited<ReturnType<typeof notionConnectionAdapter.status>>) => {
+    (status: Awaited<ReturnType<typeof slackConnectionAdapter.status>>) => {
       setConnectionView(status.connected ? "connected" : "not_configured");
-      setIntegrationName(status.connected ? status.account.label : null);
+      setWorkspaceName(status.connected ? status.account.label : null);
       report(
-        reportNotionStatus(
+        reportSlackStatus(
           status.connected
-            ? { connected: true, name: status.account.label }
-            : { connected: false, name: null },
+            ? { connected: true, workspaceName: status.account.label }
+            : { connected: false, workspaceName: null },
         ),
       );
     },
@@ -96,15 +94,15 @@ export function NotionConnectionCard({
   );
 
   const readStatus = React.useCallback(async () => {
-    const status = await notionConnectionAdapter.status(scope);
+    const status = await slackConnectionAdapter.status(scope);
     applyStatus(status);
     return status;
   }, [applyStatus, scope]);
 
   React.useEffect(() => {
     let current = true;
-    report(checkingNotionStatus());
-    void notionConnectionAdapter
+    report(checkingSlackStatus());
+    void slackConnectionAdapter
       .status(scope)
       .then((status) => {
         if (current) applyStatus(status);
@@ -112,10 +110,10 @@ export function NotionConnectionCard({
       .catch((statusError: unknown) => {
         if (!current) return;
         setConnectionView("error");
-        setIntegrationName(null);
-        report(unknownNotionStatus());
+        setWorkspaceName(null);
+        report(unknownSlackStatus());
         setError(
-          errorMessage(statusError, "Could not verify the Notion connection."),
+          errorMessage(statusError, "Could not verify the Slack connection."),
         );
       });
     return () => {
@@ -124,18 +122,18 @@ export function NotionConnectionCard({
   }, [applyStatus, report, scope]);
 
   function refreshStatus() {
-    void runAction("notion:status", async () => {
+    void runAction("slack:status", async () => {
       setConnectionView("checking");
       setError(null);
-      report(checkingNotionStatus());
+      report(checkingSlackStatus());
       try {
         await readStatus();
       } catch (statusError) {
         setConnectionView("error");
-        setIntegrationName(null);
-        report(unknownNotionStatus());
+        setWorkspaceName(null);
+        report(unknownSlackStatus());
         setError(
-          errorMessage(statusError, "Could not verify the Notion connection."),
+          errorMessage(statusError, "Could not verify the Slack connection."),
         );
       }
     });
@@ -145,96 +143,96 @@ export function NotionConnectionCard({
     event.preventDefault();
     const submittedToken = token;
     if (!submittedToken.trim() || busyAction !== null) return;
-    void runAction("notion:connect", async () => {
+    void runAction("slack:connect", async () => {
       setError(null);
       setNotice(null);
       try {
-        const account = await notionConnectionAdapter.connect(
+        const workspace = await slackConnectionAdapter.connect(
           scope,
           submittedToken,
         );
         setConnectionView("connected");
-        setIntegrationName(account.label);
-        setPages(null);
+        setWorkspaceName(workspace.label);
+        setChannels(null);
+        setNextCursor(null);
+        setHasMore(false);
         setShowTokenEntry(false);
-        report(reportVerifiedNotionName(account.label));
-        setNotice("Notion is connected for this community and identity.");
+        report(reportVerifiedSlackWorkspace(workspace.label));
+        setNotice("Slack is connected for this community and identity.");
       } catch (connectError) {
-        setError(errorMessage(connectError, "Could not connect Notion."));
+        setError(errorMessage(connectError, "Could not connect Slack."));
       } finally {
         setToken("");
       }
     });
   }
 
-  function handleSearch(cursor?: string | null) {
-    const searchQuery = query;
-    void runAction("notion:list", async () => {
+  function handleBrowse(cursor?: string | null) {
+    void runAction("slack:list", async () => {
       setError(null);
       setNotice(null);
       try {
-        const result = await notionConnectionAdapter.listResources(scope, {
-          query: searchQuery,
+        const result = await slackConnectionAdapter.listResources(scope, {
           cursor,
         });
-        setPages((current) =>
-          mergeNotionPageResults(cursor ? (current ?? []) : [], result.items),
+        setChannels((current) =>
+          mergeSlackChannelResults(cursor ? (current ?? []) : [], result.items),
         );
         setNextCursor(result.nextCursor);
         setHasMore(result.hasMore);
-      } catch (searchError) {
-        setError(errorMessage(searchError, "Could not search Notion pages."));
+      } catch (listError) {
+        setError(errorMessage(listError, "Could not load Slack channels."));
       }
     });
   }
 
-  function handleImport(page: NotionPageSummary) {
-    void runAction("notion:import", async () => {
+  function handleImport(channel: SlackChannel) {
+    void runAction("slack:import", async () => {
       setError(null);
       setNotice(null);
       try {
-        const imported = sanitizeNotionImport(
-          await notionConnectionAdapter.importResource(scope, page),
-          page.id,
+        const imported = sanitizeSlackImport(
+          await slackConnectionAdapter.importResource(scope, channel),
+          channel.id,
         );
         await onImportSource(imported.source);
         setNotice(
           imported.truncated
-            ? `Imported a partial page from “${page.title}”; Buzz marked omitted or truncated content.`
-            : `Imported “${page.title}”.`,
+            ? `Imported a bounded set of recent messages from #${channel.name}.`
+            : `Imported recent messages from #${channel.name}.`,
         );
       } catch (importError) {
         setError(
-          errorMessage(importError, "Could not import this Notion page."),
+          errorMessage(importError, "Could not import messages from Slack."),
         );
       }
     });
   }
 
   function handleRevoke() {
-    void runAction("notion:revoke", async () => {
+    void runAction("slack:revoke", async () => {
       setError(null);
       setNotice(null);
       try {
-        await notionConnectionAdapter.revoke(scope);
-        setPages(null);
+        await slackConnectionAdapter.revoke(scope);
+        setChannels(null);
         setNextCursor(null);
         setHasMore(false);
         setShowTokenEntry(false);
         const status = await readStatus();
         setNotice(
           status.connected
-            ? "Notion still reports a saved connection. Check the keyring and disconnect again."
-            : "The Notion integration token was removed from this device.",
+            ? "Slack still reports a saved connection. Check the keyring and disconnect again."
+            : "The Slack bot token was removed from this computer.",
         );
       } catch (revokeError) {
         setConnectionView("error");
-        setIntegrationName(null);
-        report(unknownNotionStatus());
+        setWorkspaceName(null);
+        report(unknownSlackStatus());
         setError(
           errorMessage(
             revokeError,
-            "Could not remove or verify the saved token.",
+            "Could not remove or verify the saved Slack token.",
           ),
         );
       }
@@ -244,12 +242,19 @@ export function NotionConnectionCard({
   const isConnected = connectionView === "connected";
   const shouldShowTokenEntry = !isConnected || showTokenEntry;
   const isBusy = busyAction !== null;
+  const visibleChannels = (channels ?? []).filter((channel) =>
+    channel.name.toLowerCase().includes(channelFilter.trim().toLowerCase()),
+  );
+  const atChannelLimit =
+    channels !== null &&
+    channels.length >= MAX_SLACK_CHANNEL_RESULTS &&
+    hasMore;
 
   return (
-    <ProviderCard providerId="notion">
+    <ProviderCard providerId="slack">
       <p className="text-sm" role="status" aria-live="polite">
         {connectionView === "checking" && "Checking the saved connection…"}
-        {connectionView === "connected" && `Connected as ${integrationName}.`}
+        {connectionView === "connected" && `Connected to ${workspaceName}.`}
         {connectionView === "not_configured" && "Not connected."}
         {connectionView === "error" &&
           "Connection status could not be verified."}
@@ -259,11 +264,11 @@ export function NotionConnectionCard({
         <form className="space-y-3" onSubmit={handleConnect}>
           <div className="space-y-1.5">
             <label htmlFor={tokenInputId} className="text-sm font-medium">
-              Notion connection token
+              Slack bot token · manual setup
             </label>
             <Input
               id={tokenInputId}
-              name="notion-integration-token"
+              name="slack-bot-token"
               type="password"
               autoComplete="off"
               autoCapitalize="none"
@@ -278,18 +283,36 @@ export function NotionConnectionCard({
               id={`${tokenInputId}-help`}
               className="text-xs text-muted-foreground"
             >
-              Create a connection in Notion, choose read-only access, then share
-              only the pages you want Buzz to import.
+              Create a Slack app, allow it to view channels and read their
+              messages, then add it only to the channels you want to use. Buzz
+              imports messages only after you choose a channel.
+            </p>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs">
               <a
-                className="ml-1 text-primary underline underline-offset-4"
-                href="https://www.notion.com/help/create-integrations-with-the-notion-api"
+                className="text-primary underline underline-offset-4"
+                href="https://api.slack.com/apps"
                 target="_blank"
                 rel="noreferrer"
               >
-                Read the Notion setup guide
+                Open Slack app settings
               </a>
-              .
-            </p>
+              <a
+                className="text-primary underline underline-offset-4"
+                href="https://docs.slack.dev/authentication/tokens/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Slack token setup help
+              </a>
+              <a
+                className="text-primary underline underline-offset-4"
+                href="https://docs.slack.dev/reference/scopes/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Slack permissions help
+              </a>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -298,9 +321,7 @@ export function NotionConnectionCard({
                 !token.trim() || isBusy || connectionView === "checking"
               }
             >
-              {busyAction === "notion:connect"
-                ? "Verifying…"
-                : "Connect Notion"}
+              {busyAction === "slack:connect" ? "Verifying…" : "Connect Slack"}
             </Button>
             {isConnected && (
               <Button
@@ -324,10 +345,12 @@ export function NotionConnectionCard({
           <Button
             type="button"
             variant="outline"
-            onClick={() => handleSearch(null)}
+            onClick={() => handleBrowse(null)}
             disabled={isBusy}
           >
-            {busyAction === "notion:list" ? "Searching…" : "Browse pages"}
+            {busyAction === "slack:list"
+              ? "Loading channels…"
+              : "Browse channels"}
           </Button>
           <Button
             type="button"
@@ -343,7 +366,7 @@ export function NotionConnectionCard({
             onClick={handleRevoke}
             disabled={isBusy}
           >
-            {busyAction === "notion:revoke" ? "Removing…" : "Disconnect"}
+            {busyAction === "slack:revoke" ? "Removing…" : "Disconnect"}
           </Button>
         </div>
       )}
@@ -356,9 +379,7 @@ export function NotionConnectionCard({
             onClick={refreshStatus}
             disabled={isBusy}
           >
-            {busyAction === "notion:status"
-              ? "Checking…"
-              : "Retry status check"}
+            {busyAction === "slack:status" ? "Checking…" : "Retry status check"}
           </Button>
           <Button
             type="button"
@@ -366,9 +387,7 @@ export function NotionConnectionCard({
             onClick={handleRevoke}
             disabled={isBusy}
           >
-            {busyAction === "notion:revoke"
-              ? "Removing…"
-              : "Remove saved token"}
+            {busyAction === "slack:revoke" ? "Removing…" : "Remove saved token"}
           </Button>
         </div>
       )}
@@ -376,56 +395,47 @@ export function NotionConnectionCard({
       {isConnected && !showTokenEntry && (
         <section
           className="space-y-3"
-          aria-labelledby={`${searchInputId}-heading`}
+          aria-labelledby={`${channelFilterId}-heading`}
         >
-          <h3 id={`${searchInputId}-heading`} className="text-sm font-medium">
-            Search shared Notion pages
+          <h3 id={`${channelFilterId}-heading`} className="text-sm font-medium">
+            Choose a channel
           </h3>
-          <div className="flex flex-wrap gap-2">
-            <Input
-              id={searchInputId}
-              type="search"
-              value={query}
-              maxLength={100}
-              onChange={(event) => setQuery(event.target.value)}
-              disabled={isBusy}
-              placeholder="Page title"
-              aria-label="Search Notion page titles"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleSearch(null)}
-              disabled={isBusy}
-            >
-              Search
-            </Button>
-          </div>
-          {pages && (
-            <div className="space-y-2">
-              {pages.length === 0 ? (
+          {channels && (
+            <>
+              <Input
+                id={channelFilterId}
+                type="search"
+                value={channelFilter}
+                maxLength={80}
+                onChange={(event) => setChannelFilter(event.target.value)}
+                disabled={isBusy}
+                placeholder="Filter shown channels"
+                aria-label="Filter shown Slack channels"
+              />
+              {visibleChannels.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No shared pages matched this search.
+                  No shown channels match that name. Browse more channels or
+                  change the filter.
                 </p>
               ) : (
                 <ul className="divide-y divide-border/60 rounded-lg border border-border/60">
-                  {pages.map((page) => (
+                  {visibleChannels.map((channel) => (
                     <li
-                      key={page.id}
+                      key={channel.id}
                       className="flex flex-wrap items-center justify-between gap-3 px-3 py-3"
                     >
                       <div className="min-w-0">
                         <a
                           className="truncate text-sm font-medium text-primary underline-offset-4 hover:underline"
-                          href={page.url}
+                          href={channel.url}
                           target="_blank"
                           rel="noreferrer"
                         >
-                          {page.title}
+                          #{channel.name}
                         </a>
-                        {page.lastEditedTime && (
+                        {channel.isPrivate && (
                           <p className="text-xs text-muted-foreground">
-                            Edited {page.lastEditedTime}
+                            Private channel
                           </p>
                         )}
                       </div>
@@ -433,12 +443,12 @@ export function NotionConnectionCard({
                         type="button"
                         variant="outline"
                         size="sm"
-                        onClick={() => handleImport(page)}
+                        onClick={() => handleImport(channel)}
                         disabled={isBusy}
                       >
-                        {busyAction === "notion:import"
+                        {busyAction === "slack:import"
                           ? "Importing…"
-                          : "Import page"}
+                          : "Import recent messages"}
                       </Button>
                     </li>
                   ))}
@@ -446,32 +456,33 @@ export function NotionConnectionCard({
               )}
               {hasMore &&
                 nextCursor &&
-                pages.length < MAX_NOTION_PAGE_RESULTS && (
+                channels.length < MAX_SLACK_CHANNEL_RESULTS && (
                   <Button
                     type="button"
                     variant="outline"
-                    onClick={() => handleSearch(nextCursor)}
+                    onClick={() => handleBrowse(nextCursor)}
                     disabled={isBusy}
                   >
-                    {busyAction === "notion:list"
+                    {busyAction === "slack:list"
                       ? "Loading…"
-                      : "Load more pages"}
+                      : "Load more channels"}
                   </Button>
                 )}
-              {hasMore && pages.length >= MAX_NOTION_PAGE_RESULTS && (
+              {atChannelLimit && (
                 <p className="text-sm text-muted-foreground" role="status">
-                  There are more matches. Narrow your search to see different
-                  pages.
+                  The channel list is capped. Filter the channels shown or add
+                  the Slack app to fewer channels, then refresh.
                 </p>
               )}
-            </div>
+            </>
           )}
         </section>
       )}
 
       <p className="text-xs text-muted-foreground">
-        Only pages you share with this connection can be imported. Your token
-        stays on this computer.
+        Only channels this bot is part of are shown. Choose a channel to import
+        up to 15 recent messages. The token stays on this computer; disconnect
+        removes it from Buzz. Revoke it in Slack to make the token unusable.
       </p>
       {error && (
         <p className="text-sm text-destructive" role="alert">

@@ -5,6 +5,7 @@ import {
   sanitizeGitHubImport,
   sanitizeGitHubSource,
   sanitizeNotionImport,
+  sanitizeSlackImport,
 } from "./sourceImport.ts";
 
 test("sanitizes README title and control characters while preserving Markdown", () => {
@@ -146,6 +147,45 @@ test("accepts fixed Notion provenance URLs but never a URL with extra fetch targ
       ),
     /invalid page link/,
   );
+});
+
+test("accepts provenance only for the selected Slack channel", () => {
+  const source = {
+    title: "# operations recent messages",
+    content: "# Slack channel: #operations\nMessage text",
+    url: "https://app.slack.com/archives/C12345678",
+    kind: "url",
+    truncated: true,
+  };
+  assert.equal(sanitizeSlackImport(source, "C12345678").source.url, source.url);
+  for (const url of [
+    "https://slack.com/archives/C12345678",
+    "https://app.slack.com/archives/C87654321",
+    "https://app.slack.com/archives/C12345678?redirect=https://evil.example",
+    "https://user:password@app.slack.com/archives/C12345678",
+  ]) {
+    assert.throws(
+      () => sanitizeSlackImport({ ...source, url }, "C12345678"),
+      /invalid channel link/,
+    );
+  }
+});
+
+test("preserves Slack's native partial-history marker without adding another", () => {
+  const marker =
+    "[Slack history partially imported by Buzz; older messages, threads, or non-text content were omitted.]";
+  const result = sanitizeSlackImport(
+    {
+      title: "# operations recent messages",
+      content: `# Slack channel #operations\n${marker}`,
+      url: "https://app.slack.com/archives/C12345678",
+      kind: "url",
+      truncated: true,
+    },
+    "C12345678",
+  );
+  assert.equal(result.truncated, true);
+  assert.equal(result.source.content.split(marker).length - 1, 1);
 });
 
 test("rejects incomplete README sources", () => {

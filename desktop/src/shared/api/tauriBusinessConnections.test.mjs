@@ -60,6 +60,28 @@ test("all provider commands keep the rendered A scope when native workspace is B
         truncated: false,
       };
     }
+    if (command === "get_slack_connection_status") {
+      return { connected: false, workspaceName: null };
+    }
+    if (command === "connect_slack_connection") {
+      return { teamId: "T12345678", name: "Example workspace" };
+    }
+    if (command === "list_slack_channels") {
+      return {
+        channels: [],
+        hasMore: false,
+        nextCursor: null,
+      };
+    }
+    if (command === "import_slack_channel_history") {
+      return {
+        title: "# operations recent messages",
+        content: "# Slack channel: #operations",
+        url: "https://app.slack.com/archives/C12345678",
+        kind: "url",
+        truncated: true,
+      };
+    }
     return undefined;
   });
 
@@ -79,6 +101,11 @@ test("all provider commands keep the rendered A scope when native workspace is B
     "11111111-1111-4111-8111-111111111111",
   );
   await api.revokeNotionConnection(renderedScopeA);
+  await api.getSlackConnectionStatus(renderedScopeA);
+  await api.connectSlackConnection(renderedScopeA, "fixture-slack-token-only");
+  await api.listSlackChannels(renderedScopeA, "slack-cursor");
+  await api.importSlackHistory(renderedScopeA, "C12345678");
+  await api.revokeSlackConnection(renderedScopeA);
 
   assert.equal(activeWorkspaceReads, 0);
   assert.deepEqual(
@@ -98,6 +125,11 @@ test("all provider commands keep the rendered A scope when native workspace is B
       "search_notion_pages",
       "import_notion_page",
       "revoke_notion_connection",
+      "get_slack_connection_status",
+      "connect_slack_connection",
+      "list_slack_channels",
+      "import_slack_channel_history",
+      "revoke_slack_connection",
     ].map((command) => ({
       command,
       expectedRelayUrl: renderedScopeA.expectedRelayUrl,
@@ -108,6 +140,9 @@ test("all provider commands keep the rendered A scope when native workspace is B
   assert.equal(calls[6].args.token, "fixture-notion-token-only");
   assert.equal(calls[7].args.query, "runbook");
   assert.equal(calls[7].args.cursor, "opaque-cursor");
+  assert.equal(calls[11].args.token, "fixture-slack-token-only");
+  assert.equal(calls[12].args.cursor, "slack-cursor");
+  assert.equal(calls[13].args.channelId, "C12345678");
   assert.notEqual(
     renderedScopeA.expectedRelayUrl,
     activeNativeWorkspaceB.relay_url,

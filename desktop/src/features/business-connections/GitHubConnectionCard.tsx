@@ -259,8 +259,17 @@ export function GitHubConnectionCard({
               id={`${tokenInputId}-help`}
               className="text-xs text-muted-foreground"
             >
-              Use selected repositories with Metadata: read and Contents: read.
-              Buzz does not request write access.
+              Your token can read only the repositories you grant. You choose
+              which README to import.
+              <a
+                className="ml-1 text-primary underline underline-offset-4"
+                href="https://github.com/settings/personal-access-tokens/new"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Create a token in GitHub
+              </a>
+              .
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -406,8 +415,8 @@ export function GitHubConnectionCard({
       )}
 
       <p className="text-xs text-muted-foreground">
-        The token stays on this device in the OS keyring. It is sent only to
-        GitHub’s fixed API origin for read operations.
+        Your token stays on this computer. Disconnecting removes it from Buzz;
+        it does not revoke the token in GitHub.
       </p>
       {error && (
         <p className="text-sm text-destructive" role="alert">

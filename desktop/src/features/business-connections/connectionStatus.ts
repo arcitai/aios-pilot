@@ -1,6 +1,7 @@
 import type {
   GitHubConnectionStatus,
   NotionConnectionStatus,
+  SlackConnectionStatus,
 } from "@/shared/api/tauriBusinessConnections";
 
 type UnverifiedStatusReport = {
@@ -22,6 +23,13 @@ export type BusinessConnectionStatusReport =
       state: "connected";
       verified: true;
       name: string;
+    }
+  | (UnverifiedStatusReport & { providerId: "slack" })
+  | {
+      providerId: "slack";
+      state: "connected";
+      verified: true;
+      workspaceName: string;
     };
 
 export function checkingGitHubStatus(): BusinessConnectionStatusReport {
@@ -81,4 +89,36 @@ export function reportNotionStatus(
 
 export function reportVerifiedNotionName(name: string) {
   return reportNotionStatus({ connected: true, name });
+}
+
+export function checkingSlackStatus(): BusinessConnectionStatusReport {
+  return { providerId: "slack", state: "checking", verified: false };
+}
+
+export function unknownSlackStatus(): BusinessConnectionStatusReport {
+  return { providerId: "slack", state: "unknown", verified: false };
+}
+
+export function reportSlackStatus(
+  status: SlackConnectionStatus,
+): BusinessConnectionStatusReport {
+  if (!status.connected) {
+    return { providerId: "slack", state: "not_connected", verified: false };
+  }
+  if (
+    typeof status.workspaceName !== "string" ||
+    !status.workspaceName.trim()
+  ) {
+    return unknownSlackStatus();
+  }
+  return {
+    providerId: "slack",
+    state: "connected",
+    verified: true,
+    workspaceName: status.workspaceName,
+  };
+}
+
+export function reportVerifiedSlackWorkspace(workspaceName: string) {
+  return reportSlackStatus({ connected: true, workspaceName });
 }

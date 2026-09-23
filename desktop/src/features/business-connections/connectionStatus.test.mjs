@@ -4,10 +4,14 @@ import test from "node:test";
 import {
   checkingNotionStatus,
   checkingGitHubStatus,
+  checkingSlackStatus,
   reportNotionStatus,
   reportGitHubStatus,
   reportVerifiedGitHubLogin,
   reportVerifiedNotionName,
+  reportSlackStatus,
+  reportVerifiedSlackWorkspace,
+  unknownSlackStatus,
   unknownNotionStatus,
 } from "./connectionStatus.ts";
 
@@ -80,4 +84,36 @@ test("missing, malformed, or pending connection checks cannot report connected",
     state: "unknown",
     verified: false,
   });
+});
+
+test("Slack is connected only after a bot token verifies its workspace", () => {
+  assert.deepEqual(
+    reportSlackStatus({ connected: true, workspaceName: "Example workspace" }),
+    {
+      providerId: "slack",
+      state: "connected",
+      verified: true,
+      workspaceName: "Example workspace",
+    },
+  );
+  assert.deepEqual(reportVerifiedSlackWorkspace("Example workspace"), {
+    providerId: "slack",
+    state: "connected",
+    verified: true,
+    workspaceName: "Example workspace",
+  });
+  assert.deepEqual(checkingSlackStatus(), {
+    providerId: "slack",
+    state: "checking",
+    verified: false,
+  });
+  assert.deepEqual(unknownSlackStatus(), {
+    providerId: "slack",
+    state: "unknown",
+    verified: false,
+  });
+  assert.deepEqual(
+    reportSlackStatus({ connected: true, workspaceName: " " }),
+    unknownSlackStatus(),
+  );
 });

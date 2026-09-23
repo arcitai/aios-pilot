@@ -16,7 +16,12 @@ export type SharedConnectionAction =
   | "notion:revoke"
   | "notion:list"
   | "notion:import"
-  | "notion:status";
+  | "notion:status"
+  | "slack:connect"
+  | "slack:revoke"
+  | "slack:list"
+  | "slack:import"
+  | "slack:status";
 
 export type RunConnectionAction = (
   action: SharedConnectionAction,

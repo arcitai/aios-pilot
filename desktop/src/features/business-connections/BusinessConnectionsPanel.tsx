@@ -6,6 +6,7 @@ import type {
 } from "@/shared/api/tauriBusinessConnections";
 import { GitHubConnectionCard } from "./GitHubConnectionCard";
 import { NotionConnectionCard } from "./NotionConnectionCard";
+import { SlackConnectionCard } from "./SlackConnectionCard";
 import type { BusinessConnectionStatusReport } from "./connectionStatus";
 import {
   ProviderCard,
@@ -98,6 +99,13 @@ export function BusinessConnectionsPanel({
           onConnectionStatus={reportStatus}
         />
         <NotionConnectionCard
+          scope={scope}
+          busyAction={busyAction}
+          runAction={runAction}
+          onImportSource={onImportSource}
+          onConnectionStatus={reportStatus}
+        />
+        <SlackConnectionCard
           scope={scope}
           busyAction={busyAction}
           runAction={runAction}

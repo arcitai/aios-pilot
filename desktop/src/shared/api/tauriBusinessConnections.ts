@@ -54,6 +54,25 @@ export type NotionPageSearchResult = {
   nextCursor: string | null;
 };
 
+export type SlackConnectionStatus =
+  | { connected: false; workspaceName: null }
+  | { connected: true; workspaceName: string };
+
+export type SlackWorkspaceAccount = { teamId: string; name: string };
+
+export type SlackChannel = {
+  id: string;
+  name: string;
+  isPrivate: boolean;
+  url: string;
+};
+
+export type SlackChannelListResult = {
+  channels: SlackChannel[];
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
 type BusinessConnectionInvoker = <T>(
   command: string,
   args?: Record<string, unknown>,
@@ -159,6 +178,50 @@ export function createBusinessConnectionsApi(
     ): Promise<BusinessConnectionImport> {
       return invokeInScope(scope, "import_notion_page", { pageId });
     },
+
+    async getSlackConnectionStatus(
+      scope: BusinessConnectionScope,
+    ): Promise<SlackConnectionStatus> {
+      const status = await invokeInScope<{
+        connected: boolean;
+        workspaceName?: string | null;
+      }>(scope, "get_slack_connection_status");
+      if (!status.connected) return { connected: false, workspaceName: null };
+      if (
+        typeof status.workspaceName !== "string" ||
+        !status.workspaceName.trim()
+      ) {
+        throw new Error("Slack status did not include a verified workspace.");
+      }
+      return { connected: true, workspaceName: status.workspaceName };
+    },
+
+    connectSlackConnection(
+      scope: BusinessConnectionScope,
+      token: string,
+    ): Promise<SlackWorkspaceAccount> {
+      return invokeInScope(scope, "connect_slack_connection", { token });
+    },
+
+    revokeSlackConnection(scope: BusinessConnectionScope): Promise<void> {
+      return invokeInScope(scope, "revoke_slack_connection");
+    },
+
+    listSlackChannels(
+      scope: BusinessConnectionScope,
+      cursor?: string | null,
+    ): Promise<SlackChannelListResult> {
+      return invokeInScope(scope, "list_slack_channels", { cursor });
+    },
+
+    importSlackHistory(
+      scope: BusinessConnectionScope,
+      channelId: string,
+    ): Promise<BusinessConnectionImport> {
+      return invokeInScope(scope, "import_slack_channel_history", {
+        channelId,
+      });
+    },
   };
 }
 
@@ -181,3 +244,11 @@ export const revokeNotionConnection =
   businessConnectionsApi.revokeNotionConnection;
 export const searchNotionPages = businessConnectionsApi.searchNotionPages;
 export const importNotionPage = businessConnectionsApi.importNotionPage;
+export const getSlackConnectionStatus =
+  businessConnectionsApi.getSlackConnectionStatus;
+export const connectSlackConnection =
+  businessConnectionsApi.connectSlackConnection;
+export const revokeSlackConnection =
+  businessConnectionsApi.revokeSlackConnection;
+export const listSlackChannels = businessConnectionsApi.listSlackChannels;
+export const importSlackHistory = businessConnectionsApi.importSlackHistory;

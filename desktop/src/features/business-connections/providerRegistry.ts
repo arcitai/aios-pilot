@@ -3,7 +3,11 @@ import type {
   BusinessConnectionScope,
 } from "@/shared/api/tauriBusinessConnections";
 
-export type BusinessConnectionProviderId = "github" | "google" | "notion";
+export type BusinessConnectionProviderId =
+  | "github"
+  | "google"
+  | "notion"
+  | "slack";
 export type ProviderAvailability = "available" | "planned";
 
 export type BusinessConnectionProviderDescriptor = {
@@ -75,5 +79,11 @@ export const BUSINESS_CONNECTION_PROVIDERS = [
     name: "Notion",
     availability: "available",
     description: "Search shared pages and import their text read-only.",
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    availability: "available",
+    description: "Choose a channel and import recent messages read-only.",
   },
 ] as const satisfies readonly BusinessConnectionProviderDescriptor[];
