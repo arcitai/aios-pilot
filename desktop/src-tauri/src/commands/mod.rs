@@ -12,6 +12,8 @@ mod agent_settings;
 mod agent_update_rollback;
 mod agents;
 mod bestie;
+#[cfg(test)]
+mod business_live_tests;
 mod canvas;
 mod channel_reconnect_repair;
 mod channel_templates;

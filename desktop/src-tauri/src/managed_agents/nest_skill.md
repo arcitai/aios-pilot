@@ -46,7 +46,7 @@ Run `buzz agents draft-update --help` for optional runtime, provider, model, ren
 In a private AIOS business channel, read the company's shared context with:
 
 ```bash
-buzz business --channel <current-channel-uuid> show
+buzz business show --channel <current-channel-uuid>
 ```
 
 The result is `{channel_id, revision, document}`. The document is the same
@@ -58,7 +58,7 @@ To save a correction, write the complete updated `document` to a local JSON
 file, preserving its schema and unrelated fields, then run:
 
 ```bash
-buzz business --channel <current-channel-uuid> update \
+buzz business update --channel <current-channel-uuid> \
   --file business.json --expected-revision <revision-from-show>
 ```
 

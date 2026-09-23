@@ -74,3 +74,27 @@ inspected. This does not prove live relay persistence or model execution.
 - Prior offline research HTML was corrected to the accepted own Buzz-fork
   direction; its internal anchors validate. It no longer recommends migrating
   the whole product to Agent Native.
+
+
+## Native server proof and approvals task
+
+- Native production commands passed against the live relay at port 3341:
+  private channel creation, context save, read from fresh native state, update,
+  stale-revision rejection, outsider read filtering and outsider write denial.
+  Test channel: `b829c28f-db42-4a61-826b-e0355493d4f8`.
+  `AIOS_TEST_RELAY_URL=ws://127.0.0.1:3341 cargo test --manifest-path
+  desktop/src-tauri/Cargo.toml commands::business_live_tests --
+  --include-ignored --nocapture` passed 2 tests.
+- Desktop visual testing still awaits an unlocked Mac; this native command
+  proof does not claim native-window interaction or real model execution.
+- Fifth isolated Luna/max task: `01a0cfeb-1ee1-7cb0-9aa5-f202480c8af9`,
+  `/Users/gustavanderson/Documents/Codex/2026-09-23/aios-agent-permissions/buzz`.
+  Owns ACP permission request/decision handling and dedicated approval UI,
+  shared API adapter and native command module. Lead retains central wiring.
+  Trigger: upstream auto-approves ACP permission requests; persona text cannot
+  enforce a user's decision. Require actual deny/approve-once/cancel tests.
+- Lead checkpoint commit `a3a05d4` contains business workspace, domain, source
+  import, draft guards and scoped native canvas/creation changes.
+- CLI syntax changed after parser checks to leaf flags: `buzz business show
+  --channel UUID`; update/source subcommands also take `--channel` themselves.
+  Bundled skill updated accordingly; worker final verification still pending.
