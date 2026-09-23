@@ -86,7 +86,7 @@ test("Notion import retains attribution, rejects duplicates and never saves the 
     notion.getByText("Not connected.", { exact: true }),
   ).toBeVisible();
   await notion
-    .getByLabel("Notion internal integration token")
+    .getByLabel("Notion connection token")
     .fill("fixture-notion-read-token");
   await notion
     .getByRole("button", { name: "Connect Notion", exact: true })
@@ -117,9 +117,7 @@ test("Notion import retains attribution, rejects duplicates and never saves the 
   await expect(
     notion.getByText("Not connected.", { exact: true }),
   ).toBeVisible();
-  await expect(
-    notion.getByLabel("Notion internal integration token"),
-  ).toHaveValue("");
+  await expect(notion.getByLabel("Notion connection token")).toHaveValue("");
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   const source = page
     .locator("details")

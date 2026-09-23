@@ -9,14 +9,14 @@ Updated during the night of 23–24 September 2026 (Europe/Copenhagen).
 - Product contract: `AIOS_PILOT.md`.
 - Research sources: `/tmp/ai-os-research-20260923/` (read-only references).
 - Business context, sources/history, main-agent creation and settings,
-  GitHub/Notion, per-app Slides/Calendar/Design, business CLI, and a local
+  GitHub/Notion/Slack, per-app Slides/Calendar/Design, business CLI, and a local
   self-hosted relay with backup/restore are integrated and tested.
-- The isolated macOS package was built and signature-verified from `ca01845`.
-  Later first-agent, permission, voice, Mesh and Slack integrations must be
-  included in the next package. Native window interaction remains unavailable
+- The isolated macOS package was built with Mesh and signature-verified from
+  clean `fd68911`. Later skills, Sites and Slack-link fixes must be included
+  in the next package. Native window interaction remains unavailable
   while the computer is locked. Detailed evidence and limits are below.
-- Active integration: voice action and Slack; next deliveries: per-agent
-  skills, app agent access/CLI, Sites Publisher and incoming calls. Google Drive
+- Skills and Sites modules have landed; active work includes app agent
+  access/CLI, Sites integration and incoming calls. Google Drive
   OAuth is being built with provider-enforced read-only access. The full
   platform is not complete; [FEATURES](FEATURES.md) tracks the wider outcome.
 - An hourly heartbeat in the lead task resumes authorized work until the
@@ -26,7 +26,7 @@ Updated during the night of 23–24 September 2026 (Europe/Copenhagen).
 
 ## Active isolated tasks (GPT-6 Luna / max)
 
-- CLI: `01a0cfc6-4a16-74e2-9bec-ff2383fed3d0`, clone under
+- CLI / skills, now workflow approvals: `01a0cfc6-4a16-74e2-9bec-ff2383fed3d0`, clone under
   `/Users/gustavanderson/Documents/Codex/2026-09-23/aios-business-cli/buzz`.
 - Apps: `01a0cfc6-93fe-7d32-b714-ff6611505ca7`, clone under
   `/Users/gustavanderson/Documents/Codex/2026-09-23/aios-built-in-apps/buzz`.
@@ -43,11 +43,11 @@ the same worker for revisions. They return isolated commits; lead integrates.
 
 ## Next work
 
-1. Finish business UI E2E and scoped native checks; inspect screenshots.
-2. Lead: complete main-agent onboarding and shared context interaction.
-3. Integrate worker patches and exercise the combined interface.
-4. Continue source connections, preview/deployment and voice as working
-   prerequisites become available; retain an honest list of unfinished paths.
+1. Integrate the Apps extension slot, explicit agent access and Sites workspace.
+2. Fix reviewed Sites asynchronous result/confirmation binding before release.
+3. Complete agent-facing app/Sites CLI and exercise real agent-created output.
+4. Integrate Publisher hosting/restore, Drive OAuth, incoming calls and workflow
+   approvals; retain an honest list of unfinished paths.
 
 ## Proof
 
@@ -340,3 +340,35 @@ inspected. This does not prove live relay persistence or model execution.
   Slack browser proof and a correction to its source deep links are pending.
   Google Drive work uses read-only OAuth and synthetic fixtures; no private
   external account has been connected by these development tasks.
+
+
+## Integrated checkpoint — 00:45 local, 24 September
+
+- Clean `fd68911` produced a Mesh-enabled AIOS Pilot app. Metadata records
+  that revision with dirty=false; all six sidecars and the bundle pass
+  ad-hoc deep/strict signature verification. Later commits are not in it yet.
+- A real `gpt-6-luna[max]` turn updated only `company.goals` in an isolated
+  private business document. Lead readback review confirms a changed revision
+  and exactly that changed path. The retry used an absolute CLI path after
+  bare `buzz` was unavailable; the ACP task is investigating that distinction.
+  No permission request was observed and no owner decision was sent. This
+  proves the authorized synthetic update, not the real-model approval dialog.
+  Evidence: `/tmp/aios-agent-permissions-proof-20260924-001858-6be24b/readback.json`.
+- Slack workspace-aware link fix `d3f0abb` is integrated. Combined Notion and
+  Slack browser flows pass (2): scoped import, partial notice, provenance,
+  duplicate rejection, disconnect and preservation of imported sources.
+  The saved document contains neither the token nor an unselected channel.
+- Skills `c76d61f` are integrated. Eight native tests pass in the lead checkout,
+  including staging/discovery, public omission and snapshot opt-in. The
+  specialist editor browser flow passes after making instruction editing an
+  explicit expandable action. Three business voice flows still pass after
+  the more accurate microphone-connected status and English STT disclosure.
+- Sites `bb78b0b` and `5c83f35` are integrated with seven registered native
+  handlers. Four native scope/validation and five document/export checks pass.
+  Worker evidence includes 9 service tests and a real browser preview/save/
+  publish/revoke flow. Central Apps integration is pending its extension slot.
+  Lead review found unfenced publisher mutation completions and stale revoke
+  confirmation risk on a site switch; worker is fixing those before release.
+- Work continues: Apps access/CLI, Sites generation/CLI and race fixes,
+  Publisher self-hosting and recovery, Google Drive OAuth, incoming calls,
+  workflow approval gates and broader platform verification.

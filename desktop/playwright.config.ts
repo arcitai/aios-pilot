@@ -21,6 +21,7 @@ export default defineConfig({
       testMatch: [
         "**/business-workspace.spec.ts",
         "**/business-connections.spec.ts",
+        "**/business-slack.spec.ts",
         "**/business-onboarding.spec.ts",
         "**/business-apps.spec.ts",
         "**/business-voice.spec.ts",

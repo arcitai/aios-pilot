@@ -114,9 +114,8 @@ export function AgentSkillsField({
           Specialist skills
         </h3>
         <p className="text-xs text-muted-foreground">
-          Skills are private to this agent definition. They add instructions,
-          not tools or permissions; ACP approval rules still apply. The agent
-          workspace is separate per agent, but it is not an OS security sandbox.
+          Give this agent a repeatable way to do its work. Pick a starting
+          point, then adapt the instructions to your business.
         </p>
       </div>
 
@@ -169,7 +168,9 @@ export function AgentSkillsField({
             >
               <div className="flex items-center justify-between gap-3">
                 <h4 className="min-w-0 truncate text-sm font-medium">
-                  {skillName(skill)}
+                  {agentSkillStarters.find(
+                    (starter) => starter.id === skillName(skill),
+                  )?.label ?? skillName(skill)}
                 </h4>
                 <div className="flex shrink-0 items-center gap-3">
                   <span className="text-xs text-muted-foreground">
@@ -191,24 +192,38 @@ export function AgentSkillsField({
                   {skill.assets.map((asset) => asset.path).join(", ")}
                 </p>
               ) : null}
-              {supportsSkills ? (
-                <Textarea
-                  aria-label={`${skillName(skill)} SKILL.md`}
-                  className="min-h-44 resize-y font-mono text-xs leading-5"
-                  disabled={disabled}
-                  onChange={(event) => updateSkill(index, event.target.value)}
-                  spellCheck={false}
-                  value={skill.skillMd}
-                />
-              ) : (
-                <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-md border border-border/60 bg-background p-3 font-mono text-xs leading-5">
-                  {skill.skillMd}
-                </pre>
-              )}
+              <details className="group space-y-2">
+                <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+                  Review or edit instructions
+                </summary>
+                {supportsSkills ? (
+                  <Textarea
+                    aria-label={`${skillName(skill)} SKILL.md`}
+                    className="min-h-44 resize-y font-mono text-xs leading-5"
+                    disabled={disabled}
+                    onChange={(event) => updateSkill(index, event.target.value)}
+                    spellCheck={false}
+                    value={skill.skillMd}
+                  />
+                ) : (
+                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-md border border-border/60 bg-background p-3 font-mono text-xs leading-5">
+                    {skill.skillMd}
+                  </pre>
+                )}
+              </details>
             </article>
           ))}
         </div>
       )}
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">Skills, access and sharing</summary>
+        <p className="mt-2 leading-relaxed">
+          These instructions stay with your local agent definition. They do not
+          connect accounts or grant additional access. The agent keeps the file
+          and tool access of its selected runtime. When exporting an agent, you
+          can choose whether to include its skills.
+        </p>
+      </details>
     </section>
   );
 }

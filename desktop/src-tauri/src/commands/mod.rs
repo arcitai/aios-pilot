@@ -11,6 +11,7 @@ mod agent_providers;
 mod agent_settings;
 mod agent_update_rollback;
 mod agents;
+mod aios_sites;
 mod bestie;
 mod business_connections;
 #[cfg(test)]
@@ -88,6 +89,7 @@ pub use agent_models::*;
 pub use agent_providers::*;
 pub use agent_settings::*;
 pub use agents::*;
+pub use aios_sites::*;
 pub use bestie::*;
 pub use business_connections::*;
 pub use canvas::*;

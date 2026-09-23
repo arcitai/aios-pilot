@@ -606,6 +606,9 @@ test("specialist skills edit as raw text, respect runtime capability, and persis
     dialog.getByRole("button", { name: "Add Company analyst" }),
   ).toBeVisible();
   await dialog.getByRole("button", { name: "Add Company analyst" }).click();
+  await dialog
+    .getByText("Review or edit instructions", { exact: true })
+    .click();
   const skillEditor = dialog.getByLabel("company-analyst SKILL.md");
   await expect(skillEditor).toHaveValue(
     /buzz business source list --channel <CHANNEL_ID>/,
