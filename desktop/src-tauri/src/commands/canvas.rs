@@ -4,7 +4,7 @@ use crate::{
     app_state::AppState,
     events,
     relay::{
-        assert_expected_relay_scope, assert_expected_signer, query_relay, query_relay_at_with_keys,
+        assert_expected_relay_scope, assert_expected_signer, query_relay_at_with_keys,
         relay_api_base_url_with_override, submit_event_at_with_keys,
     },
 };
@@ -344,6 +344,8 @@ pub async fn get_canvas_history(
     limit: Option<usize>,
     until: Option<u64>,
     before_id: Option<String>,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     if before_id.is_some() && until.is_none() {
@@ -366,7 +368,12 @@ pub async fn get_canvas_history(
         filter["before_id"] = serde_json::json!(value);
     }
 
-    let events = query_relay(&state, &[filter]).await?;
+    let (base, keys) = canvas_scope(
+        &state,
+        expected_relay_url.as_deref(),
+        expected_signer_pubkey.as_deref(),
+    )?;
+    let events = query_relay_at_with_keys(&state, &base, &[filter], &keys, None).await?;
 
     let revisions: Vec<serde_json::Value> = events
         .iter()

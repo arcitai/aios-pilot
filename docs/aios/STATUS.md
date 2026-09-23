@@ -98,3 +98,29 @@ inspected. This does not prove live relay persistence or model execution.
 - CLI syntax changed after parser checks to leaf flags: `buzz business show
   --channel UUID`; update/source subcommands also take `--channel` themselves.
   Bundled skill updated accordingly; worker final verification still pending.
+
+
+## Model and recovery proof — 22:30 local
+
+- Installed pinned `@agentclientprotocol/codex-acp@1.13.1` locally in
+  `/tmp/aios-runtime-tools` (no global package change). Existing Codex CLI
+  reports ChatGPT login. Adapter discovery returned `gpt-6-luna[max]`.
+- Isolated real ACP harness test used that exact model, a generated test
+  identity, one private test channel and synthetic restaurant-webdesign company
+  data. Agent read the canvas via CLI and published one accurate Danish summary
+  plus one relevant onboarding question. Relay readback verified the reply.
+  Channel: `d7a045c1-5adc-4b44-9916-51bb94c4e31c`; proof files under
+  `/tmp/aios-harness-proof` (agent.env is private; never print or commit it).
+  Runtime exited cleanly on its bounded inactivity timer. Metrics publication
+  returned 403 because this standalone test actor was not registered as a managed
+  agent; the requested conversation result succeeded. This proof uses upstream
+  permission behavior; it is NOT acceptance of the new approval feature.
+- Context history/recovery UI is implemented; it lists 20 saved versions,
+  validates the selected document, restores with captured head revision and
+  retains history. Canvas history IPC now also accepts relay/signer fences.
+- Five browser tests passed, including recovery from a damaged raw canvas.
+  Native live tests reran with history readback and passed.
+- Connections task delivered b89030e9865cb00c76e3283335c01f91d8404226.
+  Fetched but NOT cherry-picked: review requested a correction so the provider
+  API uses scope captured by the rendered UI, not a fresh active-workspace
+  lookup that could silently retarget old input. Worker is implementing that.

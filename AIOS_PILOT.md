@@ -62,6 +62,9 @@ Workspace access initially follows private-channel membership; do not imply
 finer source-level permissions than implemented. Context revisions use the
 existing canvas expectedRevision contract; expose conflicts and retry safely.
 Bound document/source sizes and reject malformed/unrecognized schema versions.
+Individual string limits use UTF-16 code units, matching the desktop fields and
+Zod parser; the complete serialized document is capped at 200,000 UTF-8 bytes.
+Rust and TypeScript validators must pass the same Unicode/boundary fixtures.
 
 Front-end ownership: `desktop/src/features/business/` and shared API adapters.
 Reusable apps: `desktop/src/features/aios-apps/`; editor components consume

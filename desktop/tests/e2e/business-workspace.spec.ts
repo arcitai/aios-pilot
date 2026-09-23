@@ -192,3 +192,74 @@ test("starting the main agent publishes the request before launching a stopped r
     replayFloorUnix: expect.any(Number),
   });
 });
+
+test("a supported saved version can recover a damaged company canvas", async ({
+  page,
+}) => {
+  await installMockBridge(page);
+  await page.goto("/");
+  await page.getByTestId("open-business-view").click();
+  await page
+    .getByLabel("What is your business called?")
+    .fill("Starting Studio");
+  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page
+    .getByRole("button", { name: "Company context", exact: true })
+    .click();
+  await page
+    .getByLabel("Company name", { exact: true })
+    .fill("Recovery Studio");
+  await page
+    .getByLabel("What you do", { exact: true })
+    .fill("Our original company context");
+  await page.getByRole("button", { name: "Save company context" }).click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Saved" }),
+  ).toBeVisible();
+  await page.evaluate(async () => {
+    const bridge = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke: <T>(command: string, payload?: unknown) => Promise<T>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const response = await bridge.invoke<{
+      channels: { id: string; name: string }[];
+    }>("get_channels", { knownHash: null });
+    const channel = response.channels.find(
+      (item) => item.name === "Starting Studio",
+    );
+    if (!channel) throw new Error("Missing fixture workspace");
+    const head = await bridge.invoke<{ event_id: string }>("get_canvas", {
+      channelId: channel.id,
+    });
+    await bridge.invoke("set_canvas", {
+      channelId: channel.id,
+      content: "# Accidental ordinary canvas edit",
+      expectedRevision: head.event_id,
+    });
+  });
+  await page
+    .getByRole("button", { name: "Refresh context", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Saved versions", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog", { name: "Saved company context" });
+  await dialog.getByRole("button", { name: /Recovery Studio/ }).click();
+  await expect(
+    dialog.getByText("Our original company context", { exact: true }),
+  ).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Restore selected version", exact: true })
+    .click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByLabel("Company name", { exact: true })).toHaveValue(
+    "Recovery Studio",
+  );
+  await expect(page.getByLabel("What you do", { exact: true })).toHaveValue(
+    "Our original company context",
+  );
+});

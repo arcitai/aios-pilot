@@ -21,6 +21,7 @@ import { businessProgress } from "./document";
 import { startBusinessConversation } from "./mainAgent";
 import { useBusinessWorkspace } from "./useBusinessWorkspace";
 import { useDraftGuard } from "./useDraftGuard";
+import { ContextHistory } from "./ContextHistory";
 
 type Pane = "conversation" | "company" | "sources" | "connections" | "apps";
 const panes = [
@@ -64,6 +65,17 @@ export function BusinessWorkspace({
     workspace.error ??
     workspace.channels.error?.message ??
     workspace.context.error?.message;
+  const history = workspace.channel ? (
+    <ContextHistory
+      key={workspace.channel.id}
+      channelId={workspace.channel.id}
+      scope={workspace.canvasScope}
+      requestOpen={drafts.request}
+      onRestored={async () => {
+        if (await workspace.reload()) setReloadVersion((value) => value + 1);
+      }}
+    />
+  ) : null;
 
   if (
     workspace.channels.isPending ||
@@ -151,6 +163,7 @@ export function BusinessWorkspace({
               </Button>
             </div>
           ) : null}
+          {history}
           <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
             <LockKeyhole className="mt-0.5 size-4 shrink-0" />
             Starts as a private room on your workspace's relay. You decide which
@@ -217,6 +230,7 @@ export function BusinessWorkspace({
               <ChevronRight />
             </Link>
           </Button>
+          {history}
         </div>
         <nav
           aria-label="Business workspace"

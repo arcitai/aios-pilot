@@ -1,5 +1,5 @@
 //! Native command checks. Live proof uses only an explicitly selected loopback relay.
-use super::{create_channel, get_canvas, set_canvas};
+use super::{create_channel, get_canvas, get_canvas_history, set_canvas};
 use crate::app_state::{build_app_state, AppState};
 use tauri::Manager;
 
@@ -46,12 +46,27 @@ async fn business_commands_reject_stale_tenant_or_signer_before_network() {
             "private".to_owned(),
             None,
             None,
+            Some(expected_relay.clone()),
+            Some(expected_signer.clone()),
+            app.state(),
+        )
+        .await;
+        let history = get_canvas_history(
+            channel.clone(),
+            Some(20),
+            None,
+            None,
             Some(expected_relay),
             Some(expected_signer),
             app.state(),
         )
         .await;
-        for result in [read.map(|_| ()), write.map(|_| ()), create.map(|_| ())] {
+        for result in [
+            read.map(|_| ()),
+            write.map(|_| ()),
+            create.map(|_| ()),
+            history.map(|_| ()),
+        ] {
             let error = result.unwrap_err();
             assert!(
                 error.contains("changed"),
@@ -175,6 +190,18 @@ async fn live_roundtrip() {
     .await
     .unwrap();
     assert_eq!(final_read["content"], newer);
+    let history = get_canvas_history(
+        channel.id.clone(),
+        Some(20),
+        None,
+        None,
+        None,
+        None,
+        reopened.state(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(history["revisions"].as_array().unwrap().len(), 2);
     println!(
         "Native live proof passed for private test channel {}",
         channel.id

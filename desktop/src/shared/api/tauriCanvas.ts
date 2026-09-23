@@ -70,7 +70,11 @@ export async function setCanvas(
 
 export async function getCanvasHistory(
   channelId: string,
-  options: { limit?: number; cursor?: CanvasHistoryCursor | null } = {},
+  options: {
+    limit?: number;
+    cursor?: CanvasHistoryCursor | null;
+    scope?: CanvasScope;
+  } = {},
 ): Promise<CanvasHistoryResponse> {
   const response = await invokeTauri<RawCanvasHistoryResponse>(
     "get_canvas_history",
@@ -79,6 +83,8 @@ export async function getCanvasHistory(
       limit: options.limit ?? null,
       until: options.cursor?.createdAt ?? null,
       beforeId: options.cursor?.eventId ?? null,
+      expectedRelayUrl: options.scope?.expectedRelayUrl ?? null,
+      expectedSignerPubkey: options.scope?.expectedSignerPubkey ?? null,
     },
   );
   return {

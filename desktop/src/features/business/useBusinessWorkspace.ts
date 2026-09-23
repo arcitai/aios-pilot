@@ -116,5 +116,6 @@ export function useBusinessWorkspace() {
     setSelectedId,
     relayUrl: activeCommunity?.relayUrl,
     pubkey: identity.data?.pubkey,
+    canvasScope,
   };
 }
