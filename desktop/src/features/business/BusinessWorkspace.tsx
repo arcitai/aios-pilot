@@ -262,6 +262,17 @@ export function BusinessWorkspace({
           ))}
         </nav>
       </header>
+      {workspace.hasRemoteUpdate && !workspace.busy ? (
+        <div
+          className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-primary/15 bg-primary/5 px-5 py-3 text-sm"
+          role="status"
+        >
+          <p>Your agent or a teammate saved new company context.</p>
+          <Button onClick={reload} size="sm" variant="outline">
+            Review updated context
+          </Button>
+        </div>
+      ) : null}
       {error || workspace.notice ? (
         <div
           className="flex shrink-0 items-center justify-between gap-3 border-b border-border/40 bg-muted/30 px-5 py-3 text-sm"

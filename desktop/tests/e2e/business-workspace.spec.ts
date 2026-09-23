@@ -162,12 +162,18 @@ test("a competing context edit cannot silently overwrite saved business data", a
       expectedRevision: head.event_id,
     });
   });
+  await expect(
+    page.getByRole("button", { name: "Review updated context" }),
+  ).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByLabel("What you do", { exact: true })).toHaveValue(
+    "My unsaved draft",
+  );
   await page.getByRole("button", { name: "Save company context" }).click();
   await expect(page.getByRole("alert")).toContainText("conflict");
   await expect(page.getByLabel("What you do", { exact: true })).toHaveValue(
     "My unsaved draft",
   );
-  await page.getByRole("button", { name: "Reload saved context" }).click();
+  await page.getByRole("button", { name: "Review updated context" }).click();
   await page
     .getByRole("button", { name: "Discard draft", exact: true })
     .click();

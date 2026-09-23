@@ -1,0 +1,18 @@
+{
+  "productName": "AIOS Pilot",
+  "identifier": "xyz.block.buzz.app.demo.aios-pilot-local",
+  "build": {
+    "devUrl": "http://localhost:1437",
+    "beforeDevCommand": {
+      "script": "exec ./node_modules/.bin/vite --port 1437 --strictPort",
+      "cwd": "..",
+      "wait": false
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": { "schemes": ["buzz-demo-aios-pilot-local"] }
+    },
+    "updater": { "endpoints": [] }
+  }
+}

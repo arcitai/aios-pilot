@@ -202,3 +202,14 @@ fn script_src_stays_free_of_unsafe_inline_and_eval() {
     assert!(!allowed.contains(&"'unsafe-inline'".to_owned()));
     assert!(!allowed.contains(&"'unsafe-eval'".to_owned()));
 }
+
+#[test]
+fn app_previews_use_only_the_isolated_local_sites_origin() {
+    assert_eq!(
+        sources("frame-src"),
+        vec!["'self'", "http://127.0.0.1:3351"],
+        "preview code runs in a separately sandboxed frame, never the IPC-capable shell"
+    );
+    assert!(sources("frame-ancestors").contains(&"'none'".to_owned()));
+    assert!(!sources("script-src").contains(&"http://127.0.0.1:3351".to_owned()));
+}

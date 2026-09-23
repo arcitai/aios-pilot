@@ -1,0 +1,32 @@
+# Local desktop pilot
+
+The pilot uses Buzz's native desktop with a separate app identity, keyring,
+agent workspace and deep-link scheme. It connects to the self-hosted relay at
+`ws://127.0.0.1:3341`. The existing Buzz installation is independent.
+
+```sh
+scripts/aios-desktop doctor
+scripts/aios-desktop build
+scripts/aios-desktop open
+```
+
+After packaging, double-click `deploy/aios/Open AIOS.command` to open the app.
+The relay must be running; `scripts/aios-selfhost start` starts it with the
+existing data. The launcher never resets accounts, model credentials or data.
+See [self-hosting](SELF_HOSTING.md) for first-time setup, stop and restore.
+
+`build` packages a local debug `.app` and refreshes all six bundled agent/CLI
+tools from this checkout. It is a development build, not a notarized public
+release or an automatic update channel. Build tools are pinned by Hermit and
+the dependency lockfiles. The app bundle is under
+`desktop/src-tauri/target/debug/bundle/macos/AIOS Pilot.app`.
+
+For development, `scripts/aios-desktop dev` uses Vite on port 1437 and the same
+isolated pilot identity. Close a running pilot before starting another copy.
+Model and tool credentials are configured in the app, never compiled into it.
+The launcher clears inherited test identity and production update settings.
+
+The scripts target this macOS pilot. Other operating systems and publicly
+distributed installers retain the upstream build workflows; they have not
+been verified for this fork. Current observed packaging and runtime results
+are recorded in [STATUS](STATUS.md).

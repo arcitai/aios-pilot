@@ -159,3 +159,56 @@ inspected. This does not prove live relay persistence or model execution.
 - Upstream shared compute already includes a native MeshLLM feature, model
   picker and signed membership admission. Started a separate native feature
   compile; no local-model or second-machine inference proof claimed yet.
+
+
+## Self-host integration and cross-language checks — 23:09 local
+
+- Selfhost commits `37afdcb` and `ed21036` integrated as `a869abb` and
+  `8c97692`. The lead checkout now has the existing private environment file
+  (mode 0600, ignored), so its operator commands target the same healthy stack.
+  `scripts/aios-selfhost doctor` and `status` pass. No credentials were reset.
+- Worker verified message, reply, history and media persistence, backup of all
+  four volumes, and restore/readback in a separate fresh project. Restored
+  community host mappings are rebound before relay startup. Archive restore
+  rejects absolute paths, any parent traversal component and all symbolic/hard
+  links; 14 permanent regression tests pass in the lead checkout. Existing real
+  backup (1,840 entries) passed read-only validation after this restriction.
+- CLI base and schema alignment integrated as `36d7be4` and `c525dc9`.
+  Desktop tests now load the exact shared Rust fixtures through the actual
+  production parser: 24 shared fixtures now run permanently in Desktop.
+  Follow-up `af91955` integrated as `e032236`, aligning control characters
+  and reporting unverified CLI writes as DeliveryUnknown.
+- Native business tests reran successfully against 3341, including history scope
+  denial. Native → actual CLI → native context update, stale CLI revision
+  rejection and outsider CLI denial passed on channel
+  `0d1d5196-6f97-47b8-8271-103f19441832`, using only generated identities
+  and synthetic data. Log: `/tmp/aios-native-cli-roundtrip.log`.
+  CLI task now continues with genuine per-agent skill selection and runtime
+  discovery; it must coordinate runtime.rs ownership with the approval task.
+- Mesh feature native compile passed; 2 mesh browser tests passed. Real
+  `mesh_admission_smoke` downloaded the 105 MB SmolLM2 test model and started
+  serving, but the allowlisted client timed out joining and never saw the model.
+  This is a failed single-machine multiprocess experiment, not multi-machine
+  proof. Selfhost task now owns focused diagnosis without changing the server.
+- Native huddle tests: 196 passed, 1 hardware diagnostic ignored. Browser
+  voice/settings/transcription tests: 44 passed with synthetic media. This does
+  not establish Danish STT quality or real microphone/speaker interaction.
+- Seventh Luna/max task: `01a0d015-95a6-7d83-b20c-cc96cd82e185`, isolated
+  `aios-voice-calls` projectless directory. Owns business voice component and
+  huddle scope/lifecycle, then bounded signed in-app call requests. Lead wires
+  central navigation/native modules. No physical phone calls or room recording.
+
+
+## Agent-written context integration — 23:12 local
+
+- Native → built CLI → native update proof passed. The permanent ignored
+  native test enables this extra path when `AIOS_TEST_CLI` names the built Buzz
+  binary. It uses generated keys, a loopback relay and bounded subprocesses.
+- 28 desktop schema/domain tests passed (24 shared fixtures), TypeScript and
+  E2E build passed. All 7 business browser scenarios passed, including remote
+  context notification while a local draft remains intact and its stale write
+  is rejected. The head watcher polls every 10 seconds only in the foreground;
+  it never silently advances the editor's expected revision.
+- Main-agent kickoff now includes the concrete `buzz business show/update`
+  commands and mandates revision checks plus readback. The updated packaged
+  CLI sidecar and permission-gated real model write still need combined proof.

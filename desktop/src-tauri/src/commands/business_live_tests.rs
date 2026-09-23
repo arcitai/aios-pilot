@@ -183,8 +183,8 @@ async fn live_roundtrip() {
     .is_err());
     let final_read = get_canvas(
         channel.id.clone(),
-        Some(relay),
-        Some(signer),
+        Some(relay.clone()),
+        Some(signer.clone()),
         reopened.state(),
     )
     .await
@@ -202,8 +202,106 @@ async fn live_roundtrip() {
     .await
     .unwrap();
     assert_eq!(history["revisions"].as_array().unwrap().len(), 2);
+    if let Ok(binary) = std::env::var("AIOS_TEST_CLI") {
+        cli_roundtrip(&reopened, &binary, &relay, &channel.id, &signer).await;
+    }
     println!(
         "Native live proof passed for private test channel {}",
         channel.id
     );
+}
+
+async fn cli_roundtrip(
+    app: &tauri::App<tauri::test::MockRuntime>,
+    binary: &str,
+    relay: &str,
+    channel: &str,
+    signer: &str,
+) {
+    let keys = app.state::<AppState>().signing_keys().unwrap();
+    let shown = run_cli(binary, relay, &keys, &["show", "--channel", channel], None).await;
+    assert!(shown.status.success());
+    let shown: serde_json::Value = serde_json::from_slice(&shown.stdout).unwrap();
+    let revision = shown["revision"].as_str().unwrap();
+    let mut document = shown["document"].clone();
+    document["company"]["goals"] = serde_json::json!("CLI and desktop share the same context");
+    let input = document.to_string();
+    let update_args = [
+        "update",
+        "--channel",
+        channel,
+        "--file",
+        "-",
+        "--expected-revision",
+        revision,
+    ];
+    let updated = run_cli(binary, relay, &keys, &update_args, Some(&input)).await;
+    assert!(updated.status.success(), "CLI update must succeed");
+    let readback = get_canvas(
+        channel.to_owned(),
+        Some(relay.to_owned()),
+        Some(signer.to_owned()),
+        app.state(),
+    )
+    .await
+    .unwrap();
+    let readback: serde_json::Value =
+        serde_json::from_str(readback["content"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        readback, document,
+        "native command reads the complete CLI update"
+    );
+
+    let stale = run_cli(binary, relay, &keys, &update_args, Some(&input)).await;
+    assert!(
+        !stale.status.success(),
+        "CLI rejects the old native revision"
+    );
+    let outsider = run_cli(
+        binary,
+        relay,
+        &nostr::Keys::generate(),
+        &["show", "--channel", channel],
+        None,
+    )
+    .await;
+    assert!(
+        !outsider.status.success(),
+        "CLI refuses another signer's private workspace"
+    );
+    assert!(!String::from_utf8_lossy(&outsider.stdout).contains("CLI and desktop"));
+    println!("Native → CLI → native company-context roundtrip, stale revision and outsider denial passed");
+}
+
+async fn run_cli(
+    binary: &str,
+    relay: &str,
+    keys: &nostr::Keys,
+    arguments: &[&str],
+    input: Option<&str>,
+) -> std::process::Output {
+    use std::process::Stdio;
+    use tokio::io::AsyncWriteExt;
+    let mut child = tokio::process::Command::new(binary)
+        .arg("business")
+        .args(arguments)
+        .env_clear()
+        .env("BUZZ_RELAY_URL", relay)
+        .env("BUZZ_PRIVATE_KEY", keys.secret_key().to_secret_hex())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .expect("spawn explicitly selected test CLI");
+    if let Some(mut stdin) = child.stdin.take() {
+        if let Some(input) = input {
+            stdin.write_all(input.as_bytes()).await.unwrap();
+        }
+        stdin.shutdown().await.unwrap();
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(15), child.wait_with_output())
+        .await
+        .expect("CLI operation finishes within fifteen seconds")
+        .expect("CLI exits")
 }

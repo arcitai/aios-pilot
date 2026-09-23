@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# Build or open the isolated local pilot without changing an installed Buzz app.
+set -euo pipefail
+
+AIOS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$AIOS_ROOT"
+AIOS_ACTION="${1:-help}"
+if [[ $# -gt 1 ]]; then
+  echo "Usage: scripts/aios-desktop {build|dev|open|doctor}" >&2
+  exit 2
+fi
+
+case "$AIOS_ACTION" in
+  help|-h|--help)
+    echo "Usage: scripts/aios-desktop {build|dev|open|doctor}"
+    echo "Local macOS pilot: isolated app identity, self-host relay on port 3341."
+    echo "build: package a debug app with current agent tools; dev: run with Vite."
+    echo "open: open the packaged app; doctor: check prerequisites and server."
+    exit 0
+    ;;
+  build|dev|open|doctor) ;;
+  *) echo "Unknown action: $AIOS_ACTION" >&2; exit 2 ;;
+esac
+if [[ "$(uname -s)" != Darwin ]]; then
+  echo "This local app launcher targets macOS. The relay itself is portable." >&2
+  exit 1
+fi
+
+# Do not let an ambient test identity, production updater, or baked provider
+# secret become part of the pilot build. Runtime credentials stay in Settings.
+unset BUZZ_PRIVATE_KEY BUZZ_SHARE_IDENTITY BUZZ_RESET_WEBVIEW_STATE
+unset BUZZ_UPDATER_ENDPOINT BUZZ_UPDATER_PUBLIC_KEY
+unset BUZZ_BUILD_AGENT_ENV BUZZ_BUILD_RELAY_RECONNECT_CMD
+unset BUZZ_BUILD_BUZZ_AGENT_PROVIDER BUZZ_BUILD_BUZZ_AGENT_MODEL
+unset BUZZ_DEV_KEYRING_SERVICE BUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY
+export BUZZ_BUILD_DEMO_SLUG=aios-pilot-local
+export BUZZ_BUILD_AUTO_CONNECT_DEFAULT_RELAY=1
+export BUZZ_RELAY_URL=ws://127.0.0.1:3341
+export BUZZ_RELAY_HTTP=http://127.0.0.1:3341
+
+if [[ "$AIOS_ACTION" == doctor ]]; then
+  "$AIOS_ROOT/scripts/aios-selfhost" doctor
+  curl --fail --silent --show-error --max-time 3 "$BUZZ_RELAY_HTTP/health" >/dev/null
+  echo "PASS local relay health; app uses its own keyring, data directory and agent workspace."
+  exit 0
+fi
+
+if [[ "$AIOS_ACTION" == build || "$AIOS_ACTION" == dev ]]; then
+  # shellcheck source=/dev/null
+  source "$AIOS_ROOT/bin/activate-hermit"
+  export CARGO_TARGET_DIR="$AIOS_ROOT/target"
+  cargo build -p buzz-acp -p buzz-agent -p buzz-backend-kubernetes \
+    -p buzz-dev-mcp -p buzz-cli -p git-credential-nostr
+  AIOS_TARGET="$(rustc -vV | sed -n 's/^host: //p')"
+  AIOS_CARGO_TARGET="$(cargo metadata --format-version 1 --no-deps | node -p "JSON.parse(require('fs').readFileSync(0, 'utf8')).target_directory")"
+  for AIOS_BINARY in buzz-acp buzz-agent buzz-backend-kubernetes buzz-dev-mcp git-credential-nostr buzz; do
+    install -m 755 "$AIOS_CARGO_TARGET/debug/$AIOS_BINARY" \
+      "$AIOS_ROOT/desktop/src-tauri/binaries/$AIOS_BINARY-$AIOS_TARGET"
+  done
+  cd "$AIOS_ROOT/desktop"
+  export CARGO_TARGET_DIR="$AIOS_ROOT/desktop/src-tauri/target"
+  pnpm install --frozen-lockfile
+  if [[ "$AIOS_ACTION" == dev ]]; then
+    exec pnpm tauri dev --config src-tauri/tauri.aios.conf.json
+  fi
+  pnpm tauri build --debug --bundles app --config src-tauri/tauri.aios.conf.json
+  echo "Packaged AIOS Pilot. Open it with: scripts/aios-desktop open"
+  exit 0
+fi
+
+AIOS_APP="$AIOS_ROOT/desktop/src-tauri/target/debug/bundle/macos/AIOS Pilot.app"
+if [[ ! -d "$AIOS_APP" ]]; then
+  echo "Build the app first: scripts/aios-desktop build" >&2
+  exit 1
+fi
+if ! curl --fail --silent --max-time 3 "$BUZZ_RELAY_HTTP/health" >/dev/null; then
+  echo "The local relay is unavailable. Start it with: scripts/aios-selfhost start" >&2
+  exit 1
+fi
+exec open "$AIOS_APP"

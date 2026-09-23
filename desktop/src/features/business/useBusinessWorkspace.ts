@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useIdentityQuery } from "@/shared/api/hooks";
-import { setCanvas } from "@/shared/api/tauri";
+import { getCanvas, setCanvas } from "@/shared/api/tauri";
 import {
   findBusinessWorkspaces,
   initializeBusinessWorkspace,
@@ -38,6 +38,23 @@ export function useBusinessWorkspace() {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
+  });
+  // Watch the revision separately. Updating the editor's base in the background
+  // would let an old draft overwrite an agent's newer context without conflict.
+  const remoteHead = useQuery({
+    queryKey: [
+      "business-context-head",
+      ...scope,
+      channel?.id,
+      context.data?.revision,
+    ],
+    queryFn: async () =>
+      (await getCanvas(channel?.id ?? "", canvasScope)).eventId ?? "none",
+    enabled: Boolean(channel && context.data?.document && scope[0] && scope[1]),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    gcTime: 30_000,
+    retry: 1,
   });
 
   async function initialize(name: string) {
@@ -117,5 +134,8 @@ export function useBusinessWorkspace() {
     relayUrl: activeCommunity?.relayUrl,
     pubkey: identity.data?.pubkey,
     canvasScope,
+    hasRemoteUpdate:
+      remoteHead.data !== undefined &&
+      remoteHead.data !== context.data?.revision,
   };
 }

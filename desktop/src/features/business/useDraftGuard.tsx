@@ -39,8 +39,8 @@ export function useDraftGuard() {
         <AlertDialogHeader>
           <AlertDialogTitle>Leave your unsaved changes?</AlertDialogTitle>
           <AlertDialogDescription>
-            Your saved company context is safe. Stay here to save the changes
-            you have just made, or discard this draft.
+            Your saved work is safe. Stay here to save the changes you have just
+            made, or discard this draft.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
