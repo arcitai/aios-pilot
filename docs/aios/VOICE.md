@@ -15,6 +15,26 @@ against the captured workspace. The signing key is retained only in the
 in-memory huddle state for that session's cleanup and is excluded from Tauri
 state serialization.
 
+## Incoming owner-approved requests
+
+An owned managed runtime can request a private voice huddle through the
+existing signed and encrypted Nostr kind `24200` observer-frame envelope with
+`frame=control`. The request binds the owner, agent, relay, current runtime
+start nonce, business channel, request ID, and expiry. Requests expire within
+60 seconds. This protocol is separate from ACP permission requests.
+
+The desktop rings only for a known locally owned agent whose current runtime is
+ready on the active relay and whose request channel still contains both owner
+and agent. It applies a per-agent request limit and a bounded pending queue.
+There is no auto-answer: Accept is an explicit click that starts the exact
+scoped huddle and requests microphone access. The owner sends the encrypted
+accept decision only after that huddle is bound to the requested channel,
+relay, owner, and agent and the microphone is connected. Setup failure sends a
+decline only while the request binding remains current. Decline and expiry
+start no huddle. The CLI waits for a matching owner-signed and encrypted
+decision up to the request expiry and returns `accept`, `decline`, or `timeout`
+as JSON.
+
 ## Speech recognition and Danish
 
 The current huddle speech-to-text model is NVIDIA Parakeet TDT-CTC 110M in an
