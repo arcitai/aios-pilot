@@ -85,6 +85,17 @@ fn authorized(headers: &HeaderMap) -> bool {
         == Some(TEST_AUTHORIZATION)
 }
 
+async fn fixture_auth_test(headers: HeaderMap) -> Result<Json<Value>, StatusCode> {
+    if !authorized(&headers) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    Ok(Json(json!({
+        "ok": true,
+        "team": "Example workspace",
+        "team_id": "T12345678"
+    })))
+}
+
 #[tokio::test]
 async fn bot_tokens_are_required_and_rejected_credentials_are_not_saved() {
     async fn unauthorized(headers: HeaderMap) -> Result<Json<Value>, StatusCode> {
@@ -140,6 +151,7 @@ async fn verified_bot_tokens_save_only_after_auth_test_and_status_rechecks_them(
         .expect("verified token saves");
     let status = adapter.status(&scope()).await.expect("status verifies");
     assert!(status.connected);
+    assert_eq!(status.workspace_id.as_deref(), Some("T12345678"));
     assert_eq!(status.workspace_name.as_deref(), Some("Example workspace"));
     assert_eq!(
         store
@@ -241,6 +253,7 @@ async fn channel_browsing_is_bounded_filtered_to_membership_and_cursor_paged() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let (origin, server) = serve(
         Router::new()
+            .route("/auth.test", post(fixture_auth_test))
             .route("/conversations.list", get(list))
             .with_state(Arc::clone(&requests)),
     )
@@ -256,6 +269,10 @@ async fn channel_browsing_is_bounded_filtered_to_membership_and_cursor_paged() {
     assert_eq!(first.next_cursor.as_deref(), Some("opaque-next-cursor"));
     assert_eq!(first.channels.len(), 2);
     assert_eq!(first.channels[0].id, CHANNEL_ID);
+    assert_eq!(
+        first.channels[0].url,
+        "https://slack.com/app_redirect?channel=C12345678&team=T12345678"
+    );
     assert!(!first.channels[0].is_private);
     assert!(first.channels[1].is_private);
     let second = adapter
@@ -313,6 +330,7 @@ async fn import_reads_only_the_selected_channel_and_marks_omitted_history() {
     let history_requests = Arc::new(Mutex::new(Vec::new()));
     let (origin, server) = serve(
         Router::new()
+            .route("/auth.test", post(fixture_auth_test))
             .route("/conversations.info", get(info))
             .route("/conversations.history", get(history))
             .with_state(Arc::clone(&history_requests)),
@@ -326,7 +344,10 @@ async fn import_reads_only_the_selected_channel_and_marks_omitted_history() {
         .await
         .expect("selected channel imports");
     assert_eq!(imported.title, "Slack #operations recent messages");
-    assert_eq!(imported.url, "https://app.slack.com/archives/C12345678");
+    assert_eq!(
+        imported.url,
+        "https://slack.com/app_redirect?channel=C12345678&team=T12345678"
+    );
     assert!(imported.truncated);
     assert!(imported
         .content
@@ -359,6 +380,7 @@ async fn history_is_not_requested_for_a_channel_the_bot_does_not_belong_to() {
     }
     let (origin, server) = serve(
         Router::new()
+            .route("/auth.test", post(fixture_auth_test))
             .route("/conversations.info", get(info))
             .route("/conversations.history", get(history)),
     )
@@ -405,6 +427,7 @@ async fn imported_history_obeys_utf16_bound_and_preserves_code_points() {
     }
     let (origin, server) = serve(
         Router::new()
+            .route("/auth.test", post(fixture_auth_test))
             .route("/conversations.info", get(info))
             .route("/conversations.history", get(history)),
     )
@@ -460,7 +483,12 @@ async fn import_deadline_bounds_selected_channel_requests() {
             "channel": {"id": CHANNEL_ID, "name": "operations", "is_private": false, "is_member": true, "is_archived": false}
         })))
     }
-    let (origin, server) = serve(Router::new().route("/conversations.info", get(slow_info))).await;
+    let (origin, server) = serve(
+        Router::new()
+            .route("/auth.test", post(fixture_auth_test))
+            .route("/conversations.info", get(slow_info)),
+    )
+    .await;
     let store = MemoryCredentialStore::default();
     let adapter = SlackAdapter::for_test_with_timeout(&store, origin, Duration::from_millis(20))
         .expect("adapter builds");

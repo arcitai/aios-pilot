@@ -88,7 +88,11 @@ test("missing, malformed, or pending connection checks cannot report connected",
 
 test("Slack is connected only after a bot token verifies its workspace", () => {
   assert.deepEqual(
-    reportSlackStatus({ connected: true, workspaceName: "Example workspace" }),
+    reportSlackStatus({
+      connected: true,
+      workspaceId: "T12345678",
+      workspaceName: "Example workspace",
+    }),
     {
       providerId: "slack",
       state: "connected",
@@ -96,12 +100,15 @@ test("Slack is connected only after a bot token verifies its workspace", () => {
       workspaceName: "Example workspace",
     },
   );
-  assert.deepEqual(reportVerifiedSlackWorkspace("Example workspace"), {
-    providerId: "slack",
-    state: "connected",
-    verified: true,
-    workspaceName: "Example workspace",
-  });
+  assert.deepEqual(
+    reportVerifiedSlackWorkspace("T12345678", "Example workspace"),
+    {
+      providerId: "slack",
+      state: "connected",
+      verified: true,
+      workspaceName: "Example workspace",
+    },
+  );
   assert.deepEqual(checkingSlackStatus(), {
     providerId: "slack",
     state: "checking",
@@ -113,7 +120,19 @@ test("Slack is connected only after a bot token verifies its workspace", () => {
     verified: false,
   });
   assert.deepEqual(
-    reportSlackStatus({ connected: true, workspaceName: " " }),
+    reportSlackStatus({
+      connected: true,
+      workspaceId: "T12345678",
+      workspaceName: " ",
+    }),
+    unknownSlackStatus(),
+  );
+  assert.deepEqual(
+    reportSlackStatus({
+      connected: true,
+      workspaceId: "invalid",
+      workspaceName: "Example workspace",
+    }),
     unknownSlackStatus(),
   );
 });

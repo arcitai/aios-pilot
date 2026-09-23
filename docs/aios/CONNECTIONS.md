@@ -103,7 +103,8 @@ is detected, Buzz marks the import as partial. Responses are bounded to 64 KiB
 for identity and channel checks, 1 MiB for a channel-list page, and 512 KiB for
 history; a selected-channel import has a 20-second total deadline. Imported
 text uses the shared 40,000 UTF-16-unit limit. The source URL is constructed
-from the chosen channel ID on `app.slack.com` and retained only as provenance.
+from the chosen channel ID and verified workspace ID using Slack's
+`https://slack.com/app_redirect` channel link, then retained only as provenance.
 
 ## Credential handling and desktop surface
 

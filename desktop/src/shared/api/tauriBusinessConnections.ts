@@ -55,8 +55,8 @@ export type NotionPageSearchResult = {
 };
 
 export type SlackConnectionStatus =
-  | { connected: false; workspaceName: null }
-  | { connected: true; workspaceName: string };
+  | { connected: false; workspaceId: null; workspaceName: null }
+  | { connected: true; workspaceId: string; workspaceName: string };
 
 export type SlackWorkspaceAccount = { teamId: string; name: string };
 
@@ -184,16 +184,27 @@ export function createBusinessConnectionsApi(
     ): Promise<SlackConnectionStatus> {
       const status = await invokeInScope<{
         connected: boolean;
+        workspaceId?: string | null;
         workspaceName?: string | null;
       }>(scope, "get_slack_connection_status");
-      if (!status.connected) return { connected: false, workspaceName: null };
+      if (!status.connected) {
+        return { connected: false, workspaceId: null, workspaceName: null };
+      }
       if (
+        typeof status.workspaceId !== "string" ||
+        !status.workspaceId.trim() ||
         typeof status.workspaceName !== "string" ||
         !status.workspaceName.trim()
       ) {
-        throw new Error("Slack status did not include a verified workspace.");
+        throw new Error(
+          "Slack status did not include a verified workspace ID and name.",
+        );
       }
-      return { connected: true, workspaceName: status.workspaceName };
+      return {
+        connected: true,
+        workspaceId: status.workspaceId,
+        workspaceName: status.workspaceName,
+      };
     },
 
     connectSlackConnection(

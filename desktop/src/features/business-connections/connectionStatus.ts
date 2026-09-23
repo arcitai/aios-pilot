@@ -106,6 +106,8 @@ export function reportSlackStatus(
     return { providerId: "slack", state: "not_connected", verified: false };
   }
   if (
+    typeof status.workspaceId !== "string" ||
+    !/^T[A-Z0-9]{7,31}$/.test(status.workspaceId) ||
     typeof status.workspaceName !== "string" ||
     !status.workspaceName.trim()
   ) {
@@ -119,6 +121,9 @@ export function reportSlackStatus(
   };
 }
 
-export function reportVerifiedSlackWorkspace(workspaceName: string) {
-  return reportSlackStatus({ connected: true, workspaceName });
+export function reportVerifiedSlackWorkspace(
+  workspaceId: string,
+  workspaceName: string,
+) {
+  return reportSlackStatus({ connected: true, workspaceId, workspaceName });
 }

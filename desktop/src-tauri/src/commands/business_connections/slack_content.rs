@@ -38,8 +38,9 @@ pub(super) fn safe_timestamp(value: &str) -> bool {
         && fractional.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-pub(super) fn channel_url(channel_id: &str) -> Option<String> {
-    valid_channel_id(channel_id).then(|| format!("https://app.slack.com/archives/{channel_id}"))
+pub(super) fn channel_url(channel_id: &str, team_id: &str) -> Option<String> {
+    (valid_channel_id(channel_id) && valid_team_id(team_id))
+        .then(|| format!("https://slack.com/app_redirect?channel={channel_id}&team={team_id}"))
 }
 
 #[cfg(test)]
@@ -56,10 +57,11 @@ mod tests {
         assert!(!valid_channel_id("D12345678"));
         assert!(!valid_channel_id("C1234567/slack.com"));
         assert_eq!(
-            channel_url("C12345678").as_deref(),
-            Some("https://app.slack.com/archives/C12345678")
+            channel_url("C12345678", "T12345678").as_deref(),
+            Some("https://slack.com/app_redirect?channel=C12345678&team=T12345678")
         );
-        assert!(channel_url("C12345678?redirect=bad").is_none());
+        assert!(channel_url("C12345678?redirect=bad", "T12345678").is_none());
+        assert!(channel_url("C12345678", "T123456").is_none());
         assert!(valid_team_id("T12345678"));
         assert!(!valid_team_id("C12345678"));
     }

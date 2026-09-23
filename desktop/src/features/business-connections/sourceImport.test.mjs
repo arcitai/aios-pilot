@@ -150,25 +150,41 @@ test("accepts fixed Notion provenance URLs but never a URL with extra fetch targ
 });
 
 test("accepts provenance only for the selected Slack channel", () => {
+  const workspaceId = "T12345678";
   const source = {
     title: "# operations recent messages",
     content: "# Slack channel: #operations\nMessage text",
-    url: "https://app.slack.com/archives/C12345678",
+    url: "https://slack.com/app_redirect?channel=C12345678&team=T12345678",
     kind: "url",
     truncated: true,
   };
-  assert.equal(sanitizeSlackImport(source, "C12345678").source.url, source.url);
+  assert.equal(
+    sanitizeSlackImport(source, "C12345678", workspaceId).source.url,
+    source.url,
+  );
   for (const url of [
-    "https://slack.com/archives/C12345678",
-    "https://app.slack.com/archives/C87654321",
-    "https://app.slack.com/archives/C12345678?redirect=https://evil.example",
-    "https://user:password@app.slack.com/archives/C12345678",
+    "https://app.slack.com/archives/C12345678",
+    "https://slack.com.evil.example/app_redirect?channel=C12345678&team=T12345678",
+    "https://slack.com/app_redirect?channel=C87654321&team=T12345678",
+    "https://slack.com/app_redirect?channel=C12345678&team=T87654321",
+    "https://slack.com/app_redirect?channel=C12345678&team=T12345678&redirect=https://evil.example",
+    "https://slack.com/app_redirect?channel=C12345678&channel=C87654321&team=T12345678",
+    "https://user:password@slack.com/app_redirect?channel=C12345678&team=T12345678",
+    "https://slack.com:444/app_redirect?channel=C12345678&team=T12345678",
   ]) {
     assert.throws(
-      () => sanitizeSlackImport({ ...source, url }, "C12345678"),
+      () => sanitizeSlackImport({ ...source, url }, "C12345678", workspaceId),
       /invalid channel link/,
     );
   }
+  assert.throws(
+    () => sanitizeSlackImport(source, "C87654321", workspaceId),
+    /invalid channel link/,
+  );
+  assert.throws(
+    () => sanitizeSlackImport(source, "C12345678", "T87654321"),
+    /invalid channel link/,
+  );
 });
 
 test("preserves Slack's native partial-history marker without adding another", () => {
@@ -178,11 +194,12 @@ test("preserves Slack's native partial-history marker without adding another", (
     {
       title: "# operations recent messages",
       content: `# Slack channel #operations\n${marker}`,
-      url: "https://app.slack.com/archives/C12345678",
+      url: "https://slack.com/app_redirect?channel=C12345678&team=T12345678",
       kind: "url",
       truncated: true,
     },
     "C12345678",
+    "T12345678",
   );
   assert.equal(result.truncated, true);
   assert.equal(result.source.content.split(marker).length - 1, 1);

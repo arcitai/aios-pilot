@@ -11,7 +11,7 @@ function channel(id, name = `channel-${id}`) {
     id,
     name,
     isPrivate: false,
-    url: `https://app.slack.com/archives/${id}`,
+    url: `https://slack.com/app_redirect?channel=${id}&team=T12345678`,
   };
 }
 

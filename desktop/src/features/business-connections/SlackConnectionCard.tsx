@@ -52,6 +52,7 @@ export function SlackConnectionCard({
   const statusCallback = React.useRef(onConnectionStatus);
   const [connectionView, setConnectionView] =
     React.useState<ConnectionView>("checking");
+  const [workspaceId, setWorkspaceId] = React.useState<string | null>(null);
   const [workspaceName, setWorkspaceName] = React.useState<string | null>(null);
   const [token, setToken] = React.useState("");
   const [showTokenEntry, setShowTokenEntry] = React.useState(false);
@@ -81,12 +82,17 @@ export function SlackConnectionCard({
   const applyStatus = React.useCallback(
     (status: Awaited<ReturnType<typeof slackConnectionAdapter.status>>) => {
       setConnectionView(status.connected ? "connected" : "not_configured");
+      setWorkspaceId(status.connected ? status.account.id : null);
       setWorkspaceName(status.connected ? status.account.label : null);
       report(
         reportSlackStatus(
           status.connected
-            ? { connected: true, workspaceName: status.account.label }
-            : { connected: false, workspaceName: null },
+            ? {
+                connected: true,
+                workspaceId: status.account.id,
+                workspaceName: status.account.label,
+              }
+            : { connected: false, workspaceId: null, workspaceName: null },
         ),
       );
     },
@@ -110,6 +116,7 @@ export function SlackConnectionCard({
       .catch((statusError: unknown) => {
         if (!current) return;
         setConnectionView("error");
+        setWorkspaceId(null);
         setWorkspaceName(null);
         report(unknownSlackStatus());
         setError(
@@ -130,6 +137,7 @@ export function SlackConnectionCard({
         await readStatus();
       } catch (statusError) {
         setConnectionView("error");
+        setWorkspaceId(null);
         setWorkspaceName(null);
         report(unknownSlackStatus());
         setError(
@@ -152,12 +160,13 @@ export function SlackConnectionCard({
           submittedToken,
         );
         setConnectionView("connected");
+        setWorkspaceId(workspace.id);
         setWorkspaceName(workspace.label);
         setChannels(null);
         setNextCursor(null);
         setHasMore(false);
         setShowTokenEntry(false);
-        report(reportVerifiedSlackWorkspace(workspace.label));
+        report(reportVerifiedSlackWorkspace(workspace.id, workspace.label));
         setNotice("Slack is connected for this community and identity.");
       } catch (connectError) {
         setError(errorMessage(connectError, "Could not connect Slack."));
@@ -191,9 +200,13 @@ export function SlackConnectionCard({
       setError(null);
       setNotice(null);
       try {
+        if (!workspaceId) {
+          throw new Error("Slack’s verified workspace ID is unavailable.");
+        }
         const imported = sanitizeSlackImport(
           await slackConnectionAdapter.importResource(scope, channel),
           channel.id,
+          workspaceId,
         );
         await onImportSource(imported.source);
         setNotice(
@@ -227,6 +240,7 @@ export function SlackConnectionCard({
         );
       } catch (revokeError) {
         setConnectionView("error");
+        setWorkspaceId(null);
         setWorkspaceName(null);
         report(unknownSlackStatus());
         setError(

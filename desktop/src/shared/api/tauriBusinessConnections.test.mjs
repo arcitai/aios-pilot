@@ -5,6 +5,28 @@ const { createBusinessConnectionsApi } = await import(
   "./tauriBusinessConnections.ts"
 );
 
+test("Slack status requires and returns the verified workspace ID", async () => {
+  const api = createBusinessConnectionsApi(async (command) => {
+    assert.equal(command, "get_slack_connection_status");
+    return {
+      connected: true,
+      workspaceId: "T12345678",
+      workspaceName: "Example workspace",
+    };
+  });
+  assert.deepEqual(
+    await api.getSlackConnectionStatus({
+      expectedRelayUrl: "wss://community.example",
+      expectedSignerPubkey: "a".repeat(64),
+    }),
+    {
+      connected: true,
+      workspaceId: "T12345678",
+      workspaceName: "Example workspace",
+    },
+  );
+});
+
 test("all provider commands keep the rendered A scope when native workspace is B", async () => {
   const renderedScopeA = {
     expectedRelayUrl: "wss://community-a.example",
@@ -61,7 +83,7 @@ test("all provider commands keep the rendered A scope when native workspace is B
       };
     }
     if (command === "get_slack_connection_status") {
-      return { connected: false, workspaceName: null };
+      return { connected: false, workspaceId: null, workspaceName: null };
     }
     if (command === "connect_slack_connection") {
       return { teamId: "T12345678", name: "Example workspace" };
@@ -77,7 +99,7 @@ test("all provider commands keep the rendered A scope when native workspace is B
       return {
         title: "# operations recent messages",
         content: "# Slack channel: #operations",
-        url: "https://app.slack.com/archives/C12345678",
+        url: "https://slack.com/app_redirect?channel=C12345678&team=T12345678",
         kind: "url",
         truncated: true,
       };

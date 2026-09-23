@@ -80,6 +80,7 @@ pub struct SlackWorkspaceAccount {
 #[serde(rename_all = "camelCase")]
 pub struct SlackConnectionStatus {
     pub connected: bool,
+    pub workspace_id: Option<String>,
     pub workspace_name: Option<String>,
 }
 
@@ -267,6 +268,7 @@ impl<'a> SlackAdapter<'a> {
         let Some(token) = self.load_token(scope)? else {
             return Ok(SlackConnectionStatus {
                 connected: false,
+                workspace_id: None,
                 workspace_name: None,
             });
         };
@@ -274,6 +276,7 @@ impl<'a> SlackAdapter<'a> {
         let workspace = self.verify_token(&token).await?;
         Ok(SlackConnectionStatus {
             connected: true,
+            workspace_id: Some(workspace.team_id),
             workspace_name: Some(workspace.name),
         })
     }
@@ -289,6 +292,7 @@ impl<'a> SlackAdapter<'a> {
         if let Some(cursor) = cursor {
             validate_cursor(cursor)?;
         }
+        let workspace = self.verify_token(token).await?;
         let limit = MAX_CHANNELS_PER_PAGE.to_string();
         let mut query = vec![
             ("limit", limit.as_str()),
@@ -312,7 +316,7 @@ impl<'a> SlackAdapter<'a> {
         let channels = result
             .channels
             .into_iter()
-            .filter_map(channel_from_api)
+            .filter_map(|channel| channel_from_api(channel, &workspace.team_id))
             .collect();
         let next_cursor = result
             .response_metadata
@@ -340,10 +344,11 @@ impl<'a> SlackAdapter<'a> {
         if !valid_channel_id(channel_id) {
             return Err(SlackConnectionError::InvalidChannelId);
         }
-        tokio::time::timeout(
-            self.import_timeout,
-            self.import_channel_history_with_deadline(token, channel_id),
-        )
+        tokio::time::timeout(self.import_timeout, async {
+            let workspace = self.verify_token(token).await?;
+            self.import_channel_history_with_deadline(token, channel_id, &workspace.team_id)
+                .await
+        })
         .await
         .map_err(|_| SlackConnectionError::Timeout)?
     }
@@ -352,6 +357,7 @@ impl<'a> SlackAdapter<'a> {
         &self,
         token: &str,
         channel_id: &str,
+        team_id: &str,
     ) -> Result<ImportedSlackHistory, SlackConnectionError> {
         let channel_query = [("channel", channel_id)];
         let info: ApiChannelInfo = self
@@ -441,7 +447,7 @@ impl<'a> SlackAdapter<'a> {
             partial,
             "[Slack history partially imported by Buzz; older messages, threads, or non-text content were omitted.]",
         );
-        let url = channel_url(channel_id).ok_or(SlackConnectionError::InvalidChannelId)?;
+        let url = channel_url(channel_id, team_id).ok_or(SlackConnectionError::InvalidChannelId)?;
         Ok(ImportedSlackHistory {
             title: format!("Slack #{name} recent messages"),
             content,
@@ -498,7 +504,7 @@ async fn decode_api_response<T: DeserializeOwned>(
     serde_json::from_value(value).map_err(|_| SlackConnectionError::InvalidResponse)
 }
 
-fn channel_from_api(channel: ApiChannel) -> Option<SlackChannel> {
+fn channel_from_api(channel: ApiChannel, team_id: &str) -> Option<SlackChannel> {
     if !valid_channel_id(&channel.id)
         || channel.is_member != Some(true)
         || channel.is_archived == Some(true)
@@ -511,7 +517,7 @@ fn channel_from_api(channel: ApiChannel) -> Option<SlackChannel> {
         return None;
     }
     Some(SlackChannel {
-        url: channel_url(&channel.id)?,
+        url: channel_url(&channel.id, team_id)?,
         id: channel.id,
         name,
         is_private,

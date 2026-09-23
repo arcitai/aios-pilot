@@ -35,7 +35,7 @@ export const slackConnectionAdapter: BusinessConnectionAdapter<
     return status.connected
       ? {
           connected: true,
-          account: { id: status.workspaceName, label: status.workspaceName },
+          account: { id: status.workspaceId, label: status.workspaceName },
         }
       : { connected: false };
   },

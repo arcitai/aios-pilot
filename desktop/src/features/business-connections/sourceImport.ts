@@ -11,6 +11,7 @@ const NOTION_PAGE_ID =
 const NOTION_PAGE_ID_SUFFIX =
   /(?:^|-)([A-Fa-f0-9]{32}|[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12})$/;
 const SLACK_CHANNEL_ID = /^[CG][A-Z0-9]{8,31}$/;
+const SLACK_TEAM_ID = /^T[A-Z0-9]{7,31}$/;
 
 export type SanitizedConnectionImport = {
   source: BusinessConnectionSource;
@@ -50,6 +51,7 @@ function sourceUrl(
   url: string,
   provider: "github" | "notion" | "slack",
   expectedResourceId?: string,
+  expectedWorkspaceId?: string,
 ): string {
   let parsedUrl: URL;
   try {
@@ -109,16 +111,29 @@ function sourceUrl(
       throw new Error("Notion returned an invalid page link.");
     }
   } else {
-    const channelPath = parsedUrl.pathname.split("/").filter(Boolean);
+    const channelIds = parsedUrl.searchParams.getAll("channel");
+    const teamIds = parsedUrl.searchParams.getAll("team");
+    const queryKeys = [...parsedUrl.searchParams.keys()];
     if (
-      commonInvalid ||
-      parsedUrl.hostname !== "app.slack.com" ||
-      channelPath.length !== 2 ||
-      channelPath[0] !== "archives" ||
-      !SLACK_CHANNEL_ID.test(channelPath[1]) ||
+      parsedUrl.protocol !== "https:" ||
+      parsedUrl.username !== "" ||
+      parsedUrl.password !== "" ||
+      parsedUrl.port !== "" ||
+      parsedUrl.hash !== "" ||
+      parsedUrl.hostname !== "slack.com" ||
+      parsedUrl.pathname !== "/app_redirect" ||
+      channelIds.length !== 1 ||
+      teamIds.length !== 1 ||
+      queryKeys.length !== 2 ||
+      queryKeys.some((key) => key !== "channel" && key !== "team") ||
+      !SLACK_CHANNEL_ID.test(channelIds[0]) ||
+      !SLACK_TEAM_ID.test(teamIds[0]) ||
       expectedResourceId === undefined ||
       !SLACK_CHANNEL_ID.test(expectedResourceId) ||
-      channelPath[1] !== expectedResourceId
+      expectedWorkspaceId === undefined ||
+      !SLACK_TEAM_ID.test(expectedWorkspaceId) ||
+      channelIds[0] !== expectedResourceId ||
+      teamIds[0] !== expectedWorkspaceId
     ) {
       throw new Error("Slack returned an invalid channel link.");
     }
@@ -130,6 +145,7 @@ function sanitizeImport(
   input: unknown,
   provider: "github" | "notion" | "slack",
   expectedResourceId?: string,
+  expectedWorkspaceId?: string,
 ): SanitizedConnectionImport {
   const providerName =
     provider === "github"
@@ -158,6 +174,7 @@ function sanitizeImport(
     typeof candidate.url === "string" ? candidate.url : "",
     provider,
     expectedResourceId,
+    expectedWorkspaceId,
   );
   const nativeTruncated = candidate.truncated === true;
   let sanitizedContent = content;
@@ -209,8 +226,9 @@ export function sanitizeNotionImport(
 export function sanitizeSlackImport(
   input: unknown,
   expectedChannelId: string,
+  expectedWorkspaceId: string,
 ): SanitizedConnectionImport {
-  return sanitizeImport(input, "slack", expectedChannelId);
+  return sanitizeImport(input, "slack", expectedChannelId, expectedWorkspaceId);
 }
 
 /** Compatibility helper for callers that only need the source contract. */
