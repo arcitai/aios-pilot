@@ -285,7 +285,12 @@ pub fn prepare_agent_workspace(
         fs::create_dir(&target)
             .map_err(|error| format!("create skill directory {}: {error}", target.display()))?;
         set_private_dir_permissions(&target)?;
-        write_private_file(&target.join("SKILL.md"), skill.skill_md.as_bytes())?;
+        // Some runtime readers require LF frontmatter even when the imported
+        // bundle came from Windows. Preserve the reviewed source in the record.
+        write_private_file(
+            &target.join("SKILL.md"),
+            skill.skill_md.replace("\r\n", "\n").as_bytes(),
+        )?;
         for asset in &skill.assets {
             let bytes = BASE64
                 .decode(&asset.content_base64)
@@ -366,6 +371,10 @@ fn ensure_runtime_skill_discovery(
     discovery: &Path,
     workspace: &Path,
 ) -> Result<(), String> {
+    // Buzz Agent reads the canonical directory directly; no alias is needed.
+    if canonical == discovery {
+        return Ok(());
+    }
     if fs::symlink_metadata(discovery).is_ok() {
         let metadata = fs::symlink_metadata(discovery)
             .map_err(|error| format!("inspect {}: {error}", discovery.display()))?;
@@ -639,5 +648,29 @@ mod tests {
         )
         .unwrap_err()
         .contains("does not support"));
+    }
+
+    #[test]
+    fn bundled_agent_uses_canonical_skills_and_preserves_restart_staging() {
+        let runtime = crate::managed_agents::known_acp_runtime("buzz-agent").unwrap();
+        assert!(runtime.supports_skills);
+        assert_eq!(runtime.skill_dir, Some(".agents/skills"));
+        let temp = tempfile::tempdir().unwrap();
+        let shared = temp.path().join("shared");
+        let cli = shared.join(".agents/skills/buzz-cli");
+        fs::create_dir_all(&cli).unwrap();
+        fs::write(cli.join("SKILL.md"), "---\nname: buzz-cli\n---\nCLI help").unwrap();
+        let mut selected = skill("company-analyst", "Use the selected company context.");
+        selected.skill_md = selected.skill_md.replace('\n', "\r\n");
+        let pubkey = "a".repeat(64);
+        let workspace =
+            prepare_agent_workspace(&shared, &pubkey, &[selected], runtime.skill_dir).unwrap();
+        let staged =
+            fs::read_to_string(workspace.join(".agents/skills/company-analyst/SKILL.md")).unwrap();
+        assert!(staged.starts_with("---\n"));
+        assert!(!staged.contains('\r'));
+        prepare_agent_workspace(&shared, &pubkey, &[], runtime.skill_dir).unwrap();
+        assert!(!workspace.join(".agents/skills/company-analyst").exists());
+        assert!(workspace.join(".agents/skills/buzz-cli/SKILL.md").is_file());
     }
 }

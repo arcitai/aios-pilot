@@ -570,12 +570,12 @@ test("specialist skills edit as raw text, respect runtime capability, and persis
         supports_skills: true,
       },
       {
-        id: "buzz-agent",
-        label: "Buzz Agent",
+        id: "custom-agent",
+        label: "Custom Agent",
         avatar_url: "",
         availability: "available",
-        command: "buzz-agent",
-        binary_path: "/usr/local/bin/buzz-agent",
+        command: "custom-agent",
+        binary_path: "/usr/local/bin/custom-agent",
         default_args: [],
         mcp_command: "buzz-dev-mcp",
         install_hint: "",
@@ -620,7 +620,7 @@ test("specialist skills edit as raw text, respect runtime capability, and persis
   await dialog.getByRole("tab", { name: "Customize for this agent" }).click();
   const runtime = dialog.locator("#persona-runtime");
   await runtime.click();
-  await page.getByRole("menuitemradio", { name: "Buzz Agent" }).click();
+  await page.getByRole("menuitemradio", { name: "Custom Agent" }).click();
   await expect(
     dialog.getByText(
       "This runtime does not declare local skill support. Starting this agent is blocked until you switch to a supported runtime or remove its skills.",
@@ -635,7 +635,12 @@ test("specialist skills edit as raw text, respect runtime capability, and persis
   );
 
   await runtime.click();
-  await page.getByRole("menuitemradio", { name: "Goose" }).press("Enter");
+  await expect(
+    page.getByRole("menuitemradio", { name: "Goose" }),
+  ).toBeVisible();
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Enter");
+  await expect(runtime).toContainText("Goose");
   await dialog.getByRole("tab", { name: "Use agent defaults" }).click();
   await expect(dialog.getByLabel("company-analyst SKILL.md")).toBeVisible();
   await dialog.getByLabel("Agent name").fill("Company Analyst");

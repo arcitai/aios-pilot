@@ -23,7 +23,9 @@ importing a v2 snapshot that contains skills.
 The Rust runtime catalog declares whether a runtime supports skill discovery
 and which directory it reads. The editor uses that metadata; it does not infer
 support from a runtime name. Current built-in support is declared for Goose,
-Claude Code, and Codex. A selected skill on a runtime without declared support
+Claude Code, Codex and the bundled Buzz Agent. Buzz Agent reads the canonical
+`.agents/skills` directory and exposes its existing `load_skill` tool. A
+selected skill on a runtime without declared support
 blocks agent start until the runtime changes or the skills are removed.
 
 At start, Buzz prepares a private workspace under
@@ -33,6 +35,9 @@ links that directory into the runtime's declared discovery location. Where
 directory links are unavailable, Buzz copies the skill files instead. Shared
 workspace context such as `AGENTS.md`, `GUIDES`, and `RESEARCH` is linked when
 possible and copied otherwise; `.scratch` and staged skills are per agent.
+Staged skill instructions use LF line endings for runtime compatibility.
+Runtimes may also discover their own global hints or skills; this setting
+controls the agent's staged bundles, not the runtime's global configuration.
 
 This workspace keeps staged skill files separate between agents. It is not an
 OS security sandbox: a runtime process may still have access to other files or
