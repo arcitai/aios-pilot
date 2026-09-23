@@ -41,6 +41,36 @@ buzz agents draft-update --channel <uuid> --agent-name "Current name" \
 
 Run `buzz agents draft-update --help` for optional runtime, provider, model, rename, and access changes. Prefer these CLI commands over any legacy MCP agent-management tools.
 
+## Business workspace
+
+In a private AIOS business channel, read the company's shared context with:
+
+```bash
+buzz business --channel <current-channel-uuid> show
+```
+
+The result is `{channel_id, revision, document}`. The document is the same
+versioned company context and attributed sources shown in Desktop. Always use
+the current context's channel UUID; never discover or choose another company
+implicitly. Do not run `init` inside an existing conversation.
+
+To save a correction, write the complete updated `document` to a local JSON
+file, preserving its schema and unrelated fields, then run:
+
+```bash
+buzz business --channel <current-channel-uuid> update \
+  --file business.json --expected-revision <revision-from-show>
+```
+
+Agents must pass the revision they actually read. A conflict means someone
+changed the context: read it again, reconcile the user's intended change, and
+retry with the new revision. Do not remove the revision flag to force a write.
+Use `source add|list|remove --help` for source operations; mutations also accept
+`--expected-revision`. Preserve source attribution and distinguish facts from
+inferences. This CLI cannot connect a provider or manufacture `connected`
+status; direct credential setup to Desktop's Connections screen. Never put
+credentials in documents, source text, exports, messages or command arguments.
+
 ## Git Repositories
 
 Buzz hosts real git repos, and **you can own one yourself** — no human key needed. `repos create` signs the announcement with *your* key, so the repo is owned by whoever runs it; the owner segment in the clone URL is your own pubkey (hex, not a username). Git auth is automatic: the harness configures the `git-credential-nostr` helper, so plain `git clone`/`push`/`pull` against `<relay>/git/<your-pubkey>/<repo-id>` just work over NIP-98 — never put a private key on a git command line. Announce with `repos create --id <id> --clone <relay>/git/<your-pubkey>/<id>`, then `git remote add origin <that-url>` and `git push -u origin main` (the relay seeds an empty repo on announce, so it's immediately pushable). Requires git 2.46+ for the credential protocol.

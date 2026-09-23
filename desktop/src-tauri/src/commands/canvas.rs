@@ -3,16 +3,45 @@ use tauri::State;
 use crate::{
     app_state::AppState,
     events,
-    relay::{query_relay, submit_event},
+    relay::{
+        assert_expected_relay_scope, assert_expected_signer, query_relay, query_relay_at_with_keys,
+        relay_api_base_url_with_override, submit_event_at_with_keys,
+    },
 };
+
+fn canvas_scope(
+    state: &AppState,
+    relay: Option<&str>,
+    signer: Option<&str>,
+) -> Result<(String, nostr::Keys), String> {
+    let base = relay_api_base_url_with_override(state);
+    assert_expected_relay_scope(relay, &base)?;
+    let keys = state.signing_keys()?;
+    assert_expected_signer(signer, &keys.public_key().to_hex())?;
+    Ok((base, keys))
+}
 
 /// Read the most recent canvas event (kind:40100) for a channel.
 #[tauri::command]
 pub async fn get_canvas(
     channel_id: String,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    let events = query_relay(&state, &[get_canvas_filter(&channel_id)]).await?;
+    let (base, keys) = canvas_scope(
+        &state,
+        expected_relay_url.as_deref(),
+        expected_signer_pubkey.as_deref(),
+    )?;
+    let events = query_relay_at_with_keys(
+        &state,
+        &base,
+        &[get_canvas_filter(&channel_id)],
+        &keys,
+        None,
+    )
+    .await?;
 
     let Some(event) = events.first() else {
         // Explicit nulls: the TS caller distinguishes "no canvas yet" from
@@ -39,6 +68,8 @@ pub async fn set_canvas(
     channel_id: String,
     content: String,
     expected_revision: Option<String>,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let uuid = uuid::Uuid::parse_str(&channel_id)
@@ -64,7 +95,13 @@ pub async fn set_canvas(
     // also refuses a head timestamped far in the future, so a poisoned timeline
     // fails loudly here rather than being silently extended. The no-head /
     // unconditional-append case has no floor and keeps the default `now`.
-    let head = current_canvas_head(&state, &channel_id).await?;
+    // Pin both tenant and signer across every precondition/read/write await.
+    let (base, keys) = canvas_scope(
+        &state,
+        expected_relay_url.as_deref(),
+        expected_signer_pubkey.as_deref(),
+    )?;
+    let head = current_canvas_head(&state, &channel_id, &base, &keys).await?;
     let prior_head_created_at = check_canvas_precondition(expected_revision.as_deref(), head)?;
 
     let mut builder = events::build_set_canvas(uuid, &content, expected_revision.as_deref())?;
@@ -73,7 +110,7 @@ pub async fn set_canvas(
             buzz_sdk_pkg::canvas_write_created_at(floor as u64).map_err(|e| e.to_string())?,
         ));
     }
-    let result = submit_event(builder, &state).await?;
+    let result = submit_event_at_with_keys(builder, &state, &base, &keys).await?;
 
     // Post-write supersession detection (only for conflict-checked writes). The
     // precondition above closes the stale-edit case; this closes the narrower
@@ -87,7 +124,7 @@ pub async fn set_canvas(
     // (frozen conflict marker); our head or a descendant is verified success.
     let mut verified = true;
     if expected_revision.is_some() {
-        let ancestry = current_canvas_head_ancestry(&state, &channel_id).await;
+        let ancestry = current_canvas_head_ancestry(&state, &channel_id, &base, &keys).await;
         verified = classify_post_write(&result.event_id, ancestry)?;
     }
 
@@ -244,8 +281,12 @@ fn canvas_ancestry_filter(channel_id: &str) -> serde_json::Value {
 async fn current_canvas_head(
     state: &AppState,
     channel_id: &str,
+    base: &str,
+    keys: &nostr::Keys,
 ) -> Result<Option<(String, i64)>, String> {
-    let events = query_relay(state, &[canvas_head_filter(channel_id)]).await?;
+    let events =
+        query_relay_at_with_keys(state, base, &[canvas_head_filter(channel_id)], keys, None)
+            .await?;
     Ok(events
         .first()
         .map(|event| (event.id.to_hex(), event.created_at.as_secs() as i64)))
@@ -262,8 +303,17 @@ async fn current_canvas_head(
 async fn current_canvas_head_ancestry(
     state: &AppState,
     channel_id: &str,
+    base: &str,
+    keys: &nostr::Keys,
 ) -> Result<Vec<(String, Option<String>)>, String> {
-    let events = query_relay(state, &[canvas_ancestry_filter(channel_id)]).await?;
+    let events = query_relay_at_with_keys(
+        state,
+        base,
+        &[canvas_ancestry_filter(channel_id)],
+        keys,
+        None,
+    )
+    .await?;
     Ok(events
         .iter()
         .map(|event| {

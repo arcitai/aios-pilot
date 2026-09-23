@@ -1,4 +1,6 @@
-import { Activity, Bot, Folders, Inbox, Zap } from "lucide-react";
+import { Activity, Bot, Building2, Folders, Inbox, Zap } from "lucide-react";
+import { useLocation } from "@tanstack/react-router";
+import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
 import { SidebarProjectsSection } from "@/features/sidebar/ui/SidebarProjectsSection";
@@ -99,6 +101,10 @@ export function AppSidebarPrimaryMenu({
   projectsOverviewActive,
   selectedView,
 }: AppSidebarPrimaryMenuProps) {
+  const isBusiness = useLocation({
+    select: (location) => location.pathname === "/business",
+  });
+  const { goBusiness } = useAppNavigation();
   return (
     <>
       <SidebarHeader
@@ -109,8 +115,19 @@ export function AppSidebarPrimaryMenu({
         <SidebarMenu className="sidebar-primary-menu pb-2">
           <SidebarMenuItem>
             <SidebarMenuButton
+              data-testid="open-business-view"
+              onClick={() => void goBusiness()}
+              isActive={isBusiness}
+              tooltip="Business"
+            >
+              <Building2 className="h-4 w-4" />
+              <SidebarMenuLabel>Business</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
               className="data-[active=true]:font-normal"
-              isActive={selectedView === "home"}
+              isActive={selectedView === "home" && !isBusiness}
               onClick={onSelectHome}
               tooltip="Inbox"
               type="button"

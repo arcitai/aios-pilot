@@ -296,14 +296,19 @@ async fn fetch_starter_channel_metadata(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn create_channel(
     name: String,
     channel_type: String,
     visibility: String,
     description: Option<String>,
     ttl_seconds: Option<i32>,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<ChannelInfo, String> {
+    let relay_base = relay_api_base_url_with_override(&state);
+    assert_expected_relay_scope(expected_relay_url.as_deref(), &relay_base)?;
     let channel_uuid = uuid::Uuid::new_v4();
 
     let vis = match visibility.as_str() {
@@ -331,7 +336,8 @@ pub async fn create_channel(
     // able to retarget the mark onto the new identity.
     let creator_keys = state.signing_keys()?;
     let creator_pubkey = creator_keys.public_key().to_hex();
-    submit_event_with_keys(builder, &state, &creator_keys, None).await?;
+    assert_expected_signer(expected_signer_pubkey.as_deref(), &creator_pubkey)?;
+    crate::relay::submit_event_at_with_keys(builder, &state, &relay_base, &creator_keys).await?;
 
     // Mark this channel pending-owner: we just created it, so we know we're
     // the owner, but the relay's kind:39002 membership entry (#1761) is
@@ -343,13 +349,16 @@ pub async fn create_channel(
     state.mark_pending_owned_channel(&creator_pubkey, &channel_uuid_string);
 
     // Re-fetch the canonical metadata event to return ChannelInfo.
-    let events = query_relay(
+    let events = crate::relay::query_relay_at_with_keys(
         &state,
+        &relay_base,
         &[serde_json::json!({
             "kinds": [39000],
             "#d": [channel_uuid_string],
             "limit": 1
         })],
+        &creator_keys,
+        None,
     )
     .await?;
 

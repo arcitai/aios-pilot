@@ -3,6 +3,7 @@ import type {
   CanvasHistoryCursor,
   CanvasHistoryResponse,
   CanvasResponse,
+  CanvasScope,
   SetCanvasInput,
   SetCanvasResult,
 } from "@/shared/api/canvasTypes";
@@ -30,9 +31,14 @@ type RawSetCanvasResult = {
   verified: boolean;
 };
 
-export async function getCanvas(channelId: string): Promise<CanvasResponse> {
+export async function getCanvas(
+  channelId: string,
+  scope?: CanvasScope,
+): Promise<CanvasResponse> {
   const response = await invokeTauri<RawCanvasResponse>("get_canvas", {
     channelId,
+    expectedRelayUrl: scope?.expectedRelayUrl ?? null,
+    expectedSignerPubkey: scope?.expectedSignerPubkey ?? null,
   });
   return {
     content: response.content,
@@ -52,6 +58,8 @@ export async function setCanvas(
     channelId: input.channelId,
     content: input.content,
     expectedRevision: input.expectedRevision ?? null,
+    expectedRelayUrl: input.expectedRelayUrl ?? null,
+    expectedSignerPubkey: input.expectedSignerPubkey ?? null,
   });
   return {
     ok: response.ok,

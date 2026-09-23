@@ -93,6 +93,12 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goBusiness = React.useCallback(
+    (behavior?: NavigationBehavior) =>
+      commitNavigation({ to: "/business" }, behavior),
+    [commitNavigation],
+  );
+
   const goPulse = React.useCallback(
     (behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -459,6 +465,7 @@ export function useAppNavigation() {
     closeSettings,
     closeWorkflowDetail,
     goAgents,
+    goBusiness,
     goChannel,
     goDuplicateWorkflow,
     goEditWorkflow,
