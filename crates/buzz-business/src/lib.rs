@@ -5,8 +5,8 @@
 
 use std::collections::HashSet;
 
-use chrono::DateTime;
-use serde::{Deserialize, Serialize};
+use chrono::{DateTime, NaiveDate};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 use url::Url;
 
@@ -22,7 +22,6 @@ pub const MAX_DOCUMENT_BYTES: usize = 200_000;
 const MAX_COMPANY_NAME_UNITS: usize = 300;
 const MAX_WEBSITE_UNITS: usize = 2_000;
 const MAX_COMPANY_TEXT_UNITS: usize = 12_000;
-const MAX_COMPANY_LIST_ITEMS: usize = 100;
 const MAX_SOURCES: usize = 100;
 const MAX_SOURCE_ID_UNITS: usize = 128;
 const MAX_SOURCE_TITLE_UNITS: usize = 300;
@@ -39,6 +38,7 @@ const MAX_CONNECTION_DETAILS_UNITS: usize = 2_000;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BusinessDocument {
     /// The document contract version. Only version `1` is currently accepted.
+    #[serde(deserialize_with = "deserialize_schema_version")]
     pub schema_version: u32,
     /// The stable discriminator `aios.business-workspace`.
     pub kind: String,
@@ -54,7 +54,7 @@ pub struct BusinessDocument {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Company {
-    /// Company name, required and non-empty.
+    /// Company name, which may initially be empty.
     pub name: String,
     /// Company website, or an empty string when it is unknown.
     pub website: String,
@@ -62,17 +62,17 @@ pub struct Company {
     pub summary: String,
     /// Intended audience.
     pub audience: String,
-    /// Current offers.
-    pub offers: Vec<String>,
-    /// Current goals.
-    pub goals: Vec<String>,
+    /// Current offers, represented as freeform text.
+    pub offers: String,
+    /// Current goals, represented as freeform text.
+    pub goals: String,
 }
 
 /// A provenance record attached to a business context claim.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BusinessSource {
-    /// Stable source identifier, unique across this document.
+    /// Stable source identifier, unique within the sources collection.
     pub id: String,
     /// Human-readable source title.
     pub title: String,
@@ -81,7 +81,11 @@ pub struct BusinessSource {
     /// Source text or extracted content.
     pub content: String,
     /// Optional absolute HTTP or HTTPS URL.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub url: Option<String>,
     /// ISO-8601 creation timestamp.
     #[serde(rename = "createdAt")]
@@ -104,7 +108,7 @@ pub enum SourceKind {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct BusinessConnection {
-    /// Stable connection identifier, unique across this document.
+    /// Stable connection identifier, unique within the connections collection.
     pub id: String,
     /// Provider identifier, such as `google_drive`.
     pub provider: String,
@@ -113,7 +117,11 @@ pub struct BusinessConnection {
     /// Reported state. A descriptor alone does not authenticate a provider.
     pub status: ConnectionStatus,
     /// Optional non-secret explanatory text.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_optional_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub details: Option<String>,
 }
 
@@ -147,7 +155,7 @@ pub enum BusinessDocumentError {
 }
 
 impl BusinessDocument {
-    /// Create an empty schema-version-one document for a named company.
+    /// Create an empty schema-version-one document; the company name may be empty.
     pub fn new(company_name: impl Into<String>) -> Self {
         Self {
             schema_version: BUSINESS_DOCUMENT_SCHEMA_VERSION,
@@ -157,8 +165,8 @@ impl BusinessDocument {
                 website: String::new(),
                 summary: String::new(),
                 audience: String::new(),
-                offers: Vec::new(),
-                goals: Vec::new(),
+                offers: String::new(),
+                goals: String::new(),
             },
             sources: Vec::new(),
             connections: Vec::new(),
@@ -182,7 +190,7 @@ impl BusinessDocument {
             "company.name",
             &self.company.name,
             MAX_COMPANY_NAME_UNITS,
-            true,
+            false,
         )?;
         validate_text(
             "company.website",
@@ -202,8 +210,18 @@ impl BusinessDocument {
             MAX_COMPANY_TEXT_UNITS,
             false,
         )?;
-        validate_company_list("company.offers", &self.company.offers)?;
-        validate_company_list("company.goals", &self.company.goals)?;
+        validate_text(
+            "company.offers",
+            &self.company.offers,
+            MAX_COMPANY_TEXT_UNITS,
+            false,
+        )?;
+        validate_text(
+            "company.goals",
+            &self.company.goals,
+            MAX_COMPANY_TEXT_UNITS,
+            false,
+        )?;
 
         if self.sources.len() > MAX_SOURCES {
             return Err(BusinessDocumentError::Invalid(format!(
@@ -216,7 +234,7 @@ impl BusinessDocument {
             )));
         }
 
-        let mut ids = HashSet::with_capacity(self.sources.len() + self.connections.len());
+        let mut source_ids = HashSet::with_capacity(self.sources.len());
         for (index, source) in self.sources.iter().enumerate() {
             validate_text(
                 &format!("sources[{index}].id"),
@@ -224,7 +242,7 @@ impl BusinessDocument {
                 MAX_SOURCE_ID_UNITS,
                 true,
             )?;
-            if !ids.insert(source.id.as_str()) {
+            if !source_ids.insert(source.id.as_str()) {
                 return Err(BusinessDocumentError::Invalid(format!(
                     "duplicate id `{}`",
                     source.id
@@ -248,6 +266,7 @@ impl BusinessDocument {
             }
         }
 
+        let mut connection_ids = HashSet::with_capacity(self.connections.len());
         for (index, connection) in self.connections.iter().enumerate() {
             validate_text(
                 &format!("connections[{index}].id"),
@@ -255,7 +274,7 @@ impl BusinessDocument {
                 MAX_CONNECTION_ID_UNITS,
                 true,
             )?;
-            if !ids.insert(connection.id.as_str()) {
+            if !connection_ids.insert(connection.id.as_str()) {
                 return Err(BusinessDocumentError::Invalid(format!(
                     "duplicate id `{}`",
                     connection.id
@@ -311,30 +330,13 @@ pub fn parse_document(input: &str) -> Result<BusinessDocument, BusinessDocumentE
     Ok(document)
 }
 
-fn validate_company_list(name: &str, items: &[String]) -> Result<(), BusinessDocumentError> {
-    if items.len() > MAX_COMPANY_LIST_ITEMS {
-        return Err(BusinessDocumentError::Invalid(format!(
-            "{name} may contain at most {MAX_COMPANY_LIST_ITEMS} entries"
-        )));
-    }
-    for (index, item) in items.iter().enumerate() {
-        validate_text(
-            &format!("{name}[{index}]"),
-            item,
-            MAX_COMPANY_TEXT_UNITS,
-            false,
-        )?;
-    }
-    Ok(())
-}
-
 fn validate_text(
     field: &str,
     value: &str,
     max_utf16_units: usize,
     required: bool,
 ) -> Result<(), BusinessDocumentError> {
-    if required && value.trim().is_empty() {
+    if required && value.is_empty() {
         return Err(BusinessDocumentError::Invalid(format!(
             "{field} must not be empty"
         )));
@@ -357,12 +359,49 @@ fn validate_text(
 }
 
 fn validate_timestamp(index: usize, value: &str) -> Result<(), BusinessDocumentError> {
-    DateTime::parse_from_rfc3339(value).map_err(|_| {
+    let invalid = || {
         BusinessDocumentError::Invalid(format!(
             "sources[{index}].createdAt must be an ISO-8601 timestamp"
         ))
-    })?;
-    Ok(())
+    };
+    let Some((date, time_and_zone)) = value.split_once('T') else {
+        return Err(invalid());
+    };
+    if time_and_zone.contains('T')
+        || !time_and_zone.is_ascii()
+        || date.len() != 10
+        || date.as_bytes().get(4) != Some(&b'-')
+        || date.as_bytes().get(7) != Some(&b'-')
+        || !date
+            .bytes()
+            .enumerate()
+            .all(|(position, byte)| matches!(position, 4 | 7) || byte.is_ascii_digit())
+        || NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err()
+    {
+        return Err(invalid());
+    }
+
+    let (time, zone) = if let Some(time) = time_and_zone.strip_suffix('Z') {
+        (time, "Z")
+    } else {
+        let Some(zone_start) = time_and_zone.len().checked_sub(6) else {
+            return Err(invalid());
+        };
+        let zone = &time_and_zone[zone_start..];
+        if !valid_timestamp_offset(zone) {
+            return Err(invalid());
+        }
+        (&time_and_zone[..zone_start], zone)
+    };
+    let minute_precision = valid_timestamp_time(time).ok_or_else(invalid)?;
+    let normalized = if minute_precision {
+        format!("{date}T{time}:00{zone}")
+    } else {
+        value.to_string()
+    };
+    DateTime::parse_from_rfc3339(&normalized)
+        .map(|_| ())
+        .map_err(|_| invalid())
 }
 
 fn validate_http_url(index: usize, value: &str) -> Result<(), BusinessDocumentError> {
@@ -370,6 +409,11 @@ fn validate_http_url(index: usize, value: &str) -> Result<(), BusinessDocumentEr
     if utf16_units > MAX_SOURCE_URL_UNITS {
         return Err(BusinessDocumentError::Invalid(format!(
             "sources[{index}].url exceeds the {MAX_SOURCE_URL_UNITS}-UTF-16-code-unit limit"
+        )));
+    }
+    if !(value.starts_with("http://") || value.starts_with("https://")) {
+        return Err(BusinessDocumentError::Invalid(format!(
+            "sources[{index}].url must be an absolute HTTP or HTTPS URL"
         )));
     }
     let parsed = Url::parse(value).map_err(|_| {
@@ -385,6 +429,85 @@ fn validate_http_url(index: usize, value: &str) -> Result<(), BusinessDocumentEr
     Ok(())
 }
 
+fn valid_timestamp_offset(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 6 || !matches!(bytes[0], b'+' | b'-') || bytes[3] != b':' {
+        return false;
+    }
+    let Some(hours) = parse_ascii_two_digits(&bytes[1..3]) else {
+        return false;
+    };
+    let Some(minutes) = parse_ascii_two_digits(&bytes[4..6]) else {
+        return false;
+    };
+    hours <= 23 && minutes <= 59
+}
+
+/// Return whether a Zod-compatible ISO time has minute precision.
+fn valid_timestamp_time(value: &str) -> Option<bool> {
+    let bytes = value.as_bytes();
+    if !value.is_ascii() || bytes.len() < 5 || bytes[2] != b':' {
+        return None;
+    }
+    let hours = parse_ascii_two_digits(&bytes[0..2])?;
+    let minutes = parse_ascii_two_digits(&bytes[3..5])?;
+    if hours > 23 || minutes > 59 {
+        return None;
+    }
+    if bytes.len() == 5 {
+        return Some(true);
+    }
+    if bytes.len() < 8 || bytes[5] != b':' || parse_ascii_two_digits(&bytes[6..8])? > 59 {
+        return None;
+    }
+    if bytes.len() == 8 {
+        return Some(false);
+    }
+    if bytes[8] != b'.' || bytes.len() == 9 || !bytes[9..].iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    Some(false)
+}
+
+fn parse_ascii_two_digits(bytes: &[u8]) -> Option<u8> {
+    let [first, second] = bytes else {
+        return None;
+    };
+    if !first.is_ascii_digit() || !second.is_ascii_digit() {
+        return None;
+    }
+    Some((first - b'0') * 10 + (second - b'0'))
+}
+
+fn deserialize_optional_non_null<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
+fn deserialize_schema_version<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let number = serde_json::Number::deserialize(deserializer)?;
+    let version = number
+        .as_u64()
+        .or_else(|| {
+            number.as_f64().and_then(|value| {
+                (value.is_finite() && value >= 0.0 && value.fract() == 0.0).then_some(value as u64)
+            })
+        })
+        .and_then(|value| u32::try_from(value).ok())
+        .ok_or_else(|| {
+            <D::Error as serde::de::Error>::custom(
+                "schemaVersion must be a non-negative 32-bit integer",
+            )
+        })?;
+    Ok(version)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -398,8 +521,8 @@ mod tests {
                 website: "https://example.test".to_string(),
                 summary: "A small example".to_string(),
                 audience: "Independent shops".to_string(),
-                offers: vec!["Consulting".to_string()],
-                goals: vec!["Reach 20 customers".to_string()],
+                offers: "Consulting".to_string(),
+                goals: "Reach 20 customers".to_string(),
             },
             sources: vec![BusinessSource {
                 id: "source-1".to_string(),
@@ -449,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_kind_status_url_timestamp_and_duplicate_ids() {
+    fn validates_kind_status_url_timestamp_and_collection_scoped_ids() {
         let mut value = serde_json::to_value(sample()).expect("sample serializes");
         value["kind"] = serde_json::json!("another.kind");
         assert!(parse_document(&value.to_string()).is_err());
@@ -468,6 +591,22 @@ mod tests {
 
         let mut value = serde_json::to_value(sample()).expect("sample serializes");
         value["connections"][0]["id"] = serde_json::json!("source-1");
+        assert!(parse_document(&value.to_string()).is_ok());
+
+        let mut value = serde_json::to_value(sample()).expect("sample serializes");
+        let duplicate_source = value["sources"][0].clone();
+        value["sources"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate_source);
+        assert!(parse_document(&value.to_string()).is_err());
+
+        let mut value = serde_json::to_value(sample()).expect("sample serializes");
+        let duplicate_connection = value["connections"][0].clone();
+        value["connections"]
+            .as_array_mut()
+            .unwrap()
+            .push(duplicate_connection);
         assert!(parse_document(&value.to_string()).is_err());
     }
 
@@ -489,7 +628,15 @@ mod tests {
 
         let mut document = sample();
         document.company.name = String::new();
-        assert!(document.validate().is_err());
+        assert!(document.validate().is_ok());
+
+        let mut document = sample();
+        document.sources[0].id = " ".into();
+        document.sources[0].title = " ".into();
+        document.connections[0].id = " ".into();
+        document.connections[0].provider = " ".into();
+        document.connections[0].label = " ".into();
+        assert!(document.validate().is_ok());
     }
 
     #[test]
@@ -522,12 +669,34 @@ mod tests {
             include_str!("../tests/fixtures/invalid-url-utf16-limit.json"),
             include_str!("../tests/fixtures/invalid-unknown-field.json"),
             include_str!("../tests/fixtures/invalid-timestamp.json"),
+            include_str!("../tests/fixtures/invalid-null-url.json"),
+            include_str!("../tests/fixtures/invalid-null-details.json"),
+            include_str!("../tests/fixtures/invalid-duplicate-source-id.json"),
+            include_str!("../tests/fixtures/invalid-duplicate-connection-id.json"),
+            include_str!("../tests/fixtures/invalid-document-byte-limit.json"),
+            include_str!("../tests/fixtures/invalid-uppercase-url-scheme.json"),
+            include_str!("../tests/fixtures/invalid-leap-second-timestamp.json"),
+            include_str!("../tests/fixtures/invalid-lowercase-iso-separator.json"),
+            include_str!("../tests/fixtures/invalid-lowercase-iso-zone.json"),
+            include_str!("../tests/fixtures/invalid-space-iso-separator.json"),
+            include_str!("../tests/fixtures/invalid-compact-offset.json"),
         ] {
             assert!(
                 parse_document(invalid_fixture).is_err(),
                 "fixture should be rejected: {}",
                 invalid_fixture.chars().take(100).collect::<String>()
             );
+        }
+
+        for valid_fixture in [
+            include_str!("../tests/fixtures/valid-empty-company-name.json"),
+            include_str!("../tests/fixtures/valid-cross-collection-duplicate-ids.json"),
+            include_str!("../tests/fixtures/valid-whitespace-min-length.json"),
+            include_str!("../tests/fixtures/valid-minute-precision-timestamp.json"),
+            include_str!("../tests/fixtures/valid-long-fraction-timestamp.json"),
+            include_str!("../tests/fixtures/valid-schema-version-decimal-one.json"),
+        ] {
+            parse_document(valid_fixture).expect("desktop-compatible fixture parses");
         }
     }
 }

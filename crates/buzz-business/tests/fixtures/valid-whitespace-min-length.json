@@ -2,27 +2,27 @@
   "schemaVersion": 1,
   "kind": "aios.business-workspace",
   "company": {
-    "name": "Example",
+    "name": "",
     "website": "",
-    "summary": "København-based studio",
-    "audience": "Små virksomheder",
+    "summary": "",
+    "audience": "",
     "offers": "",
     "goals": ""
   },
   "sources": [
     {
-      "id": "source-1",
-      "title": "Interview",
+      "id": " ",
+      "title": " ",
       "kind": "note",
       "content": "",
-      "createdAt": "yesterday"
+      "createdAt": "2026-09-23T12:00:00Z"
     }
   ],
   "connections": [
     {
-      "id": "connection-1",
-      "provider": "google_drive",
-      "label": "Research",
+      "id": " ",
+      "provider": " ",
+      "label": " ",
       "status": "not_configured"
     }
   ]

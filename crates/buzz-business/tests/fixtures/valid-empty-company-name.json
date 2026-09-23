@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "kind": "aios.business-workspace",
+  "company": {
+    "name": "",
+    "website": "",
+    "summary": "",
+    "audience": "",
+    "offers": "",
+    "goals": ""
+  },
+  "sources": [],
+  "connections": []
+}

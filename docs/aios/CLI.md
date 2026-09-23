@@ -16,9 +16,12 @@ buzz business init \
 buzz business show --channel <channel-id>
 ```
 
-`init` creates or finds a private stream named exactly for the company, with the
-exact marker shared with Desktop, then writes an empty version-one
-document. Its JSON result includes `channel_id`; use that ID for every later
+`init` trims the supplied company name, creates or finds a private stream with
+the exact Desktop marker, then writes an empty version-one document. The
+channel is named after the trimmed company name, or `My business` when the
+company name is empty; the document keeps an empty name in that case. Repeated
+`--offer` and `--goal` flags are joined with newlines into the corresponding
+text fields. The JSON result includes `channel_id`; use that ID for every later
 command. Repeating `init` for the same company leaves a valid document
 unchanged. If the matching marked channel exists but its canvas is empty,
 `init` fills it. A malformed canvas, archived workspace, duplicate matching
@@ -67,12 +70,16 @@ The contract is strict. Unknown fields, unknown schema versions, malformed
 timestamps or URLs, duplicate IDs, and documents over 200,000 UTF-8 bytes are
 rejected. The same byte bound applies to file/stdin reads before parsing.
 Individual field bounds use UTF-16 code units, matching JavaScript string
-length, Zod `.max()`, and HTML `maxlength`: company name 300, website 2,000,
-other company text 12,000, and up to 100 offers and 100 goals; 100 sources with
-IDs up to 128, titles up to 300, and content up to 40,000; and 50 connections
-with IDs up to 128, provider names up to 100, labels up to 300, and details up
-to 2,000. Optional source URLs are limited to 2,000 UTF-16 code units and must
-be absolute HTTP or HTTPS URLs. Timestamps must be ISO-8601/RFC 3339 strings.
+length, Zod `.max()`, and HTML `maxlength`: company name 300 (and may be
+empty), website 2,000, and summary, audience, offers, and goals 12,000 each;
+up to 100 sources with IDs up to 128, titles up to 300, and content up to
+40,000; and 50 connections with IDs up to 128, provider names up to 100, labels
+up to 300, and details up to 2,000.
+Source and connection IDs must be unique within their own collections. Optional
+source URLs are limited to 2,000 UTF-16 code units and must be valid absolute
+URLs starting with lowercase `http://` or `https://`. Omitted URLs and details
+are accepted; explicit `null` is rejected.
+Timestamps must be ISO-8601/RFC 3339 strings.
 Shared valid and invalid cross-language JSON fixtures live in
 `crates/buzz-business/tests/fixtures/`.
 
@@ -85,8 +92,8 @@ Shared valid and invalid cross-language JSON fixtures live in
     "website": "https://northstar.example",
     "summary": "A small design studio",
     "audience": "Independent retailers",
-    "offers": ["Brand design"],
-    "goals": ["Sign five new clients"]
+    "offers": "Brand design",
+    "goals": "Sign five new clients"
   },
   "sources": [
     {

@@ -2501,6 +2501,7 @@ mod tests {
         ])
         .is_ok());
         assert!(Cli::try_parse_from(["buzz", "business", "init", "--name", "Example Co"]).is_ok());
+        assert!(Cli::try_parse_from(["buzz", "business", "init", "--name", ""]).is_ok());
     }
 
     #[test]

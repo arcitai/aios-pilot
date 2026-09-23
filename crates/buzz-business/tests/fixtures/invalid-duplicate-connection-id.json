@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "kind": "aios.business-workspace",
+  "company": {
+    "name": "Example",
+    "website": "",
+    "summary": "",
+    "audience": "",
+    "offers": "",
+    "goals": ""
+  },
+  "sources": [],
+  "connections": [
+    {
+      "id": "duplicate",
+      "provider": "drive",
+      "label": "Research",
+      "status": "not_configured"
+    },
+    {
+      "id": "duplicate",
+      "provider": "drive",
+      "label": "Research",
+      "status": "not_configured"
+    }
+  ]
+}

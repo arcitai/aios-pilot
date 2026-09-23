@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "kind": "aios.business-workspace",
+  "company": {
+    "name": "Example",
+    "website": "",
+    "summary": "",
+    "audience": "",
+    "offers": "",
+    "goals": ""
+  },
+  "sources": [
+    {
+      "id": "source-1",
+      "title": "Date",
+      "kind": "note",
+      "content": "",
+      "createdAt": "2026-09-23t14:30:00Z"
+    }
+  ],
+  "connections": []
+}
