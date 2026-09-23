@@ -45,6 +45,7 @@ fn test_runtime() -> &'static KnownAcpRuntime {
         cli_install_hint: "",
         adapter_install_hint: "",
         skill_dir: None,
+        supports_skills: false,
         supports_acp_model_switching: false,
         model_env_var: Some("GOOSE_MODEL"),
         provider_env_var: Some("GOOSE_PROVIDER"),
@@ -126,6 +127,7 @@ fn test_record() -> ManagedAgentRecord {
         agent_command_override: None,
         persona_source_version: None,
         provider: None,
+        agent_skills: Vec::new(),
     }
 }
 
@@ -642,6 +644,7 @@ fn buzz_agent_runtime() -> &'static KnownAcpRuntime {
         cli_install_hint: "",
         adapter_install_hint: "",
         skill_dir: None,
+        supports_skills: false,
         supports_acp_model_switching: true,
         model_env_var: Some("BUZZ_AGENT_MODEL"),
         provider_env_var: Some("BUZZ_AGENT_PROVIDER"),

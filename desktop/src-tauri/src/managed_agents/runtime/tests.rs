@@ -295,6 +295,7 @@ fn persona_with_provider(
         parallelism: None,
         created_at: "2026-06-09T00:00:00Z".to_string(),
         updated_at: "2026-06-09T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 

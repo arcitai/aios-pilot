@@ -83,7 +83,7 @@ fn policy_for(path: &str) -> MaskPolicy {
         // value may be disclosed. Same for the relay URL — `normalize_relay_url`
         // rejects userinfo but deliberately preserves query strings, so
         // `wss://relay.example/ws?token=...` is a valid value.
-        "args" | "relay_url" => MaskPolicy::MaskedBare,
+        "args" | "relay_url" | "agent_skills_fingerprint" => MaskPolicy::MaskedBare,
         // NIP-OA auth tag: a credential, but a suffix tells the user which tag
         // they are looking at.
         "auth_tag" => MaskPolicy::MaskedSuffix,

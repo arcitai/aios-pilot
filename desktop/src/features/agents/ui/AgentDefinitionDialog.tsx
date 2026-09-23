@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 
 import type {
   AcpRuntimeCatalogEntry,
+  AgentSkill,
   CreatePersonaInput,
   UpdatePersonaInput,
 } from "@/shared/api/types";
@@ -12,6 +13,7 @@ import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
 import { AgentCreationPreview } from "./AgentCreationPreview";
 import { AgentIdentityFields } from "./AgentDescriptionField";
+import { AgentSkillsField } from "./AgentSkillsField";
 import { PersonaDropdownField } from "./PersonaDropdownField";
 import type { EnvVarsValue } from "./EnvVarsEditor";
 import { PersonaAdvancedFields } from "./PersonaAdvancedFields";
@@ -84,6 +86,7 @@ import {
 import { useProviderApiKeyFieldState } from "./providerApiKeyFieldState";
 import { buildRuntimeModelProviderPayload } from "./agentDefinitionSubmitPayload";
 import { AgentDefinitionDialogFooter } from "./AgentDefinitionDialogFooter";
+import { getAgentSkillCapability } from "../lib/agentConfigCore";
 import { AgentDefinitionDialogShell } from "./AgentDefinitionDialogShell";
 import { AddCustomHarnessDialog } from "./AddCustomHarnessDialog";
 import {
@@ -145,6 +148,7 @@ export function AgentDefinitionDialog({
   const aiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const [avatarUrl, setAvatarUrl] = React.useState("");
   const [systemPrompt, setSystemPrompt] = React.useState("");
+  const [agentSkills, setAgentSkills] = React.useState<AgentSkill[]>([]);
   const [runtime, setRuntime] = React.useState("");
   const [model, setModel] = React.useState("");
   const [isCustomModelEditing, setIsCustomModelEditing] = React.useState(false);
@@ -210,6 +214,7 @@ export function AgentDefinitionDialog({
     setDescriptionDraft(initialValues.description ?? "");
     setAvatarUrl(initialValues.avatarUrl ?? "");
     setSystemPrompt(initialValues.systemPrompt);
+    setAgentSkills(initialValues.agentSkills ?? []);
     setRuntime(initialValues.runtime ?? "");
     setModel(initialValues.model ?? "");
     setIsCustomModelEditing(false);
@@ -310,6 +315,7 @@ export function AgentDefinitionDialog({
       setDisplayName("");
       setAvatarUrl("");
       setSystemPrompt("");
+      setAgentSkills([]);
       setRuntime("");
       setModel("");
       setIsCustomModelEditing(false);
@@ -364,6 +370,7 @@ export function AgentDefinitionDialog({
       description: descriptionDraft,
       avatarUrl: avatarUrl.trim() || undefined,
       systemPrompt: systemPrompt,
+      agentSkills,
       runtime: runtimeForSubmit,
       model: modelForSubmit,
       provider: providerForSubmit,
@@ -793,6 +800,19 @@ export function AgentDefinitionDialog({
             />
           </div>
         </div>
+
+        <AgentSkillsField
+          capability={getAgentSkillCapability(
+            selectedRuntime,
+            runtimeCatalogStatus,
+          )}
+          disabled={isPending}
+          onChange={(nextSkills) => {
+            setHasUserChanges(true);
+            setAgentSkills(nextSkills);
+          }}
+          skills={agentSkills}
+        />
 
         {modelFieldVisible ? (
           <AgentAiConfigurationModeField

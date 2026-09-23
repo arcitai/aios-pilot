@@ -25,6 +25,7 @@ export const AUTO_RESTART_OFF_BLURB =
  * Unknown paths render as-is — no per-field label map.
  */
 function humaniseFieldId(field: string): string {
+  if (field === "agent_skills_fingerprint") return "Skills";
   if (field.startsWith("env.")) {
     const key = field.slice(4);
     return `${key} (env)`;

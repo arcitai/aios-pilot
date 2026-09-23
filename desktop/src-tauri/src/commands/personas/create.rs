@@ -8,7 +8,8 @@ use crate::{
     app_state::AppState,
     managed_agents::{
         apply_persona_behavior, load_personas, save_personas, try_regenerate_nest,
-        validate_agent_definition_text, AgentDefinition, CatalogSource, CreatePersonaRequest,
+        validate_agent_definition_text, validate_agent_skills, AgentDefinition, CatalogSource,
+        CreatePersonaRequest,
     },
     util::now_iso,
 };
@@ -29,6 +30,7 @@ pub async fn create_persona(
         // exact string before the ACP harness executes it.
         let system_prompt = input.system_prompt.clone();
         validate_agent_definition_text(&display_name, &system_prompt)?;
+        validate_agent_skills(&input.agent_skills)?;
         let description = normalize_description(input.description)?;
         let avatar_url = trim_optional(input.avatar_url);
         let runtime = trim_optional(input.runtime);
@@ -61,6 +63,7 @@ pub async fn create_persona(
             avatar_url,
             description,
             system_prompt,
+            agent_skills: input.agent_skills,
             runtime,
             model,
             provider,

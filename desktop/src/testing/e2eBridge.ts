@@ -154,6 +154,11 @@ type MockRelayAgentSeed = {
   status?: PresenceStatus;
 };
 
+type MockAgentSkill = {
+  skillMd: string;
+  assets: Array<{ path: string; contentBase64: string }>;
+};
+
 type MockPersonaSeed = {
   id?: string;
   displayName: string;
@@ -171,6 +176,7 @@ type MockPersonaSeed = {
   respondTo?: "owner-only" | "allowlist" | "anyone";
   respondToAllowlist?: string[];
   sessionPolicy?: "channel" | "thread";
+  agentSkills?: MockAgentSkill[];
 };
 
 type MockTeamSeed = {
@@ -1034,6 +1040,7 @@ type RawPersona = {
   avatar_url: string | null;
   description?: string | null;
   system_prompt: string;
+  agent_skills?: MockAgentSkill[];
   runtime?: string | null;
   model?: string | null;
   provider?: string | null;
@@ -2694,6 +2701,7 @@ function resetMockPersonas(config?: E2eConfig) {
       display_name: persona.displayName,
       avatar_url: persona.avatarUrl ?? null,
       system_prompt: persona.systemPrompt,
+      agent_skills: structuredClone(persona.agentSkills ?? []),
       runtime: persona.runtime ?? null,
       model: persona.model ?? null,
       provider: persona.provider ?? null,
@@ -8936,6 +8944,7 @@ async function handleCreatePersona(args: {
     avatarUrl?: string;
     description?: string | null;
     systemPrompt: string;
+    agentSkills?: MockAgentSkill[];
     runtime?: string;
     model?: string;
     provider?: string;
@@ -8951,6 +8960,7 @@ async function handleCreatePersona(args: {
     avatar_url: args.input.avatarUrl?.trim() || null,
     description: args.input.description?.trim() || null,
     system_prompt: args.input.systemPrompt.trim(),
+    agent_skills: structuredClone(args.input.agentSkills ?? []),
     runtime: args.input.runtime?.trim() || null,
     model: args.input.model?.trim() || null,
     provider: args.input.provider?.trim() || null,
@@ -8985,6 +8995,7 @@ type MockUpdatePersonaInput = {
   avatarUrl?: string;
   description?: string | null;
   systemPrompt: string;
+  agentSkills?: MockAgentSkill[];
   runtime?: string;
   model?: string;
   provider?: string;
@@ -9019,6 +9030,9 @@ async function applyMockPersonaUpdate(
   persona.avatar_url = input.avatarUrl?.trim() || null;
   persona.description = input.description?.trim() || null;
   persona.system_prompt = input.systemPrompt.trim();
+  if (input.agentSkills !== undefined) {
+    persona.agent_skills = structuredClone(input.agentSkills);
+  }
   persona.runtime = input.runtime?.trim() || null;
   persona.model = input.model?.trim() || null;
   persona.provider = input.provider?.trim() || null;

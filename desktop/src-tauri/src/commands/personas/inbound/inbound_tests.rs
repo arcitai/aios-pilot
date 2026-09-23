@@ -33,6 +33,7 @@ fn local_in_app() -> AgentDefinition {
         parallelism: None,
         created_at: "2025-01-01T00:00:00Z".to_string(),
         updated_at: "2025-01-01T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 
@@ -63,12 +64,19 @@ fn inbound_for(d_tag: &str, display_name: &str) -> AgentDefinition {
         parallelism: None,
         created_at: "2025-06-01T00:00:00Z".to_string(),
         updated_at: "2025-06-01T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 
 #[test]
-fn in_app_persona_matches_existing_uuid_and_patches() {
-    let mut personas = vec![local_in_app()];
+fn in_app_persona_patch_preserves_local_skills() {
+    let mut local = local_in_app();
+    local.agent_skills = vec![crate::managed_agents::AgentSkill {
+        skill_md: "---\nname: local-skill\ndescription: Private local skill.\n---\nKeep this workflow private.\n".into(),
+        assets: Vec::new(),
+    }];
+    let retained_skills = local.agent_skills.clone();
+    let mut personas = vec![local];
     apply_inbound_persona(&mut personas, inbound_for(UUID, "Remote"));
 
     assert_eq!(personas.len(), 1, "no duplicate row");
@@ -83,6 +91,7 @@ fn in_app_persona_matches_existing_uuid_and_patches() {
     assert_eq!(p.source_team, Some("team-1".to_string()));
     assert_eq!(p.source_team_persona_slug, None);
     assert_eq!(p.created_at, "2025-01-01T00:00:00Z");
+    assert_eq!(p.agent_skills, retained_skills);
 }
 
 #[test]
@@ -238,6 +247,7 @@ fn local_agent() -> ManagedAgentRecord {
         definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
+        agent_skills: Vec::new(),
     }
 }
 

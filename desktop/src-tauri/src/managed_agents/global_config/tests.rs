@@ -357,6 +357,7 @@ fn bare_record() -> ManagedAgentRecord {
         definition_respond_to: None,
         definition_respond_to_allowlist: vec![],
         definition_parallelism: None,
+        agent_skills: Vec::new(),
     }
 }
 
@@ -385,6 +386,7 @@ fn persona(id: &str, model: Option<&str>, provider: Option<&str>) -> AgentDefini
         parallelism: None,
         created_at: "".to_string(),
         updated_at: "".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 
@@ -649,6 +651,7 @@ fn record_runtime_wins_over_persona_runtime_for_command_resolution() {
         parallelism: None,
         created_at: "".to_string(),
         updated_at: "".to_string(),
+        agent_skills: Vec::new(),
     };
 
     let cmd = crate::managed_agents::record_agent_command(&record, &[persona]);

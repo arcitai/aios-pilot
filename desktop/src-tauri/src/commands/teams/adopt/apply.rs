@@ -485,5 +485,6 @@ fn member_copy(
         session_policy: member.session_policy,
         created_at: now.to_string(),
         updated_at: now.to_string(),
+        agent_skills: Vec::new(),
     })
 }

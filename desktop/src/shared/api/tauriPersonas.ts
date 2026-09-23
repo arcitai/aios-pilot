@@ -13,6 +13,7 @@ export type RawPersona = {
   /** Optional short, PUBLIC description (max 280 chars). */
   description?: string | null;
   system_prompt: string;
+  agent_skills?: AgentPersona["agentSkills"];
   runtime?: string | null;
   model?: string | null;
   provider?: string | null;
@@ -45,6 +46,7 @@ export function fromRawPersona(persona: RawPersona): AgentPersona {
     avatarUrl: persona.avatar_url,
     description: persona.description ?? null,
     systemPrompt: persona.system_prompt,
+    agentSkills: persona.agent_skills ?? [],
     runtime: persona.runtime ?? null,
     model: persona.model ?? null,
     provider: persona.provider ?? null,
@@ -99,6 +101,7 @@ export async function createPersona(
         avatarUrl: input.avatarUrl,
         description: normalizeDescription(input.description),
         systemPrompt: input.systemPrompt,
+        agentSkills: input.agentSkills ?? [],
         runtime: input.runtime,
         model: input.model,
         provider: input.provider,
@@ -119,6 +122,7 @@ function updatePersonaPayload(input: UpdatePersonaInput) {
     avatarUrl: input.avatarUrl,
     description: normalizeDescription(input.description),
     systemPrompt: input.systemPrompt,
+    agentSkills: input.agentSkills,
     runtime: input.runtime,
     model: input.model,
     provider: input.provider,
@@ -221,6 +225,7 @@ export async function exportAgentSnapshot(
   format: SnapshotFormat,
   memorySourcePubkey?: string | null,
   avatarPngDataUrl?: string,
+  includeSkills = false,
 ): Promise<boolean> {
   return invokeTauri<boolean>("export_agent_snapshot", {
     id,
@@ -228,6 +233,7 @@ export async function exportAgentSnapshot(
     memoryLevel,
     format,
     avatarPngDataUrl: avatarPngDataUrl ?? null,
+    includeSkills,
   });
 }
 
@@ -396,6 +402,8 @@ export type AgentSnapshotImportPreview = {
   model: string | null;
   runtime: string | null;
   systemPrompt: string | null;
+  /** Local skill files included in an opt-in v2 snapshot; rendered as raw text. */
+  agentSkills: AgentPersona["agentSkills"];
   /** Effective avatar: data URL if present, source URL fallback otherwise. */
   avatarUrl: string | null;
   /** "none" | "core" | "everything" */

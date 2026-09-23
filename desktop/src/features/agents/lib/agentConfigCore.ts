@@ -16,6 +16,24 @@ import { BUZZ_AGENT_THINKING_EFFORT } from "../ui/buzzAgentConfig";
  */
 export type RuntimeCatalogStatus = "loading" | "ready" | "error";
 
+export type AgentSkillCapability =
+  | "supported"
+  | "unsupported"
+  | "loading"
+  | "error"
+  | "no-runtime";
+
+/** Projects Rust catalog metadata; unsettled metadata remains unknown. */
+export function getAgentSkillCapability(
+  runtime: AcpRuntimeCatalogEntry | undefined,
+  catalogStatus: RuntimeCatalogStatus,
+): AgentSkillCapability {
+  if (catalogStatus === "loading") return "loading";
+  if (catalogStatus === "error") return "error";
+  if (!runtime) return "no-runtime";
+  return runtime.supportsSkills ? "supported" : "unsupported";
+}
+
 export type AgentConfigScope =
   | "onboarding"
   | "global"

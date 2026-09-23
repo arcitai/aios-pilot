@@ -122,6 +122,7 @@ mod tests {
             definition_parallelism: None,
             relay_mesh: None,
             effort_level: None,
+            agent_skills: Vec::new(),
         }
     }
 
@@ -154,6 +155,7 @@ mod tests {
             parallelism: None,
             created_at: String::new(),
             updated_at: String::new(),
+            agent_skills: Vec::new(),
         }
     }
 

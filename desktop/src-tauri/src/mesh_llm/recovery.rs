@@ -474,6 +474,7 @@ mod tests {
             session_policy: crate::managed_agents::AcpSessionPolicy::Channel,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
+            agent_skills: Vec::new(),
         }
         .into_agent_record();
         record.pubkey = pubkey.to_string();

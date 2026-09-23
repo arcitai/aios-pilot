@@ -150,6 +150,7 @@ pub async fn save_custom_harness(
         provider_env_var: None,
         thinking_env_var: None,
         effort_canonical_values: None,
+        supports_skills: false,
         max_tokens_env_var: None,
         context_limit_env_var: None,
         max_rounds_env_var: None,

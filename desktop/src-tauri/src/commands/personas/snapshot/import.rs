@@ -1,4 +1,4 @@
-//! Import-side helpers for `buzz-agent-snapshot v1`.
+//! Import-side helpers for v1/v2 `buzz-agent-snapshot` files.
 //!
 //! Extracted from `snapshot.rs` to keep that file under the 1500-line gate.
 //! The Tauri commands here (`preview_agent_snapshot_import`,
@@ -63,6 +63,8 @@ pub struct AgentSnapshotImportPreview {
     pub runtime: Option<String>,
     /// System prompt, if any.
     pub system_prompt: Option<String>,
+    /// Full raw skill bundles, surfaced before confirmation for review.
+    pub agent_skills: Vec<crate::managed_agents::AgentSkill>,
     /// Effective avatar: data URL if present, otherwise the source URL fallback.
     /// The UI renders this as a single avatar source.
     pub avatar_url: Option<String>,
@@ -212,7 +214,7 @@ pub(crate) fn resolve_snapshot_import_behavior(
 
 const PNG_MAGIC: [u8; 4] = [0x89, 0x50, 0x4e, 0x47];
 
-/// Decode a `buzz-agent-snapshot v1` manifest from raw bytes.
+/// Decode a `buzz-agent-snapshot` manifest from raw bytes.
 ///
 /// Sniffs by magic bytes (PNG signature) first, then falls back to JSON.
 /// Fails closed on malformed content, wrong format, or unsupported version.
@@ -417,6 +419,7 @@ pub(crate) fn build_agent_snapshot_import_preview(
         model: snapshot.definition.model.clone(),
         runtime: snapshot.definition.runtime.clone(),
         system_prompt: snapshot.definition.system_prompt.clone(),
+        agent_skills: snapshot.definition.agent_skills.clone(),
         // Effective avatar: data URL wins; URL fallback if no data URL.
         avatar_url: snapshot
             .profile
@@ -435,7 +438,7 @@ pub(crate) fn build_agent_snapshot_import_preview(
 
 // ── `confirm_agent_snapshot_import` ──────────────────────────────────────────
 
-/// Import a `buzz-agent-snapshot v1` file as a brand-new agent.
+/// Import a v1 or v2 `buzz-agent-snapshot` file as a brand-new agent.
 ///
 /// Phase sequence:
 ///   1. Validate — decode the manifest and reject early on any error.
@@ -570,6 +573,7 @@ pub async fn confirm_agent_snapshot_import(
                 .system_prompt
                 .clone()
                 .unwrap_or_default(),
+            agent_skills: snapshot.definition.agent_skills.clone(),
             runtime: snapshot.definition.runtime.clone(),
             model: snapshot.definition.model.clone(),
             provider: snapshot.definition.provider.clone(),
@@ -665,6 +669,7 @@ pub async fn confirm_agent_snapshot_import(
             effort_level: None,
             runtime: snapshot.definition.runtime.clone(),
             name_pool: snapshot.definition.name_pool.clone(),
+            agent_skills: Vec::new(),
         };
 
         records.push(record.clone());

@@ -513,6 +513,8 @@ export type AcpRuntimeCatalogEntry = {
    * Null for buzz-agent (provider/model catalog), Claude/Codex/unknown runtimes.
    */
   effortCanonicalValues: string[] | null;
+  /** Whether this runtime reads locally staged Agent Skills. */
+  supportsSkills: boolean;
   maxTokensEnvVar: string | null;
   contextLimitEnvVar: string | null;
   maxRoundsEnvVar: string | null;
@@ -715,6 +717,8 @@ export type UpdateManagedAgentInput = {
 // file inside the repo-wide size ratchet; re-exported so import paths
 // (`@/shared/api/types`) are unchanged.
 export type {
+  AgentSkill,
+  AgentSkillAsset,
   AgentPersona,
   CatalogSourceCoordinate,
   CreatePersonaInput,

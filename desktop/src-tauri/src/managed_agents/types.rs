@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, path::PathBuf, process::Child};
 
+use super::AgentSkill;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum BackendKind {
@@ -23,6 +25,10 @@ pub struct AgentDefinition {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub system_prompt: String,
+    /// Private, per-specialist SKILL.md bundles. Not projected to persona
+    /// relay events; snapshots include them only after an explicit choice.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agent_skills: Vec<AgentSkill>,
     /// Preferred ACP runtime ID (e.g., 'goose', 'claude', 'codex'). Determines which agent binary
     /// Buzz spawns. When deploying from this persona, this runtime is pre-selected in the UI.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -133,6 +139,7 @@ impl AgentDefinition {
             parallelism: default_agent_parallelism(),
             session_policy: self.session_policy,
             system_prompt: (!self.system_prompt.is_empty()).then_some(self.system_prompt),
+            agent_skills: self.agent_skills,
             model: self.model,
             provider: self.provider,
             persona_source_version: None,
@@ -194,6 +201,7 @@ impl ManagedAgentRecord {
             avatar_url: self.avatar_url.clone(),
             description: self.description.clone(),
             system_prompt: self.system_prompt.clone().unwrap_or_default(),
+            agent_skills: self.agent_skills.clone(),
             runtime: self.runtime.clone(),
             model: self.model.clone(),
             provider: self.provider.clone(),
@@ -392,6 +400,10 @@ pub struct ManagedAgentRecord {
     /// content hash).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Definition-only local skill content. Keyed managed-agent instances
+    /// keep this empty and resolve bundles from their linked definition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agent_skills: Vec<AgentSkill>,
     /// Stable definition slug — the former `AgentDefinition.id`. Key-less
     /// records (definitions not yet instantiated) publish kind:30175 at
     /// `d_tag = slug`, preserving the pre-merge event coordinates. `None` for
@@ -688,6 +700,8 @@ pub struct AcpRuntimeCatalogEntry {
     /// other valid Goose values are always present when this is Goose, so
     /// `useEffortAutoClear` never incorrectly deletes a valid saved value.
     pub effort_canonical_values: Option<Vec<String>>,
+    /// Whether this runtime reads local Agent Skills from its workspace.
+    pub supports_skills: bool,
     pub max_tokens_env_var: Option<String>,
     pub context_limit_env_var: Option<String>,
     pub max_rounds_env_var: Option<String>,

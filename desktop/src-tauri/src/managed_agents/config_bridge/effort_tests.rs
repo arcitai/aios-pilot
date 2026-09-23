@@ -86,6 +86,7 @@ pub(super) fn record() -> ManagedAgentRecord {
         agent_command_override: None,
         persona_source_version: None,
         provider: None,
+        agent_skills: Vec::new(),
     }
 }
 
@@ -121,6 +122,7 @@ fn persona(id: &str, env_vars: BTreeMap<String, String>) -> AgentDefinition {
         parallelism: None,
         created_at: String::new(),
         updated_at: String::new(),
+        agent_skills: Vec::new(),
     }
 }
 

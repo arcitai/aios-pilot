@@ -196,6 +196,7 @@ export type RawAcpRuntimeCatalogEntry = {
   definition_env?: Record<string, string>;
   max_parallelism?: number;
   effort_canonical_values?: string[] | null;
+  supports_skills?: boolean;
 };
 
 export type {
@@ -648,6 +649,7 @@ export function fromRawAcpRuntimeCatalogEntry(
     source: entry.source,
     definitionEnv: entry.definition_env ?? {},
     effortCanonicalValues: entry.effort_canonical_values ?? null,
+    supportsSkills: entry.supports_skills ?? false,
     ...(entry.max_parallelism !== undefined && {
       maxParallelism: entry.max_parallelism,
     }),

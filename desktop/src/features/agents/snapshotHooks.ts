@@ -22,12 +22,14 @@ export function useExportAgentSnapshotMutation() {
       format,
       memorySourcePubkey,
       avatarUrl,
+      includeSkills,
     }: {
       id: string;
       memoryLevel: SnapshotMemoryLevel;
       format: SnapshotFormat;
       memorySourcePubkey?: string | null;
       avatarUrl?: string | null;
+      includeSkills?: boolean;
     }) => {
       const avatarPngDataUrl =
         format === "png"
@@ -39,6 +41,7 @@ export function useExportAgentSnapshotMutation() {
         format,
         memorySourcePubkey,
         avatarPngDataUrl,
+        includeSkills ?? false,
       );
     },
   });

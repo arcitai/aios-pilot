@@ -7,6 +7,7 @@ import type {
   SnapshotMemoryLevel,
 } from "@/shared/api/tauriPersonas";
 import { Button } from "@/shared/ui/button";
+import { Checkbox } from "@/shared/ui/checkbox";
 import {
   Dialog,
   DialogClose,
@@ -24,9 +25,11 @@ type AgentSnapshotExportDialogProps = {
    *  When null, memory levels are disabled — the definition has no agent
    *  instance with a keypair to read memory from. */
   linkedAgentPubkey: string | null;
+  skillCount: number;
   onSaveFile: (
     memoryLevel: SnapshotMemoryLevel,
     format: SnapshotFormat,
+    includeSkills: boolean,
   ) => void;
   onOpenChange: (open: boolean) => void;
 };
@@ -64,12 +67,14 @@ export function AgentSnapshotExportDialog({
   isSavePending,
   open,
   linkedAgentPubkey,
+  skillCount,
   onSaveFile,
   onOpenChange,
 }: AgentSnapshotExportDialogProps) {
   const [memoryLevel, setMemoryLevel] =
     React.useState<SnapshotMemoryLevel>("none");
   const [format, setFormat] = React.useState<SnapshotFormat>("png");
+  const [includeSkills, setIncludeSkills] = React.useState(false);
   const shouldReduceMotion = useReducedMotion();
 
   const hasLinkedAgent = linkedAgentPubkey !== null;
@@ -83,6 +88,7 @@ export function AgentSnapshotExportDialog({
     if (open) {
       setMemoryLevel("none");
       setFormat("png");
+      setIncludeSkills(false);
     }
   }, [open]);
 
@@ -146,6 +152,29 @@ export function AgentSnapshotExportDialog({
             </div>
           </div>
 
+          {skillCount > 0 ? (
+            <div className="space-y-2 rounded-md border p-3">
+              <label className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={includeSkills}
+                  disabled={isPending}
+                  onCheckedChange={(checked) =>
+                    setIncludeSkills(checked === true)
+                  }
+                />
+                <span>
+                  Include {skillCount} selected{" "}
+                  {skillCount === 1 ? "skill" : "skills"}
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Includes the raw instructions and attached files in this
+                    local snapshot. Skills stay out of persona sharing and
+                    remote snapshot sends.
+                  </span>
+                </span>
+              </label>
+            </div>
+          ) : null}
+
           <AnimatePresence initial={false}>
             {showMemoryWarning ? (
               <motion.div
@@ -188,7 +217,7 @@ export function AgentSnapshotExportDialog({
             <Button
               data-testid="agent-snapshot-export-confirm"
               disabled={isPending}
-              onClick={() => onSaveFile(memoryLevel, format)}
+              onClick={() => onSaveFile(memoryLevel, format, includeSkills)}
               size="sm"
               type="button"
             >

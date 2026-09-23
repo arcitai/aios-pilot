@@ -99,6 +99,9 @@ pub(crate) struct KnownAcpRuntime {
     /// pointing to the canonical `.agents/skills/buzz-cli`. `None` → this
     /// runtime reads the canonical path directly or has no skill support.
     pub skill_dir: Option<&'static str>,
+    /// True only when this adapter/runtime reads locally staged Agent Skills.
+    /// Custom and unverified preset commands remain false by default.
+    pub supports_skills: bool,
     /// Whether this runtime handles model switching via ACP protocol natively.
     /// Currently unused — env var injection runs unconditionally regardless of
     /// this value. Retained as scaffolding for when ACP model switching matures.

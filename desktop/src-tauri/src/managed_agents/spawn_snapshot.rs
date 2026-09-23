@@ -72,6 +72,8 @@ pub(crate) struct SpawnConfigInputs<'a> {
     pub system_prompt: Option<&'a str>,
     pub model: Option<&'a str>,
     pub provider: Option<&'a str>,
+    /// A digest of the selected private skill contents; never shown to the UI.
+    pub agent_skills_fingerprint: &'a str,
     /// Compile-time distribution capability projected at this runtime boundary.
     /// The stored record remains portable; only effective spawned access is stamped.
     pub enforced_owner_only: bool,
@@ -115,6 +117,8 @@ pub(crate) struct SpawnConfigSnapshot {
     pub system_prompt: Option<String>,
     pub model: Option<String>,
     pub provider: Option<String>,
+    /// Content digest used only to detect private skill changes after spawn.
+    pub agent_skills_fingerprint: String,
     /// `None` when a user env override shadows `BUZZ_ACP_SESSION_TITLE`: spawn
     /// writes the title BEFORE the user env layer, so the override is what
     /// actually runs and it already reaches this snapshot through `env`.
@@ -188,6 +192,7 @@ impl SpawnConfigSnapshot {
             system_prompt,
             model,
             provider,
+            agent_skills_fingerprint,
             enforced_owner_only,
             session_policy,
         } = inputs;
@@ -230,6 +235,7 @@ impl SpawnConfigSnapshot {
             system_prompt: system_prompt.map(str::to_string),
             model: model.map(str::to_string),
             provider: provider.map(str::to_string),
+            agent_skills_fingerprint: agent_skills_fingerprint.to_string(),
             session_title: (!descriptor.env.contains_key(SESSION_TITLE_ENV_VAR))
                 .then(|| resolve_session_title(record.display_name.as_deref(), &record.name))
                 .flatten(),
@@ -335,6 +341,14 @@ pub(crate) fn prospective_spawn_config_snapshot(
         }
         EffectiveConfigResult::OrphanedInstance { .. } => (None, None, None),
     };
+    let selected_skills = record
+        .persona_id
+        .as_deref()
+        .and_then(|persona_id| personas.iter().find(|persona| persona.id == persona_id))
+        .map(|persona| persona.agent_skills.as_slice())
+        .unwrap_or_default();
+    let skills_fingerprint = super::agent_skills::agent_skills_fingerprint(selected_skills)
+        .unwrap_or_else(|_| "invalid-agent-skills".to_string());
 
     SpawnConfigSnapshot::from_inputs(SpawnConfigInputs {
         record,
@@ -346,6 +360,7 @@ pub(crate) fn prospective_spawn_config_snapshot(
         system_prompt: prompt.as_deref(),
         model: model.as_deref(),
         provider: provider.as_deref(),
+        agent_skills_fingerprint: &skills_fingerprint,
         enforced_owner_only,
         session_policy: record.session_policy,
     })

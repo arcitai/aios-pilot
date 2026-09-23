@@ -44,6 +44,7 @@ fn persona(id: &str, prompt: &str) -> AgentDefinition {
         parallelism: None,
         created_at: NOW.to_string(),
         updated_at: NOW.to_string(),
+        agent_skills: Vec::new(),
     }
 }
 

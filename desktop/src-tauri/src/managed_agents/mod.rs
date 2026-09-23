@@ -1,6 +1,7 @@
 pub(crate) mod access_policy;
 mod agent_env;
 pub(crate) mod agent_events;
+pub(crate) mod agent_skills;
 pub(crate) mod agent_snapshot;
 pub(crate) mod agent_snapshot_envelope;
 pub(crate) mod team_snapshot;
@@ -72,6 +73,8 @@ pub(crate) fn lock_env_mutex() -> std::sync::MutexGuard<'static, ()> {
     PROCESS_ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+pub(crate) use agent_skills::validate_agent_skills;
+pub use agent_skills::AgentSkill;
 pub use backend::*;
 pub(crate) use definition_validation::{
     validate_agent_definition_text, validate_agent_description_text,

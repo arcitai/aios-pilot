@@ -429,7 +429,8 @@ export function AgentsView() {
           isSavePending={personas.isPending}
           open={personas.personaToExportSnapshot !== null}
           linkedAgentPubkey={personas.personaToExportSnapshot.linkedAgentPubkey}
-          onSaveFile={(memoryLevel, format) => {
+          skillCount={personas.personaToExportSnapshot.persona.agentSkills.length}
+          onSaveFile={(memoryLevel, format, includeSkills) => {
             if (personas.personaToExportSnapshot) {
               personas.handleExportSnapshot(
                 personas.personaToExportSnapshot.persona,
@@ -437,6 +438,7 @@ export function AgentsView() {
                 personas.personaToExportSnapshot.effectiveAvatarUrl,
                 memoryLevel,
                 format,
+                includeSkills,
               );
             }
           }}

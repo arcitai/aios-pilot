@@ -30,6 +30,7 @@ fn base() -> SpawnConfigSnapshot {
         parallelism: 1,
         effort_level: Some("high".into()),
         session_policy: "channel".into(),
+        agent_skills_fingerprint: String::new(),
     }
 }
 

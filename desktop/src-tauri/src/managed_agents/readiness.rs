@@ -1054,6 +1054,7 @@ mod tests {
             cli_install_hint: "",
             adapter_install_hint: "",
             skill_dir: None,
+            supports_skills: false,
             supports_acp_model_switching: false,
             config_file_path: None,
             config_file_format: None,
@@ -1248,6 +1249,7 @@ mod tests {
             cli_install_hint: "",
             adapter_install_hint: "",
             skill_dir: None,
+            supports_skills: false,
             supports_acp_model_switching: false,
             config_file_path: None,
             config_file_format: None,
@@ -1550,6 +1552,7 @@ mod tests {
             definition_parallelism: None,
             relay_mesh: None,
             effort_level: None,
+            agent_skills: Vec::new(),
         };
 
         let runtime = known_acp_runtime_exact("buzz-agent");

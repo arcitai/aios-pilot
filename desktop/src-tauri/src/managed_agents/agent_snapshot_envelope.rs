@@ -342,6 +342,7 @@ mod tests {
                 respond_to: None,
                 respond_to_allowlist: Vec::new(),
                 name_pool: Vec::new(),
+                agent_skills: Vec::new(),
                 idle_timeout_seconds: None,
                 max_turn_duration_seconds: None,
                 source_is_builtin: false,
@@ -425,6 +426,7 @@ mod tests {
             persona_source_version: None,
             provider: None,
             team_catalog_source: None,
+            agent_skills: Vec::new(),
         }
     }
 

@@ -316,6 +316,7 @@ mod tests {
             definition_parallelism: None,
             relay_mesh: None,
             effort_level: None,
+            agent_skills: Vec::new(),
         }
     }
 

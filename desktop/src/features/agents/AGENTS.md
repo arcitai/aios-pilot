@@ -31,6 +31,13 @@ the resolved `entry.command` (which may be `null` for unavailable entries).
 The frontend reads `maxParallelism` from the catalog entry and never keeps a
 separate constant.
 
+Local Agent Skill discovery is also a runtime capability. `supports_skills`
+and the runtime's discovery directory live in `KnownAcpRuntime`, are exposed
+through `AcpRuntimeCatalogEntry`, and the editor reads the projected result
+from `getAgentSkillCapability` in `lib/agentConfigCore.ts`. An unsettled or
+failed catalog is unknown, not unsupported. Do not infer support from a
+runtime ID in a component or duplicate the capability table in TypeScript.
+
 If you need a new capability fact (a new env key, a native option, a "supports
 X" flag): add it to `KnownAcpRuntime` first, expose it on
 `AcpRuntimeCatalogEntry`, then project it through the core. Do not shortcut

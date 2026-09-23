@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   deriveAgentConfigFieldModel,
   deriveNumericDescriptors,
+  getAgentSkillCapability,
   structuredEnvKeys,
 } from "./agentConfigCore.ts";
 import { NUMERIC_KIND_MIN } from "../ui/buzzAgentModelTuningFields.tsx";
@@ -45,6 +46,26 @@ function runtime(id, metadata = {}) {
 function field(model, kind) {
   return model.fields.find((candidate) => candidate.kind === kind);
 }
+
+test("local skill capability preserves unknown runtime catalog states", () => {
+  assert.equal(getAgentSkillCapability(undefined, "loading"), "loading");
+  assert.equal(getAgentSkillCapability(undefined, "error"), "error");
+  assert.equal(getAgentSkillCapability(undefined, "ready"), "no-runtime");
+  assert.equal(
+    getAgentSkillCapability(
+      runtime("goose", { supportsSkills: true }),
+      "ready",
+    ),
+    "supported",
+  );
+  assert.equal(
+    getAgentSkillCapability(
+      runtime("custom", { supportsSkills: false }),
+      "ready",
+    ),
+    "unsupported",
+  );
+});
 
 test("Buzz Agent exposes provider, model, and Buzz-owned effort", () => {
   const model = deriveAgentConfigFieldModel({

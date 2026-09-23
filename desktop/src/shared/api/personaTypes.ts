@@ -3,6 +3,17 @@
 // `@/shared/api/types`, which re-exports everything here.
 import type { AcpSessionPolicy, RespondToMode } from "./types";
 
+export type AgentSkillAsset = {
+  path: string;
+  contentBase64: string;
+};
+
+/** A local specialist skill, stored as reviewable SKILL.md plus bounded assets. */
+export type AgentSkill = {
+  skillMd: string;
+  assets: AgentSkillAsset[];
+};
+
 export type AgentPersona = {
   id: string;
   displayName: string;
@@ -14,6 +25,8 @@ export type AgentPersona = {
    */
   description: string | null;
   systemPrompt: string;
+  /** Local-only specialist skills. Public persona publications omit these. */
+  agentSkills: AgentSkill[];
   /** Preferred ACP runtime ID (e.g. "goose", "claude"). */
   runtime: string | null;
   /** Opaque, harness-specific model identifier string. Buzz stores and passes through without interpretation. */
@@ -72,6 +85,7 @@ export type CreatePersonaInput = {
   /** Optional short, PUBLIC description (max 280 chars). Empty string clears. */
   description?: string | null;
   systemPrompt: string;
+  agentSkills?: AgentSkill[];
   runtime?: string;
   model?: string;
   provider?: string;
@@ -92,6 +106,7 @@ export type UpdatePersonaInput = {
   /** Optional short, PUBLIC description (max 280 chars). Empty string clears. */
   description?: string | null;
   systemPrompt: string;
+  agentSkills?: AgentSkill[];
   runtime?: string;
   model?: string;
   provider?: string;

@@ -1,4 +1,4 @@
-//! `buzz-agent-snapshot v1` — manifest type, encoder, and decoder stubs.
+//! `buzz-agent-snapshot` — portable manifest, encoder, and decoder.
 //!
 //! An agent snapshot is a portable, shareable representation of an agent
 //! definition. It captures:
@@ -14,7 +14,8 @@
 //! Both formats may carry memory at any level. Memory entries are plaintext,
 //! so callers must require an explicit opt-in before exporting them.
 //!
-//! **Zip is NOT in v1** — deferred to v2 for skills bundling.
+//! V2 can carry local skills as validated `SKILL.md` text and bounded assets;
+//! it does not use an archive container. V1 remains importable without skills.
 //!
 //! # Secret exclusion
 //!
@@ -67,7 +68,7 @@ const MAX_PNG_BODY_EDGE: u32 = 512;
 pub const FORMAT_DISCRIMINATOR: &str = "buzz-agent-snapshot";
 
 /// Version of the manifest format produced by this module.
-pub const FORMAT_VERSION: u32 = 1;
+pub const FORMAT_VERSION: u32 = 2;
 
 // ── Memory level ─────────────────────────────────────────────────────────────
 
@@ -123,6 +124,10 @@ pub struct AgentSnapshotDefinition {
     pub respond_to_allowlist: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub name_pool: Vec<String>,
+    /// Private specialist bundles. V2 exports include these only on explicit
+    /// local-file opt-in; public/send encoders leave the list empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub agent_skills: Vec<super::AgentSkill>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub idle_timeout_seconds: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -167,7 +172,7 @@ pub struct AgentSnapshotMemory {
 
 // ── Top-level manifest ────────────────────────────────────────────────────────
 
-/// The top-level `buzz-agent-snapshot v1` manifest.
+/// The top-level `buzz-agent-snapshot` manifest (currently v2).
 ///
 /// Serializes to / from JSON. Embedded in `.agent.json` directly, or in the
 /// `buzz_agent_snapshot` tEXt chunk of a `.agent.png` (base64-encoded).
@@ -176,7 +181,7 @@ pub struct AgentSnapshotMemory {
 pub struct AgentSnapshot {
     /// Fixed discriminator for format sniffing.
     pub format: String,
-    /// Schema version. This module produces version 1.
+    /// Schema version. This module produces version 2 and also reads v1.
     pub version: u32,
     pub definition: AgentSnapshotDefinition,
     pub profile: AgentSnapshotProfile,
@@ -200,6 +205,37 @@ pub fn build_snapshot(
     memory_entries: Vec<AgentSnapshotMemoryEntry>,
     avatar_bytes: Option<&[u8]>,
 ) -> AgentSnapshot {
+    build_snapshot_inner(record, memory_level, memory_entries, avatar_bytes, false)
+}
+
+/// Build a snapshot, optionally carrying validated local specialist skills.
+/// The ordinary builder intentionally omits skills for all existing callers.
+pub fn build_snapshot_with_agent_skills(
+    record: &ManagedAgentRecord,
+    memory_level: MemoryLevel,
+    memory_entries: Vec<AgentSnapshotMemoryEntry>,
+    avatar_bytes: Option<&[u8]>,
+    include_agent_skills: bool,
+) -> Result<AgentSnapshot, String> {
+    if include_agent_skills {
+        super::agent_skills::validate_agent_skills(&record.agent_skills)?;
+    }
+    Ok(build_snapshot_inner(
+        record,
+        memory_level,
+        memory_entries,
+        avatar_bytes,
+        include_agent_skills,
+    ))
+}
+
+fn build_snapshot_inner(
+    record: &ManagedAgentRecord,
+    memory_level: MemoryLevel,
+    memory_entries: Vec<AgentSnapshotMemoryEntry>,
+    avatar_bytes: Option<&[u8]>,
+    include_agent_skills: bool,
+) -> AgentSnapshot {
     // ── Definition ─────────────────────────────────────────────────────
     // Use definition-level fields (respond_to, allowlist, parallelism) for
     // portability — instance-level equivalents are spawn-time snapshots and
@@ -219,6 +255,11 @@ pub fn build_snapshot(
         respond_to: record.definition_respond_to.clone(),
         respond_to_allowlist: record.definition_respond_to_allowlist.clone(),
         name_pool: record.name_pool.clone(),
+        agent_skills: if include_agent_skills {
+            record.agent_skills.clone()
+        } else {
+            Vec::new()
+        },
         idle_timeout_seconds: record.idle_timeout_seconds,
         max_turn_duration_seconds: record.max_turn_duration_seconds,
     };
@@ -402,12 +443,17 @@ pub(crate) fn validate_snapshot(snapshot: &AgentSnapshot) -> Result<(), String> 
             snapshot.format, FORMAT_DISCRIMINATOR
         ));
     }
-    if snapshot.version != 1 {
+    if !matches!(snapshot.version, 1 | 2) {
         return Err(format!(
-            "Unsupported snapshot version: {} (expected 1)",
+            "Unsupported snapshot version: {} (expected 1 or 2)",
             snapshot.version
         ));
     }
+    if snapshot.version == 1 && !snapshot.definition.agent_skills.is_empty() {
+        return Err("Snapshot v1 cannot contain specialist skills".to_string());
+    }
+    super::agent_skills::validate_agent_skills(&snapshot.definition.agent_skills)
+        .map_err(|error| format!("Snapshot specialist skills are invalid: {error}"))?;
     if snapshot.definition.name.trim().is_empty() {
         return Err("Snapshot definition.name is empty".to_string());
     }

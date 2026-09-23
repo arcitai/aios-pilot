@@ -34,6 +34,7 @@ fn make_persona(id: &str, display_name: &str) -> AgentDefinition {
         parallelism: None,
         created_at: String::new(),
         updated_at: String::new(),
+        agent_skills: Vec::new(),
     }
 }
 
@@ -97,6 +98,7 @@ fn make_agent(name: &str, persona_id: Option<&str>) -> ManagedAgentRecord {
         definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
+        agent_skills: Vec::new(),
     }
 }
 

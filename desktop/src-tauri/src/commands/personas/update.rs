@@ -9,7 +9,8 @@ use crate::{
     managed_agents::{
         apply_persona_behavior, effective_agent_command, load_managed_agents, load_personas,
         managed_agent_avatar_url, save_managed_agents, save_personas, try_regenerate_nest,
-        validate_agent_definition_text, AgentDefinition, ManagedAgentRecord, UpdatePersonaRequest,
+        validate_agent_definition_text, validate_agent_skills, AgentDefinition, ManagedAgentRecord,
+        UpdatePersonaRequest,
     },
     util::now_iso,
 };
@@ -160,6 +161,9 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
             let display_name = trim_required(&input.display_name, "Display name")?;
             let system_prompt = input.system_prompt.clone();
             validate_agent_definition_text(&display_name, &system_prompt)?;
+            if let Some(agent_skills) = &input.agent_skills {
+                validate_agent_skills(agent_skills)?;
+            }
             let description = normalize_description(input.description)?;
             let avatar_url = trim_optional(input.avatar_url);
             let runtime = trim_optional(input.runtime);
@@ -193,6 +197,9 @@ pub(super) async fn update_persona_with<R: Send + 'static>(
             persona.avatar_url = avatar_url;
             persona.description = description;
             persona.system_prompt = system_prompt;
+            if let Some(agent_skills) = input.agent_skills {
+                persona.agent_skills = agent_skills;
+            }
             persona.runtime = runtime;
             persona.model = model;
             persona.provider = provider;

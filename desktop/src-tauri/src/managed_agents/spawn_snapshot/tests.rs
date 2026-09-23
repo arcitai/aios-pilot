@@ -1,5 +1,5 @@
 use super::*;
-use crate::managed_agents::types::RespondTo;
+use crate::managed_agents::{types::RespondTo, AgentSkill};
 use std::collections::BTreeMap;
 
 /// Canonical projection of a prospective snapshot — the exact value the drift
@@ -100,6 +100,7 @@ fn record() -> ManagedAgentRecord {
         definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
+        agent_skills: Vec::new(),
     }
 }
 
@@ -128,6 +129,7 @@ fn persona(id: &str, runtime: Option<&str>, prompt: &str) -> AgentDefinition {
         parallelism: None,
         created_at: "now".into(),
         updated_at: "now".into(),
+        agent_skills: Vec::new(),
     }
 }
 
@@ -196,6 +198,66 @@ fn record_prompt_edit_changes_snapshot() {
         snapshot(&rec, &[], &[], "wss://ws.example", &Default::default()),
         snapshot(&edited, &[], &[], "wss://ws.example", &Default::default())
     );
+}
+
+#[test]
+fn selected_skill_edit_changes_restart_diff_without_disclosing_skill_text() {
+    let mut record = record();
+    record.persona_id = Some("pers".into());
+    let mut before_persona = persona("pers", Some("goose"), "prompt");
+    before_persona.agent_skills = vec![AgentSkill {
+        skill_md: "---\nname: private-review\ndescription: Private workflow.\n---\nKeep this instruction private.\n".into(),
+        assets: Vec::new(),
+    }];
+    let mut after_persona = before_persona.clone();
+    after_persona.agent_skills[0].skill_md = after_persona.agent_skills[0].skill_md.replace(
+        "Keep this instruction private.",
+        "Use confidential owner notes.",
+    );
+
+    let before = prospective_spawn_config_snapshot(
+        &record,
+        &[before_persona],
+        &[],
+        "wss://ws.example",
+        &Default::default(),
+        false,
+    );
+    let after = prospective_spawn_config_snapshot(
+        &record,
+        &[after_persona],
+        &[],
+        "wss://ws.example",
+        &Default::default(),
+        false,
+    );
+    let fingerprint = before.agent_skills_fingerprint.clone();
+    let diff = eligible_restart_diff(
+        false,
+        Some(TrackedSpawnState {
+            stamped: &before,
+            current: &after,
+            stamped_availability: None,
+            current_availability: None,
+        }),
+    );
+
+    assert_eq!(diff.len(), 1);
+    assert_eq!(diff[0].field, "agent_skills_fingerprint");
+    assert!(matches!(
+        &diff[0].change,
+        diff::RestartChange::Masked { .. }
+    ));
+    let serialized_diff = serde_json::to_string(&diff).unwrap();
+    let debug_snapshot = format!("{before:?}");
+    for private_value in [
+        "Keep this instruction private.",
+        "Use confidential owner notes.",
+        fingerprint.as_str(),
+    ] {
+        assert!(!serialized_diff.contains(private_value));
+        assert!(!debug_snapshot.contains(private_value));
+    }
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use super::*;
 use crate::managed_agents::{BackendKind, ManagedAgentRecord, RespondTo};
+use nostr::JsonUtil;
 
 /// A linked instance record with no persona-derived fields set yet — the
 /// state right after creation, before any snapshot apply.
@@ -63,6 +64,7 @@ pub(super) fn sample_record() -> ManagedAgentRecord {
         definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
+        agent_skills: Vec::new(),
     }
 }
 
@@ -169,6 +171,7 @@ pub(super) fn sample_persona() -> AgentDefinition {
         parallelism: None,
         created_at: "2025-01-01T00:00:00Z".to_string(),
         updated_at: "2025-01-01T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 
@@ -260,6 +263,25 @@ fn build_persona_event_produces_correct_kind() {
     let keys = nostr::Keys::generate();
     let event = builder.sign_with_keys(&keys).unwrap();
     assert_eq!(event.kind.as_u16() as u32, KIND_PERSONA);
+}
+
+#[test]
+fn public_persona_event_omits_local_specialist_skills() {
+    let mut record = sample_persona();
+    record.agent_skills = vec![crate::managed_agents::AgentSkill {
+        skill_md: "---\nname: private-skill\ndescription: Local only.\n---\nNever publish this instruction.\n".into(),
+        assets: Vec::new(),
+    }];
+    let event = build_persona_event(&record)
+        .unwrap()
+        .sign_with_keys(&nostr::Keys::generate())
+        .unwrap();
+    let wire = event.as_json();
+
+    assert!(!event.content.contains("private-skill"));
+    assert!(!event.content.contains("Never publish this instruction."));
+    assert!(!wire.contains("private-skill"));
+    assert!(!wire.contains("Never publish this instruction."));
 }
 
 #[test]
@@ -401,6 +423,7 @@ fn content_matches_nip_ap_vector() {
         parallelism: None,
         created_at: "2025-01-01T00:00:00Z".to_string(),
         updated_at: "2025-01-01T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     };
     let event = build_persona_event(&record)
         .unwrap()
@@ -435,6 +458,7 @@ fn round_trip_minimal_persona() {
         parallelism: None,
         created_at: "2025-01-01T00:00:00Z".to_string(),
         updated_at: "2025-01-01T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     };
 
     let builder = build_persona_event(&record).unwrap();
@@ -535,6 +559,7 @@ fn quad_absent_definition_hash_stable_across_activation() {
         parallelism: None,
         created_at: "2026-01-01T00:00:00Z".to_string(),
         updated_at: "2026-01-01T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     };
     let live = persona_event_content(&record);
     // The reserved-era projection: identical fields, quad hardcoded off.
@@ -583,6 +608,7 @@ fn persona_from_event_content_for_test(content: PersonaEventContent) -> AgentDef
         parallelism: content.parallelism,
         created_at: "2026-01-01T00:00:00Z".to_string(),
         updated_at: "2026-01-01T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 
@@ -752,6 +778,8 @@ fn blank_model_persona() -> AgentDefinition {
         session_policy: Default::default(),
         model: None,
         provider: None,
+        agent_skills: Vec::new(),
+
         ..sample_persona()
     }
 }

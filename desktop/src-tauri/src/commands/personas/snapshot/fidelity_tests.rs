@@ -69,6 +69,7 @@ fn make_definition(slug: &str) -> ManagedAgentRecord {
         definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
+        agent_skills: Vec::new(),
     }
 }
 
@@ -92,6 +93,7 @@ fn make_snapshot(
             respond_to: None,
             respond_to_allowlist: vec![],
             name_pool: vec![],
+            agent_skills: vec![],
             idle_timeout_seconds: None,
             max_turn_duration_seconds: None,
         },

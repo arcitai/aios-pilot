@@ -544,6 +544,115 @@ test("the new agent card opens unified create, catalog, and import flows", async
   await expect(page.getByTestId("agent-snapshot-import-dialog")).toBeVisible();
 });
 
+test("specialist skills edit as raw text, respect runtime capability, and persist locally", async ({
+  page,
+}) => {
+  await installMockBridge(page, {
+    acpRuntimesCatalog: [
+      {
+        id: "goose",
+        label: "Goose",
+        avatar_url: "",
+        availability: "available",
+        command: "goose",
+        binary_path: "/usr/local/bin/goose",
+        default_args: ["acp"],
+        mcp_command: null,
+        install_hint: "",
+        install_instructions_url: "https://block.github.io/goose/",
+        can_auto_install: true,
+        requires_external_cli: true,
+        underlying_cli_path: "/usr/local/bin/goose",
+        node_required: false,
+        auth_status: { status: "logged_in" },
+        login_hint: null,
+        source: "builtin",
+        supports_skills: true,
+      },
+      {
+        id: "buzz-agent",
+        label: "Buzz Agent",
+        avatar_url: "",
+        availability: "available",
+        command: "buzz-agent",
+        binary_path: "/usr/local/bin/buzz-agent",
+        default_args: [],
+        mcp_command: "buzz-dev-mcp",
+        install_hint: "",
+        install_instructions_url: "https://github.com/block/buzz",
+        can_auto_install: false,
+        requires_external_cli: false,
+        underlying_cli_path: null,
+        node_required: false,
+        auth_status: { status: "not_applicable" },
+        login_hint: null,
+        source: "builtin",
+        supports_skills: false,
+      },
+    ],
+    globalAgentConfig: {
+      env_vars: { ANTHROPIC_API_KEY: "sk-ant-test" },
+      provider: "anthropic",
+      model: "claude-opus-4-5",
+      preferred_runtime: "goose",
+    },
+  });
+  await gotoApp(page);
+  await page.getByTestId("open-agents-view").click();
+  await page.getByTestId("new-agent-card").click();
+
+  const dialog = page.getByTestId("persona-dialog");
+  await expect(
+    dialog.getByRole("button", { name: "Add Company analyst" }),
+  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Add Company analyst" }).click();
+  const skillEditor = dialog.getByLabel("company-analyst SKILL.md");
+  await expect(skillEditor).toHaveValue(
+    /buzz business source list --channel <CHANNEL_ID>/,
+  );
+  await skillEditor.fill(
+    `${await skillEditor.inputValue()}\n\nAlways label missing evidence explicitly.\n`,
+  );
+
+  await dialog.getByRole("tab", { name: "Customize for this agent" }).click();
+  const runtime = dialog.locator("#persona-runtime");
+  await runtime.click();
+  await page.getByRole("menuitemradio", { name: "Buzz Agent" }).click();
+  await expect(
+    dialog.getByText(
+      "This runtime does not declare local skill support. Starting this agent is blocked until you switch to a supported runtime or remove its skills.",
+    ),
+  ).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Add Company analyst" }),
+  ).toHaveCount(0);
+  await expect(dialog.getByLabel("company-analyst SKILL.md")).toHaveCount(0);
+  await expect(dialog.locator("pre")).toContainText(
+    "Always label missing evidence explicitly.",
+  );
+
+  await runtime.click();
+  await page.getByRole("menuitemradio", { name: "Goose" }).press("Enter");
+  await dialog.getByRole("tab", { name: "Use agent defaults" }).click();
+  await expect(dialog.getByLabel("company-analyst SKILL.md")).toBeVisible();
+  await dialog.getByLabel("Agent name").fill("Company Analyst");
+  await dialog.getByTestId("persona-dialog-submit").click();
+
+  await expect
+    .poll(() => countCommandInvocations(page, "create_persona"))
+    .toBe(1);
+  const savedPersonas = await invokeTauri<
+    Array<{
+      display_name: string;
+      agent_skills?: Array<{ skillMd: string; assets: unknown[] }>;
+    }>
+  >(page, "list_personas");
+  expect(
+    savedPersonas.find((persona) => persona.display_name === "Company Analyst")
+      ?.agent_skills?.[0]?.skillMd,
+  ).toContain("Always label missing evidence explicitly.");
+});
+
 test("embedded create keeps its draft when discard is cancelled", async ({
   page,
 }) => {

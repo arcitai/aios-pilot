@@ -261,6 +261,7 @@ pub fn persona_from_event(event: &nostr::Event) -> Result<AgentDefinition, Strin
         session_policy: content.session_policy,
         created_at: created_at.clone(),
         updated_at: created_at,
+        agent_skills: Vec::new(),
     })
 }
 

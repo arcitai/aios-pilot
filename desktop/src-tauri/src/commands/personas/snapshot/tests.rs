@@ -9,7 +9,7 @@ use crate::managed_agents::{
         AgentSnapshot, AgentSnapshotDefinition, AgentSnapshotMemory, AgentSnapshotMemoryEntry,
         AgentSnapshotProfile, FORMAT_DISCRIMINATOR, FORMAT_VERSION,
     },
-    BackendKind, ManagedAgentRecord, RespondTo,
+    AgentSkill, BackendKind, ManagedAgentRecord, RespondTo,
 };
 use std::collections::BTreeMap;
 
@@ -78,6 +78,7 @@ fn make_definition(slug: &str) -> ManagedAgentRecord {
         definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
+        agent_skills: Vec::new(),
     }
 }
 
@@ -89,6 +90,8 @@ fn make_instance(pubkey: &str, persona_id: &str) -> ManagedAgentRecord {
         pubkey: pubkey.to_string(),
         slug: None,
         persona_id: Some(persona_id.to_string()),
+        agent_skills: Vec::new(),
+
         ..make_definition("")
     }
 }
@@ -124,6 +127,7 @@ fn make_snapshot(
             respond_to: None,
             respond_to_allowlist: vec![],
             name_pool: vec![],
+            agent_skills: vec![],
             idle_timeout_seconds: None,
             max_turn_duration_seconds: None,
         },
@@ -302,14 +306,64 @@ fn import_wrong_format_string_fails_closed() {
 fn import_unsupported_version_fails_closed() {
     let mut snapshot = make_snapshot(MemoryLevel::None, vec![]);
     snapshot.version = 99;
-    // validate_snapshot inside decode_snapshot_json rejects version != 1;
-    // temporarily bypass it by serializing raw and patching the JSON.
+    // validate_snapshot inside decode_snapshot_json rejects unsupported versions.
     let json = serde_json::to_string(&snapshot).unwrap();
     let result = decode_snapshot_from_bytes(json.as_bytes());
     assert!(result.is_err(), "unsupported version must fail closed");
     assert!(
         result.unwrap_err().contains("Unsupported snapshot version"),
         "error must describe the version problem"
+    );
+}
+
+#[test]
+fn version_one_snapshot_remains_importable_without_skills() {
+    let mut manifest = serde_json::to_value(make_snapshot(MemoryLevel::None, vec![])).unwrap();
+    manifest["version"] = serde_json::json!(1);
+    manifest["definition"]
+        .as_object_mut()
+        .unwrap()
+        .remove("agentSkills");
+    let bytes = serde_json::to_vec(&manifest).unwrap();
+
+    let decoded = decode_snapshot_from_bytes(&bytes).unwrap();
+    assert_eq!(decoded.version, 1);
+    assert!(decoded.definition.agent_skills.is_empty());
+}
+
+#[test]
+fn v2_snapshot_carries_skills_only_when_local_export_opts_in() {
+    let mut record = make_definition("analyst");
+    record.agent_skills = vec![AgentSkill {
+        skill_md: "---\nname: company-analyst\ndescription: Review company evidence.\n---\nCite source IDs.\n".into(),
+        assets: vec![],
+    }];
+
+    let default = crate::managed_agents::agent_snapshot::build_snapshot(
+        &record,
+        MemoryLevel::None,
+        vec![],
+        None,
+    );
+    assert!(default.definition.agent_skills.is_empty());
+
+    let opted_in = crate::managed_agents::agent_snapshot::build_snapshot_with_agent_skills(
+        &record,
+        MemoryLevel::None,
+        vec![],
+        None,
+        true,
+    )
+    .unwrap();
+    assert_eq!(opted_in.version, 2);
+    assert_eq!(opted_in.definition.agent_skills.len(), 1);
+    assert_eq!(
+        decode_snapshot_from_bytes(&serde_json::to_vec(&opted_in).unwrap())
+            .unwrap()
+            .definition
+            .agent_skills[0]
+            .skill_md,
+        record.agent_skills[0].skill_md
     );
 }
 

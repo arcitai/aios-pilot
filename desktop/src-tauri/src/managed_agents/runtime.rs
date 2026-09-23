@@ -538,6 +538,34 @@ pub fn spawn_agent_child(
             })?;
     let effective_command = &descriptor.command;
     let agent_args = &descriptor.args;
+    let runtime_meta = known_acp_runtime(effective_command);
+    let selected_skills = record
+        .persona_id
+        .as_deref()
+        .and_then(|persona_id| personas.iter().find(|persona| persona.id == persona_id))
+        .map(|persona| persona.agent_skills.as_slice())
+        .unwrap_or_default();
+    if !selected_skills.is_empty()
+        && !runtime_meta
+            .is_some_and(|runtime| runtime.supports_skills && runtime.skill_dir.is_some())
+    {
+        return Err(format!(
+            "Cannot start agent {}: its selected skills are unsupported by runtime `{effective_command}`",
+            record.pubkey
+        ));
+    }
+    let runtime_skill_dir = runtime_meta
+        .filter(|runtime| runtime.supports_skills)
+        .and_then(|runtime| runtime.skill_dir);
+    let shared_workspace = super::nest_dir()
+        .ok_or_else(|| "cannot resolve the Buzz workspace for this agent".to_string())?;
+    let agent_workspace = super::agent_skills::prepare_agent_workspace(
+        &shared_workspace,
+        &record.pubkey,
+        selected_skills,
+        runtime_skill_dir,
+    )?;
+    let skills_fingerprint = super::agent_skills::agent_skills_fingerprint(selected_skills)?;
 
     let log_path = super::managed_agent_runtime_log_path(app, &runtime_key)?;
     append_log_marker(
@@ -598,9 +626,7 @@ pub fn spawn_agent_child(
     );
 
     let mut command = std::process::Command::new(&resolved_acp_command);
-    if let Some(home) = super::default_agent_workdir() {
-        command.current_dir(home);
-    }
+    command.current_dir(&agent_workspace);
     command.stdin(std::process::Stdio::null());
     command.stdout(std::process::Stdio::from(stdout));
     command.stderr(std::process::Stdio::from(stderr));
@@ -630,7 +656,6 @@ pub fn spawn_agent_child(
     }
     // Enable MCP hook tools (_Stop, _PostCompact) for agents that need them.
     // Uses "*" because build_mcp_servers() hard-codes the server name to "buzz-mcp".
-    let runtime_meta = known_acp_runtime(effective_command);
     if runtime_meta.is_some_and(|r| r.mcp_hooks) {
         command.env("MCP_HOOK_SERVERS", "*");
     }
@@ -835,6 +860,7 @@ pub fn spawn_agent_child(
             system_prompt: effective_prompt.as_deref(),
             model: effective_model.as_deref(),
             provider: effective_provider.as_deref(),
+            agent_skills_fingerprint: &skills_fingerprint,
             enforced_owner_only: super::owner_only_access_build(),
             session_policy: acp_session_policy,
         },

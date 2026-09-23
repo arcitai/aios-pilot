@@ -225,6 +225,7 @@ fn managed_agent(name: &str) -> ManagedAgentRecord {
         definition_respond_to: None,
         definition_respond_to_allowlist: vec![],
         definition_parallelism: None,
+        agent_skills: Vec::new(),
     }
 }
 
@@ -483,6 +484,7 @@ fn catalog_copy(id: &str, owner: &str, d_tag: &str) -> AgentDefinition {
         parallelism: None,
         created_at: "2026-01-01T00:00:00Z".to_string(),
         updated_at: "2026-01-01T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 
@@ -724,6 +726,7 @@ fn catalog_persona(id: &str, owner: &str, d_tag: &str) -> AgentDefinition {
         parallelism: None,
         created_at: "2026-07-30T00:00:00Z".to_string(),
         updated_at: "2026-07-30T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 

@@ -144,6 +144,7 @@ fn built_in_persona_records(now: &str) -> Vec<AgentDefinition> {
             session_policy: super::AcpSessionPolicy::Channel,
             created_at: now.to_string(),
             updated_at: now.to_string(),
+            agent_skills: Vec::new(),
         })
         .collect()
 }

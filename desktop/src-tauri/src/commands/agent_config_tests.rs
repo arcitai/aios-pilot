@@ -46,6 +46,7 @@ fn goose_runtime() -> &'static KnownAcpRuntime {
         cli_install_hint: "",
         adapter_install_hint: "",
         skill_dir: None,
+        supports_skills: false,
         supports_acp_model_switching: false,
         model_env_var: Some("GOOSE_MODEL"),
         provider_env_var: Some("GOOSE_PROVIDER"),
@@ -127,6 +128,7 @@ fn agent_record() -> ManagedAgentRecord {
         agent_command_override: None,
         persona_source_version: None,
         provider: None,
+        agent_skills: Vec::new(),
     }
 }
 
@@ -155,6 +157,7 @@ fn persona_with_model(model: &str) -> AgentDefinition {
         parallelism: None,
         created_at: "".to_string(),
         updated_at: "".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 

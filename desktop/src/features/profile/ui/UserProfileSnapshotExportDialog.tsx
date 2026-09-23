@@ -19,14 +19,16 @@ export function UserProfileSnapshotExportDialog({
       agentName={persona.displayName}
       isSavePending={exportSnapshotMutation.isPending}
       linkedAgentPubkey={linkedAgentPubkey}
+      skillCount={persona.agentSkills.length}
       open
       onOpenChange={onOpenChange}
-      onSaveFile={(memoryLevel, format) => {
+      onSaveFile={(memoryLevel, format, includeSkills) => {
         exportSnapshotMutation.mutate(
           {
             id: persona.id,
             memoryLevel,
             format,
+            includeSkills,
             memorySourcePubkey: linkedAgentPubkey,
             avatarUrl: persona.avatarUrl,
           },

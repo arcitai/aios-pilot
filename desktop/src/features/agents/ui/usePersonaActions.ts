@@ -464,6 +464,7 @@ export function usePersonaActions() {
     effectiveAvatarUrl: string | null,
     memoryLevel: SnapshotMemoryLevel,
     format: SnapshotFormat,
+    includeSkills: boolean,
   ) {
     clearFeedback("library");
     setPersonaToExportSnapshot(null);
@@ -474,6 +475,7 @@ export function usePersonaActions() {
         format,
         memorySourcePubkey: linkedAgentPubkey,
         avatarUrl: effectiveAvatarUrl,
+        includeSkills,
       },
       {
         onSuccess: (saved) => {

@@ -31,6 +31,7 @@ fn custom_persona(id: &str, display_name: &str) -> AgentDefinition {
         parallelism: None,
         created_at: "2026-03-19T00:00:00Z".to_string(),
         updated_at: "2026-03-19T00:00:00Z".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 
@@ -282,7 +283,8 @@ fn migrate_retires_unmodified_personas() {
             session_policy: Default::default(),
             id: id.to_string(),
             system_prompt: prompt.to_string(),
-            is_builtin: false, // already demoted by merge_personas
+            is_builtin: false, // already demoted by merge_personas            agent_skills: Vec::new(),
+
             ..custom_persona(id, "Test Persona")
         })
         .collect();
@@ -322,6 +324,8 @@ fn migrate_preserves_customized_personas() {
         is_builtin: false,
         is_active: true,
         shared: false,
+        agent_skills: Vec::new(),
+
         ..custom_persona("builtin:researcher", "My Researcher")
     }];
 
@@ -357,6 +361,8 @@ fn migrate_is_idempotent() {
         is_builtin: false,
         is_active: false,
         shared: false,
+        agent_skills: Vec::new(),
+
         ..custom_persona("builtin:researcher", "Researcher (retired)")
     }];
     assert!(
@@ -374,6 +380,8 @@ fn migrate_is_idempotent() {
         is_builtin: true,
         is_active: true,
         shared: false,
+        agent_skills: Vec::new(),
+
         ..custom_persona("builtin:reviewer", "Reviewer")
     }];
     assert!(migrate_retired_personas(&mut stored_pre_demotion, now));

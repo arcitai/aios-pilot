@@ -15,8 +15,8 @@ use crate::{
     commands::engrams::get_agent_memory,
     managed_agents::{
         agent_snapshot::{
-            build_snapshot, encode_snapshot_json, encode_snapshot_png, AgentSnapshotMemoryEntry,
-            MemoryLevel,
+            build_snapshot_with_agent_skills, encode_snapshot_json, encode_snapshot_png,
+            AgentSnapshotMemoryEntry, MemoryLevel,
         },
         load_agent_definitions, load_managed_agents, ManagedAgentRecord,
     },
@@ -72,6 +72,25 @@ pub(crate) fn materialize_snapshot_description(
             .iter()
             .find(|definition| definition.slug.as_deref() == Some(persona_id))
             .and_then(|definition| definition.description.clone());
+    }
+}
+
+/// Materialize local specialist bundles from a linked definition onto a
+/// cloned instance for snapshot export. Keyless definitions already own them.
+pub(crate) fn materialize_snapshot_agent_skills(
+    record: &mut ManagedAgentRecord,
+    is_definition: bool,
+    definitions: &[ManagedAgentRecord],
+) {
+    if is_definition {
+        return;
+    }
+    if let Some(persona_id) = record.persona_id.as_deref() {
+        record.agent_skills = definitions
+            .iter()
+            .find(|definition| definition.slug.as_deref() == Some(persona_id))
+            .map(|definition| definition.agent_skills.clone())
+            .unwrap_or_default();
     }
 }
 
@@ -254,6 +273,7 @@ pub(crate) async fn materialize_snapshot_bytes(
     memory_level: MemoryLevel,
     is_png: bool,
     avatar_png_data_url: Option<String>,
+    include_skills: bool,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SnapshotPayload, String> {
@@ -270,6 +290,7 @@ pub(crate) async fn materialize_snapshot_bytes(
             .map(|(r, is_def)| (r.clone(), is_def))?;
         let mut def_record = def_record;
         materialize_snapshot_description(&mut def_record, is_definition, &definitions);
+        materialize_snapshot_agent_skills(&mut def_record, is_definition, &definitions);
         // A snapshot is a verbatim portable copy of the effective runtime,
         // provider, and model configuration, not a pointer to the sender's
         // machine-wide defaults. This does not translate or substitute values
@@ -319,12 +340,13 @@ pub(crate) async fn materialize_snapshot_bytes(
     };
 
     // ── Build manifest ───────────────────────────────────────────────────────
-    let snapshot = build_snapshot(
+    let snapshot = build_snapshot_with_agent_skills(
         &record,
         memory_level,
         memory_entries,
         avatar_bytes.as_deref(),
-    );
+        include_skills,
+    )?;
 
     // ── Encode ───────────────────────────────────────────────────────────────
     let slug = crate::util::slugify(&display_name, "agent", 50);
@@ -361,7 +383,7 @@ fn resolve_png_body_avatar_bytes(
         .or(store_avatar_bytes)
 }
 
-/// Export an agent definition as a `buzz-agent-snapshot v1` file.
+/// Export an agent definition as a v2 snapshot file.
 ///
 /// `id` is a definition slug or a keyed-instance pubkey.
 /// `memory_source_pubkey` is required when `memory_level != "none"` — it must
@@ -379,6 +401,7 @@ pub async fn export_agent_snapshot(
     memory_level: String,
     format: String,
     avatar_png_data_url: Option<String>,
+    include_skills: bool,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<bool, String> {
@@ -391,6 +414,7 @@ pub async fn export_agent_snapshot(
         memory_level,
         is_png,
         avatar_png_data_url,
+        include_skills,
         app.clone(),
         state,
     )
@@ -428,7 +452,7 @@ pub struct EncodedSnapshotPayload {
     pub file_name: String,
 }
 
-/// Encode a `buzz-agent-snapshot v1` payload in memory and return the raw
+/// Encode a v2 snapshot payload in memory and return the raw
 /// bytes to the frontend for the native-send path.
 ///
 /// Performs identical resolution, validation, and encoding as
@@ -454,6 +478,7 @@ pub async fn encode_agent_snapshot_for_send(
         memory_level,
         is_png,
         avatar_png_data_url,
+        false,
         app,
         state,
     )
@@ -509,6 +534,7 @@ mod png_body_tests {
                 respond_to: None,
                 respond_to_allowlist: vec![],
                 name_pool: vec![],
+                agent_skills: vec![],
                 idle_timeout_seconds: None,
                 max_turn_duration_seconds: None,
             },

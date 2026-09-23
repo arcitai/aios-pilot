@@ -9,7 +9,7 @@ use super::{
     default_start_on_app_launch, validate_respond_to_allowlist, AgentDefinition, BackendKind,
     CatalogSource, RelayMeshConfig, RespondTo,
 };
-use crate::managed_agents::AcpSessionPolicy;
+use crate::managed_agents::{AcpSessionPolicy, AgentSkill};
 
 /// The NIP-AP behavioral group as one grouped request field.
 ///
@@ -96,6 +96,9 @@ pub struct CreatePersonaRequest {
     /// Environment variables for agents created from this persona.
     #[serde(default)]
     pub env_vars: BTreeMap<String, String>,
+    /// Private per-definition skill bundles; never copied into public persona events.
+    #[serde(default)]
+    pub agent_skills: Vec<AgentSkill>,
     /// NIP-AP behavioral group. Absent = behavior group stays unset.
     #[serde(default)]
     pub behavior: Option<PersonaBehaviorRequest>,
@@ -132,6 +135,9 @@ pub struct UpdatePersonaRequest {
     /// stored credentials when an unrelated field is edited.
     #[serde(default)]
     pub env_vars: Option<BTreeMap<String, String>>,
+    /// Absent preserves older callers; present replaces or clears the selection.
+    #[serde(default)]
+    pub agent_skills: Option<Vec<AgentSkill>>,
     /// NIP-AP behavioral group. Same absent-vs-present contract as `env_vars`:
     /// absent = don't touch the stored behavior group (legacy callers don't send it),
     /// present = validate and replace the fields as a unit.
@@ -314,6 +320,7 @@ mod tests {
             parallelism: None,
             created_at: "2026-01-01T00:00:00Z".to_string(),
             updated_at: "2026-01-01T00:00:00Z".to_string(),
+            agent_skills: Vec::new(),
         }
     }
 

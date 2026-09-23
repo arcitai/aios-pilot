@@ -144,6 +144,7 @@ fn definition_from_snapshot(
         session_policy: member.definition.session_policy,
         created_at: now.to_string(),
         updated_at: now.to_string(),
+        agent_skills: Vec::new(),
     })
 }
 
@@ -629,6 +630,7 @@ pub async fn confirm_team_snapshot_import(
             effort_level: None,
             runtime: member.definition.runtime.clone(),
             name_pool: member.definition.name_pool.clone(),
+            agent_skills: Vec::new(),
         };
 
         minted.push(MintedMember {

@@ -705,6 +705,7 @@ pub async fn create_managed_agent(
                 relay_mesh.clone()
             },
             effort_level: None,
+            agent_skills: Vec::new(),
         };
 
         records.push(record);

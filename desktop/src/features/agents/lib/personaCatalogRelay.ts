@@ -75,6 +75,9 @@ function publicationToPersona(
     avatarUrl: publication.agent.avatarUrl,
     description: publication.agent.description ?? null,
     systemPrompt: publication.agent.systemPrompt,
+    // Skills are local definition data; a catalog projection never inherits
+    // them from an existing local copy or a public publication.
+    agentSkills: [],
     runtime: publication.agent.runtime,
     model: publication.agent.model,
     provider: publication.agent.provider,

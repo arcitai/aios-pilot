@@ -31,6 +31,7 @@ fn definition(
         parallelism: None,
         created_at: "".to_string(),
         updated_at: "".to_string(),
+        agent_skills: Vec::new(),
     }
 }
 
@@ -100,6 +101,7 @@ fn record(
         definition_respond_to: None,
         definition_respond_to_allowlist: vec![],
         definition_parallelism: None,
+        agent_skills: Vec::new(),
     }
 }
 

@@ -23,6 +23,7 @@ fn member(name: &str) -> AgentSnapshot {
             respond_to: Some("allowlist".to_string()),
             respond_to_allowlist: vec!["ab".repeat(32)],
             name_pool: vec![],
+            agent_skills: vec![],
             idle_timeout_seconds: None,
             max_turn_duration_seconds: None,
         },
@@ -79,6 +80,7 @@ fn team_export_round_trip_preserves_team_and_excludes_member_memory() {
             parallelism: None,
             created_at: "now".to_string(),
             updated_at: "now".to_string(),
+            agent_skills: Vec::new(),
         },
         AgentDefinition {
             session_policy: Default::default(),
@@ -104,6 +106,7 @@ fn team_export_round_trip_preserves_team_and_excludes_member_memory() {
             parallelism: None,
             created_at: "now".to_string(),
             updated_at: "now".to_string(),
+            agent_skills: Vec::new(),
         },
     ];
     let team = TeamRecord {
@@ -177,6 +180,7 @@ fn team_export_with_instance_and_memory_level_uses_supplied_entries() {
         parallelism: None,
         created_at: "now".to_string(),
         updated_at: "now".to_string(),
+        agent_skills: Vec::new(),
     }];
     let team = TeamRecord {
         id: "t1".to_string(),
@@ -255,6 +259,7 @@ fn team_export_with_instance_and_memory_level_uses_supplied_entries() {
         effort_level: None,
         runtime: None,
         name_pool: vec![],
+        agent_skills: Vec::new(),
     };
 
     let mut memory_map = std::collections::HashMap::new();

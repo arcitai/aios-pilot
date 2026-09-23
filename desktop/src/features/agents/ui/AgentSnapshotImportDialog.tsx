@@ -202,6 +202,54 @@ export function PreviewBody({
         </pre>
       </section>
 
+      <section
+        className="space-y-2 rounded-md border border-border p-3"
+        data-testid="agent-snapshot-import-skills"
+      >
+        <div>
+          <p className="text-sm font-medium">
+            Specialist skills ({preview.agentSkills.length})
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Review the raw instructions and attached files. Skills do not grant
+            tools or bypass existing approvals.
+          </p>
+        </div>
+        {preview.agentSkills.length > 0 ? (
+          <div className="space-y-2">
+            {preview.agentSkills.map((skill, index) => (
+              <details
+                className="rounded bg-muted/40 p-2"
+                key={`${index}-${skill.skillMd.slice(0, 48)}`}
+              >
+                <summary className="cursor-pointer text-xs font-medium">
+                  Skill {index + 1} · {skill.assets.length} attached{" "}
+                  {skill.assets.length === 1 ? "file" : "files"}
+                </summary>
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted/60 p-2 text-xs">
+                  {skill.skillMd}
+                </pre>
+                {skill.assets.map((asset) => (
+                  <details
+                    className="mt-2 rounded bg-muted/60 p-2"
+                    key={asset.path}
+                  >
+                    <summary className="cursor-pointer break-all font-mono text-xs">
+                      {asset.path}
+                    </summary>
+                    <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs">
+                      {previewSkillAsset(asset.contentBase64)}
+                    </pre>
+                  </details>
+                ))}
+              </details>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No skills included.</p>
+        )}
+      </section>
+
       <p className="text-sm text-muted-foreground">
         A new agent will be created with a fresh keypair. The imported agent is
         independent of the source — identity never travels.
@@ -300,6 +348,17 @@ export function PreviewBody({
       </details>
     </div>
   );
+}
+
+function previewSkillAsset(contentBase64: string): string {
+  const bytes = Uint8Array.from(atob(contentBase64), (character) =>
+    character.charCodeAt(0),
+  );
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return `Binary file (${bytes.byteLength} bytes). Raw base64: ${contentBase64}`;
+  }
 }
 
 // ── Result body ───────────────────────────────────────────────────────────────
