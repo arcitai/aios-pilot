@@ -22,6 +22,7 @@ export default defineConfig({
         "**/business-workspace.spec.ts",
         "**/business-connections.spec.ts",
         "**/business-slack.spec.ts",
+        "**/business-google-drive.spec.ts",
         "**/business-onboarding.spec.ts",
         "**/business-apps.spec.ts",
         "**/business-sites.spec.ts",

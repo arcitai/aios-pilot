@@ -342,13 +342,16 @@ export function GoogleDriveConnectionCard({
           "Connection status could not be verified."}
       </p>
 
-      <section
+      <details
+        key={savedClientId ? "configured" : "missing"}
+        open={!savedClientId && configView === "missing"}
         className="space-y-3"
-        aria-labelledby={`${clientIdInputId}-heading`}
       >
-        <h3 id={`${clientIdInputId}-heading`} className="text-sm font-medium">
-          {configView === "missing" ? "Setup required" : "Google OAuth setup"}
-        </h3>
+        <summary className="cursor-pointer text-sm font-medium">
+          {configView === "missing"
+            ? "Set up Google sign-in on this computer"
+            : "Google sign-in settings"}
+        </summary>
         <form className="space-y-3" onSubmit={handleSaveClientId}>
           <div className="space-y-1.5">
             <label htmlFor={clientIdInputId} className="text-sm font-medium">
@@ -412,14 +415,17 @@ export function GoogleDriveConnectionCard({
           </div>
         </form>
         <p className="text-xs text-muted-foreground">
-          Google will grant <code>drive.readonly</code>, which can view and
-          download all files in the Google Drive account. Buzz searches Docs and
-          reads text only after you select a result and click Import. Buzz does
-          not use Google Picker or request <code>drive.file</code>. Changing the
-          client ID affects future sign-ins; a saved connection keeps the client
-          ID it needs for token refresh.
+          This setup is needed once for a self-hosted installation. Changing the
+          client ID affects future sign-ins; existing connections keep their
+          original settings.
         </p>
-      </section>
+      </details>
+
+      <p className="text-xs text-muted-foreground">
+        Google grants read access to all files in the connected Drive account.
+        Only Docs you choose to import are added to your business Sources.
+        Imported text is a snapshot; edits in Google do not update it yet.
+      </p>
 
       {isConnected && (
         <div className="flex flex-wrap gap-2">
@@ -576,9 +582,8 @@ export function GoogleDriveConnectionCard({
       )}
 
       <p className="text-xs text-muted-foreground">
-        Buzz stores access and refresh tokens in the OS keyring for this
-        community and identity. Disconnect removes those local tokens; it does
-        not revoke Google’s account grant. You can review that grant in{" "}
+        Your login is saved securely on this computer. Disconnect removes it
+        here; you can also remove the app’s access in{" "}
         <a
           className="text-primary underline underline-offset-4"
           href="https://myaccount.google.com/permissions"
