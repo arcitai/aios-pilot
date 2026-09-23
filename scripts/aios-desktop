@@ -46,6 +46,9 @@ if [[ "$AIOS_ACTION" == doctor ]]; then
 fi
 
 if [[ "$AIOS_ACTION" == build || "$AIOS_ACTION" == dev ]]; then
+  AIOS_BUILD_REVISION="$(git rev-parse HEAD)"
+  AIOS_BUILD_DIRTY=false
+  if [[ -n "$(git status --porcelain)" ]]; then AIOS_BUILD_DIRTY=true; fi
   # shellcheck source=/dev/null
   source "$AIOS_ROOT/bin/activate-hermit"
   export CARGO_TARGET_DIR="$AIOS_ROOT/target"
@@ -64,6 +67,27 @@ if [[ "$AIOS_ACTION" == build || "$AIOS_ACTION" == dev ]]; then
     exec pnpm tauri dev --config src-tauri/tauri.aios.conf.json
   fi
   pnpm tauri build --debug --bundles app --config src-tauri/tauri.aios.conf.json
+  AIOS_APP="$AIOS_ROOT/desktop/src-tauri/target/debug/bundle/macos/AIOS Pilot.app"
+  # The upstream Info.plist pins Buzz's display name. Give this isolated
+  # development bundle its own visible name before signing the final resources.
+  /usr/libexec/PlistBuddy -c 'Set :CFBundleDisplayName AIOS Pilot' "$AIOS_APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c 'Set :CFBundleName AIOS Pilot' "$AIOS_APP/Contents/Info.plist"
+  node --input-type=module - "$AIOS_APP" "$AIOS_BUILD_REVISION" "$AIOS_BUILD_DIRTY" <<'NODE'
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+const [app, revision, dirty] = process.argv.slice(2);
+writeFileSync(join(app, 'Contents/Resources/aios-build.json'), JSON.stringify({
+  revision, dirty: dirty === 'true', builtAt: new Date().toISOString(),
+  distribution: 'local-development', relay: 'ws://127.0.0.1:3341',
+}, null, 2) + '\n');
+NODE
+  # Tauri debug packaging does not seal the complete bundle. Ad-hoc signing
+  # uses no developer identity, account, network service or notarization.
+  for AIOS_BINARY in buzz-acp buzz-agent buzz-backend-kubernetes buzz-dev-mcp git-credential-nostr buzz; do
+    codesign --force --sign - "$AIOS_APP/Contents/MacOS/$AIOS_BINARY"
+  done
+  codesign --force --sign - --entitlements "$AIOS_ROOT/desktop/src-tauri/Entitlements.plist" "$AIOS_APP"
+  codesign --verify --deep --strict "$AIOS_APP"
   echo "Packaged AIOS Pilot. Open it with: scripts/aios-desktop open"
   exit 0
 fi

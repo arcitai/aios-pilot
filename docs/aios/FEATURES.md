@@ -7,17 +7,17 @@ observed behavior through its real interface, not only source code.
 
 | Capability | Reuse / implementation | Current evidence | Remaining work |
 | --- | --- | --- | --- |
-| Buzz visual identity and conversations | Actual Buzz desktop, tokens, components, rooms and threads | Seven business browser flows pass; desktop and narrow screenshots reviewed | Native-window interaction awaits unlocked desktop |
+| Buzz visual identity and conversations | Actual Buzz desktop, tokens, components, rooms and threads | Nine business/onboarding browser flows pass; desktop and narrow screenshots reviewed | Native-window interaction awaits unlocked desktop |
 | First agent as permanent home base | Existing Fizz agent, private business conversation and onboarding skill | Real Luna/max ACP agent read synthetic company data and replied through the self-hosted relay | Actual model context update with approvals; full first-run native flow |
 | Company context | Versioned domain document in dedicated private channel canvas | Live native and CLI round-trip, history, stale-write/outsider denial; browser conflict/recovery pass | Canvas conflict checks remain advisory, not atomic CAS |
 | Sources and business knowledge | Attributed text/file/link snapshots with editing, removal, search and history | Browser add/edit/remove/recover and GitHub import-to-context flows pass | More formats, incremental indexing, provider refresh and stale-source detection |
-| Connections | Native read-only GitHub adapter with OS-keyring credentials scoped to relay and identity | Native compile and 9 adapter/scope tests pass; browser denied/connect/import/duplicate/revoke flow passes | Real PAT unavailable; Notion adapter in progress; OAuth and runtime agent access remain |
+| Connections | Native read-only GitHub and Notion adapters with OS-keyring credentials scoped to relay and identity | 23 native and 10 frontend checks pass; eight combined business/browser flows cover import, attribution, duplicates and disconnect | Real account credentials not exercised; Slack in progress; OAuth, provider refresh and runtime agent access remain |
 | Agent specialization and skills | Buzz persona packs, skills and ACP | Dedicated skills task active | Per-agent skill selection/discovery and a specialist consuming approved context |
 | Agent teams and delegation | Buzz team/persona runtime | Existing source | Context inheritance, visible work status and acceptance |
 | More computers / remote agents | Buzz backend providers; OpenAgents reference | Source only | Pairing flow, remote execution, disconnection/recovery proof |
-| Local models | OpenAI-compatible endpoints / Ollama; optional MeshLLM | Mesh native feature compiles and 2 UI tests pass; actual model serving starts, but trusted peer admission timed out | Repair admission; local model/tool-use proof and real second-machine exercise |
-| Browser use | Existing/runtime browser adapters; OpenAgents reference | Research only | Isolated browser session, visible control and access |
-| Built-in Design, Slides and Calendar | Modular app registry with replaceable document storage | Dedicated task active | Integrate, persist on relay, rich editing, provider sync |
+| Local models | OpenAI-compatible endpoints / Ollama; optional MeshLLM | Same-host real SmolLM2 inference returned PONG for an admitted peer; non-member inference denied; two mesh UI tests pass | Production constructor/readiness audit; model tool-use and real second-machine proof |
+| Browser use | OpenAgents reference; runtime adapter still to select and verify | Research only; no verified built-in agent browser adapter | Isolated browser session, visible control and access |
+| Built-in Design, Slides and Calendar | Modular app registry, private per-app Canvas documents, replaceable storage | Editors integrated in Business; scoped write/reopen, draft guards and save-race browser checks pass; 11 domain/export checks pass | Agent access and app CLI underway; rich visual design, provider sync and real-relay app roundtrip remain |
 | Forms, Plans and Clips | Bounded app extensions informed by Agent Native | Research only | Implement after core app contract and two usable editors |
 | Generated sites/webapps | Generate → edit → preview → share | Dedicated isolated implementation task active | Private document contract, sandboxed preview, export, publication/access/revoke, durable hosting |
 | Schedules, automations and follow-ups | Existing Buzz workflows | Source only; upstream approval executor gap noted | Trigger/retry/cancel/approval behavior, missed-run recovery |
@@ -25,8 +25,8 @@ observed behavior through its real interface, not only source code.
 | Agent-initiated calls | In-app call requests, with a separate future telephony adapter | Dedicated voice task active | Signed request/accept/decline, explicit microphone consent; external phone provider remains unconfigured |
 | Self-host messages, threads, media | Buzz relay + Postgres/Redis/MinIO and operational CLI | Healthy local stack; message/thread/media readback and fresh-project backup/restore passed; 14 archive-validation regressions pass | Public host/TLS/member-admission deployment not exercised |
 | CLI | Existing Buzz CLI plus business commands | Shared fixtures, JSON operations and live native/CLI/native round-trip pass | App-specific operations, packaged sidecar refresh and model-driven update proof |
-| Access and approvals | Native signed events and channel membership | Canvas native stale-scope and outsider denial proof; connection scope/redirect-denial proof | ACP approval task active; source/tool grants and runtime permission checks pending |
-| Nontechnical installation | Packaged desktop and self-host control commands | Research and scripts underway | Native bundle, first-run flow, update/recovery and simple operator docs |
+| Access and approvals | Native signed owner events, ACP approval broker and channel membership | App-wide permission dialog passes three browser flows including binding tamper protection; Canvas outsider/stale-scope and connection denial checks pass | Confirm actual provider modes and integrate signed runtime approval proof; finer source/tool grants remain |
+| Nontechnical installation | Packaged desktop and self-host control commands | First isolated AIOS Pilot macOS bundle built; ad-hoc signature and packaged business CLI verified | Refresh bundle after feature integration; native first-run interaction, update/recovery and wider distribution |
 
 ## Reference boundaries
 

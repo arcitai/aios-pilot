@@ -263,3 +263,25 @@ inspected. This does not prove live relay persistence or model execution.
   or model-readiness claim is inferred from merely having an agent record.
 - Fresh missing-Fizz provisioning still uses the upstream Agents/onboarding
   path; the new settings shortcut alone does not create a main agent.
+
+## Integrated apps and desktop package — 24 September, 00:02 local
+
+- App task commit `60fc417` integrated as `63fba9f`; Business now renders
+  Slides, Calendar and Design with captured relay/identity and the shared
+  unsaved-draft guard. Documents live in separate private app channels.
+- All five combined app browser tests pass under the production parent CSP:
+  scoped writes/reopen/export, unfinished Calendar drafts, Design isolation,
+  older-save/newer-draft status, and canceling queued writes after discard.
+  Eleven app domain/export tests, TypeScript, build and targeted formatting
+  pass. CSP denied the escaped CSS URL before network interception; a browser
+  request event alone was not evidence of an outgoing request.
+- The lead corrected two real save races, placed preview CSP ahead of all
+  supplied markup, and escaped lone carriage returns in calendar exports.
+  These editors remain bounded initial tools, not full Agent Native parity.
+  Main-agent app membership and app CLI operations are the next app task.
+- The first real isolated macOS bundle built successfully from `3eb821d`.
+  Its display name was corrected and all bundled sidecars plus the app were
+  ad-hoc signed; deep signature verification and packaged business CLI help
+  passed. The build script now repeats those steps and records source revision
+  and dirty state. The artifact must be rebuilt for integrated apps; native
+  window interaction is still unverified because the computer is locked.

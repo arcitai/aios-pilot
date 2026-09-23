@@ -46,19 +46,10 @@ export function createSandboxedPreviewDocument(html: string): string {
   const policy =
     "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; form-action 'none'; base-uri 'none'; worker-src 'none'";
   const policyMeta = `<meta http-equiv="Content-Security-Policy" content="${policy}">`;
-  const safeDocument = /<html\b/i.test(sanitized)
-    ? sanitized
-    : `<!doctype html><html><head></head><body>${sanitized}</body></html>`;
-
-  if (/<head\b[^>]*>/i.test(safeDocument)) {
-    return safeDocument.replace(
-      /<head\b[^>]*>/i,
-      (head) => `${head}${policyMeta}`,
-    );
-  }
-  return safeDocument.replace(/<html\b[^>]*>/i, (htmlOpen) => {
-    return `${htmlOpen}<head>${policyMeta}</head>`;
-  });
+  // Install the policy before any supplied markup, including malformed full
+  // documents with style/images before their own head. Regex cleanup improves
+  // the preview; the opaque sandbox and CSP enforce the execution boundary.
+  return `<!doctype html><html><head>${policyMeta}</head><body>${sanitized}</body></html>`;
 }
 
 export function createSlidesExportHtml(
@@ -99,8 +90,7 @@ export function createCalendarIcs(
       .replaceAll("\\", "\\\\")
       .replaceAll(";", "\\;")
       .replaceAll(",", "\\,")
-      .replaceAll("\r\n", "\\n")
-      .replaceAll("\n", "\\n");
+      .replaceAll(/\r\n?|\n/g, "\\n");
   const toUtc = (value: string) =>
     new Date(value)
       .toISOString()

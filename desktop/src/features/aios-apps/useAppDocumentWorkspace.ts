@@ -83,12 +83,19 @@ export function useAppDocumentWorkspace({
       }
       saveQueueRef.current = saveQueueRef.current
         .catch(() => undefined)
-        .then(() => request.store.save(request.scope, request.document))
+        .then(() => {
+          // A queued save has not reached native storage yet. Discarding or
+          // changing this workspace cancels it just like an unsent timer.
+          if (generationRef.current !== request.generation) return;
+          return request.store.save(request.scope, request.document);
+        })
         .then((saveResult) => {
+          if (!saveResult) return;
           if (
             updateStatus &&
             generationRef.current === request.generation &&
-            saveSequenceRef.current === sequence
+            saveSequenceRef.current === sequence &&
+            documentRef.current === request.document
           ) {
             setPhase("saved");
             setError("");
@@ -100,7 +107,8 @@ export function useAppDocumentWorkspace({
           if (
             updateStatus &&
             generationRef.current === request.generation &&
-            saveSequenceRef.current === sequence
+            saveSequenceRef.current === sequence &&
+            documentRef.current === request.document
           ) {
             setPhase("error");
             setError(

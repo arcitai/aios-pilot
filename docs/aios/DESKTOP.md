@@ -17,7 +17,10 @@ See [self-hosting](SELF_HOSTING.md) for first-time setup, stop and restore.
 
 `build` packages a local debug `.app` and refreshes all six bundled agent/CLI
 tools from this checkout. It is a development build, not a notarized public
-release or an automatic update channel. Build tools are pinned by Hermit and
+release or an automatic update channel. The launcher applies and verifies an
+ad-hoc local signature after packaging; no Apple signing account is required.
+The bundle's `Contents/Resources/aios-build.json` records the source revision,
+whether the checkout had changes, and the build time. Build tools are pinned by Hermit and
 the dependency lockfiles. The app bundle is under
 `desktop/src-tauri/target/debug/bundle/macos/AIOS Pilot.app`.
 

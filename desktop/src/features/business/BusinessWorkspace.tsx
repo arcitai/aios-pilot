@@ -23,6 +23,7 @@ import { useBusinessWorkspace } from "./useBusinessWorkspace";
 import { useDraftGuard } from "./useDraftGuard";
 import { ContextHistory } from "./ContextHistory";
 import { BusinessConnectionsPanel } from "@/features/business-connections";
+import type { CanvasScope } from "@/shared/api/canvasTypes";
 
 type Pane = "conversation" | "company" | "sources" | "connections" | "apps";
 const panes = [
@@ -42,6 +43,8 @@ export function BusinessWorkspace({
     channelId: string,
     companyName: string,
     companySummary: string,
+    scope: CanvasScope,
+    onDirtyChange: (dirty: boolean) => void,
   ) => React.ReactNode;
 }) {
   const workspace = useBusinessWorkspace();
@@ -426,6 +429,8 @@ export function BusinessWorkspace({
               workspace.channel.id,
               document.company.name,
               document.company.summary,
+              workspace.canvasScope,
+              drafts.setDirty,
             ) ?? (
               <div className="p-6 text-sm text-muted-foreground">
                 App editors are being integrated into this workspace.
