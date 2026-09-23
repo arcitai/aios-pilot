@@ -1,4 +1,5 @@
 import type { CanvasScope } from "@/shared/api/canvasTypes";
+import type { ReactNode } from "react";
 import type { SiteDocument } from "./document";
 
 export type SitesWorkspaceProps = {
@@ -7,6 +8,7 @@ export type SitesWorkspaceProps = {
   expectedSignerPubkey: string;
   companyName?: string;
   onDirtyChange?: (dirty: boolean) => void;
+  renderConversation?: (channelId: string) => ReactNode;
 };
 
 export type WorkspaceContext = {

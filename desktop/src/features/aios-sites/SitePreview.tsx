@@ -42,15 +42,24 @@ export function SitePreview({
             </p>
           </div>
         </div>
-        <Button
-          disabled={disabled || !configured || loading}
-          onClick={onRun}
-          size="sm"
-          variant="outline"
-        >
-          <Play />
-          {loading ? "Preparing…" : "Run preview"}
-        </Button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {previewUrl ? (
+            <Button asChild size="sm" variant="ghost">
+              <a href={previewUrl} rel="noopener noreferrer" target="_blank">
+                <ExternalLink /> Open preview in browser
+              </a>
+            </Button>
+          ) : null}
+          <Button
+            disabled={disabled || !configured || loading}
+            onClick={onRun}
+            size="sm"
+            variant="outline"
+          >
+            <Play />
+            {loading ? "Preparing…" : "Run preview"}
+          </Button>
+        </div>
       </header>
       <div className="flex items-center gap-2 border-b border-border/40 bg-muted/20 px-4 py-2 text-2xs text-muted-foreground">
         <ShieldCheck className="size-3.5 shrink-0 text-primary" />
@@ -96,13 +105,8 @@ export function SitePreview({
           </p>
           <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
             This publisher address is not on the desktop’s narrow iframe
-            allowlist. Open the sandboxed preview in your browser.
+            allowlist. Use Open preview in browser above.
           </p>
-          <Button asChild size="sm" variant="outline">
-            <a href={previewUrl} rel="noopener noreferrer" target="_blank">
-              <ExternalLink /> Open preview
-            </a>
-          </Button>
         </div>
       ) : (
         <div className="flex min-h-[26rem] flex-1 flex-col items-center justify-center gap-3 p-6 text-center">

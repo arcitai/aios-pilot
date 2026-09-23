@@ -39,7 +39,7 @@ export function SitesSidebar({
   }
 
   return (
-    <aside className="flex min-h-0 flex-col border-b border-border/50 bg-muted/15 lg:border-b-0 lg:border-r">
+    <aside className="flex max-h-64 min-h-0 flex-col overflow-y-auto border-b border-border/50 bg-muted/15 [@container(min-width:76rem)]:max-h-none [@container(min-width:76rem)]:overflow-visible [@container(min-width:76rem)]:border-b-0 [@container(min-width:76rem)]:border-r">
       <div className="border-b border-border/40 p-4">
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -105,7 +105,7 @@ export function SitesSidebar({
 
       <nav
         aria-label="Sites list"
-        className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2"
+        className="min-h-0 max-h-32 flex-1 space-y-1 overflow-y-auto p-2 [@container(min-width:76rem)]:max-h-none"
       >
         {channels.map((channel) => (
           <button

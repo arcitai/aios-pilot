@@ -13,6 +13,7 @@ import { Button } from "@/shared/ui/button";
 import { siteDownloadName } from "./document";
 import { SiteDocumentDetails } from "./SiteDocumentDetails";
 import { SiteEditorPanels } from "./SiteEditorPanels";
+import { SiteMainAgentPanel } from "./SiteMainAgentPanel";
 import { SitesSidebar } from "./SitesSidebar";
 import { SitesPublisherPanel } from "./SitesPublisherPanel";
 import { SitesWorkspaceDialogs } from "./SitesWorkspaceDialogs";
@@ -34,6 +35,7 @@ export function SitesWorkspace({
   expectedSignerPubkey,
   companyName,
   onDirtyChange,
+  renderConversation,
 }: SitesWorkspaceProps) {
   const workspace = useSitesWorkspace({
     businessChannelId,
@@ -80,7 +82,7 @@ export function SitesWorkspace({
 
   return (
     <section
-      className="flex h-full min-h-0 min-w-0 flex-col"
+      className="@container flex h-full min-h-0 min-w-0 flex-col"
       data-testid="aios-sites-workspace"
     >
       <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-border/50 px-5 py-4">
@@ -170,7 +172,7 @@ export function SitesWorkspace({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[15rem_minmax(0,1fr)]">
+      <div className="grid min-h-0 flex-1 grid-cols-1 [@container(min-width:76rem)]:grid-cols-[15rem_minmax(0,1fr)]">
         <SitesSidebar
           channels={workspace.siteChannels}
           disabled={workspace.isBusy || workspace.contextIsBlocked}
@@ -273,6 +275,16 @@ export function SitesWorkspace({
                   siteBytes={workspace.siteBytes}
                   sourceRevision={workspace.sourceRevision}
                   status={workspace.status}
+                />
+                <SiteMainAgentPanel
+                  key={`${selectedChannel.id}:${context.scope.expectedRelayUrl}:${context.scope.expectedSignerPubkey}`}
+                  businessChannelId={businessChannelId}
+                  disabled={workspace.isBusy || workspace.contextIsBlocked}
+                  onMembershipChanged={workspace.refreshChannels}
+                  renderConversation={renderConversation}
+                  scope={context.scope}
+                  siteChannelId={selectedChannel.id}
+                  siteTitle={draft.title}
                 />
                 <SiteEditorPanels
                   businessChannelId={businessChannelId}
