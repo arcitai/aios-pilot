@@ -75,17 +75,13 @@ pub async fn set_canvas(
     let uuid = uuid::Uuid::parse_str(&channel_id)
         .map_err(|_| format!("invalid channel UUID: {channel_id}"))?;
 
-    // Advisory optimistic-concurrency check (client-side, two-stage). A
-    // conflict-checked save asserts the revision the editor loaded. Stage one:
-    // read the live head once before publishing and compare locally, returning
-    // a frozen pre-write conflict marker if it already moved — this catches the
-    // realistic stale-edit case (head moved minutes ago). Stage two, after
-    // publishing (below): re-read the head once and confirm our write is (or is
-    // built upon by) the visible head, surfacing a distinct post-write
-    // supersession marker otherwise. Detection is bounded to a competitor
-    // visible at check time; preventing the race entirely — a competitor that
-    // lands between our read and write, or after the post-write read — needs
-    // relay-side linearization (phase 2).
+    // Read the current head for a useful early conflict and timestamp floor.
+    // The signed expected-revision tag then reaches the relay's atomic
+    // insert_channel_head_checked transaction, which rejects a competing write
+    // even when it lands after this read. Post-submit readback below reports
+    // whether the accepted revision is still visible or has been built upon.
+    // Callers omitting expected_revision deliberately request an unconditional
+    // append; they do not receive compare-and-swap protection.
     //
     // `head` is `None` when the channel has no canvas yet. A matched head's
     // `created_at` is the floor for writer discipline: an accepted save stamps
@@ -113,10 +109,9 @@ pub async fn set_canvas(
     let result = submit_event_at_with_keys(builder, &state, &base, &keys).await?;
 
     // Post-write supersession detection (only for conflict-checked writes). The
-    // precondition above closes the stale-edit case; this closes the narrower
-    // window where a concurrent write we could not see at precondition time has
-    // become visible by now. An unconditional append (`None`) has nothing to
-    // assert, so it stays fire-and-forget.
+    // relay precondition prevents stale-head replacement. Readback additionally
+    // identifies any subsequent unconditional write that became visible after
+    // acceptance. An unconditional append (`None`) has nothing to assert.
     //
     // The submit above was accepted, so the write is durable. `classify_post_write`
     // maps the ancestry read to a report: a failed read is durable-but-unverified
@@ -149,8 +144,8 @@ pub async fn set_canvas(
 /// - any other head → `Err(CANVAS_SUPERSEDED)`: a concurrent write won the
 ///   visible head; our revision is preserved in history, not lost.
 ///
-/// This cannot close the residual race where a competitor lands *after* this
-/// read — that needs relay linearization (phase 2).
+/// A later authorized unconditional write may still replace the visible head;
+/// readback reports the state observed here, not a permanent ownership lock.
 fn classify_post_write(
     our_id: &str,
     ancestry: Result<Vec<(String, Option<String>)>, String>,

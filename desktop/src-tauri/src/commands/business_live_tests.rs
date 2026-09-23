@@ -202,12 +202,99 @@ async fn live_roundtrip() {
     .await
     .unwrap();
     assert_eq!(history["revisions"].as_array().unwrap().len(), 2);
+    concurrent_canvas_proof(&reopened, &relay, &channel.id, &signer).await;
     if let Ok(binary) = std::env::var("AIOS_TEST_CLI") {
         cli_roundtrip(&reopened, &binary, &relay, &channel.id, &signer).await;
     }
     println!(
         "Native live proof passed for private test channel {}",
         channel.id
+    );
+}
+
+async fn concurrent_canvas_proof(
+    app: &tauri::App<tauri::test::MockRuntime>,
+    relay: &str,
+    channel: &str,
+    signer: &str,
+) {
+    use crate::relay::{relay_api_base_url_with_override, submit_event_at_with_keys};
+    let state = app.state::<AppState>();
+    let keys = state.signing_keys().unwrap();
+    let head = get_canvas(
+        channel.into(),
+        Some(relay.into()),
+        Some(signer.into()),
+        app.state(),
+    )
+    .await
+    .unwrap();
+    let revision = head["event_id"].as_str().unwrap();
+    let content: serde_json::Value =
+        serde_json::from_str(head["content"].as_str().unwrap()).unwrap();
+    let timestamp =
+        buzz_sdk_pkg::canvas_write_created_at(head["updated_at"].as_u64().unwrap()).unwrap();
+    let mut first = content.clone();
+    let mut second = content;
+    first["company"]["goals"] = serde_json::json!("Concurrent writer one");
+    second["company"]["goals"] = serde_json::json!("Concurrent writer two");
+    let channel_id = uuid::Uuid::parse_str(channel).unwrap();
+    // Build both signed preconditions from the same snapshot before submitting
+    // either. A client-only preflight cannot reject this race for us.
+    let build = |document: &serde_json::Value| {
+        crate::events::build_set_canvas(channel_id, &document.to_string(), Some(revision))
+            .unwrap()
+            .custom_created_at(nostr::Timestamp::from(timestamp))
+    };
+    let base = relay_api_base_url_with_override(&state);
+    let (left, right) = tokio::join!(
+        submit_event_at_with_keys(build(&first), &state, &base, &keys),
+        submit_event_at_with_keys(build(&second), &state, &base, &keys),
+    );
+    assert_ne!(
+        left.is_ok(),
+        right.is_ok(),
+        "exactly one same-head write is accepted"
+    );
+    let (winner, rejected) = match (left, right) {
+        (Ok(_), Err(error)) => (first, error),
+        (Err(error), Ok(_)) => (second, error),
+        _ => unreachable!(),
+    };
+    assert!(
+        rejected.to_lowercase().contains("conflict"),
+        "loser must return a conflict: {rejected}"
+    );
+    let readback = get_canvas(
+        channel.into(),
+        Some(relay.into()),
+        Some(signer.into()),
+        app.state(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(readback["content"].as_str().unwrap()).unwrap(),
+        winner
+    );
+    let history = get_canvas_history(
+        channel.into(),
+        Some(20),
+        None,
+        None,
+        Some(relay.into()),
+        Some(signer.into()),
+        app.state(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        history["revisions"].as_array().unwrap().len(),
+        3,
+        "the rejected competing write never enters durable history"
+    );
+    println!(
+        "Relay atomic canvas proof: one competing write accepted, one rejected, history verified"
     );
 }
 
