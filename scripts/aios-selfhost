@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -19,6 +20,7 @@ import tempfile
 import threading
 from collections import deque
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -37,7 +39,8 @@ VOLUMES = {
     "minio": "buzz-minio-data",
     "git": "buzz-git-data",
 }
-SECRET_KEYS = (
+SITES_VOLUME = "aios-sites-data"
+REQUIRED_SECRET_KEYS = (
     "BUZZ_RELAY_PRIVATE_KEY",
     "BUZZ_GIT_HOOK_HMAC_SECRET",
     "POSTGRES_PASSWORD",
@@ -45,6 +48,7 @@ SECRET_KEYS = (
     "BUZZ_S3_ACCESS_KEY",
     "BUZZ_S3_SECRET_KEY",
 )
+SECRET_KEYS = (*REQUIRED_SECRET_KEYS, "AIOS_SITES_ADMIN_TOKEN")
 REDACTED_OUTPUT_LIMIT = 24_000
 MAX_ARCHIVE_ENTRIES = 5_000_000
 MAX_ARCHIVE_BYTES = 2 * 1024**4
@@ -85,7 +89,7 @@ def parse_env(path: Path) -> dict[str, str]:
     return values
 
 
-def private_env_file(path: Path) -> dict[str, str]:
+def private_env_file(path: Path, *, allow_incomplete_publisher: bool = False) -> dict[str, str]:
     if not path.is_file() or path.is_symlink():
         fail(f"Environment file not found or is a symlink: {path}; run setup first.")
     file_stat = path.stat()
@@ -95,10 +99,10 @@ def private_env_file(path: Path) -> dict[str, str]:
     if mode & 0o077:
         fail(f"Environment file permissions are {mode:04o}; restrict it with chmod 600 {path}.")
     values = parse_env(path)
-    missing = [key for key in SECRET_KEYS if not values.get(key)]
+    missing = [key for key in REQUIRED_SECRET_KEYS if not values.get(key)]
     if missing:
         fail("Environment file is missing required generated secrets; run setup with a new file.")
-    for key in SECRET_KEYS:
+    for key in REQUIRED_SECRET_KEYS:
         if "CHANGE_ME" in values[key]:
             fail("Environment file still contains a secret placeholder; generate fresh local secrets.")
     private_key = values["BUZZ_RELAY_PRIVATE_KEY"]
@@ -110,6 +114,11 @@ def private_env_file(path: Path) -> dict[str, str]:
         fail("BUZZ_HTTP_PORT must be a TCP port number.")
     if not 1024 <= port <= 65535:
         fail("BUZZ_HTTP_PORT must be between 1024 and 65535.")
+    enabled = values.get("AIOS_SITES_ENABLED", "0")
+    if enabled not in ("0", "1"):
+        fail("AIOS_SITES_ENABLED must be 0 or 1.")
+    if enabled == "1" and not (allow_incomplete_publisher and not values.get("AIOS_SITES_ADMIN_TOKEN")):
+        sites_settings(values)
     return values
 
 
@@ -126,7 +135,82 @@ def project_name_argument(value: str) -> str:
         raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
-def compose_env(env_file: Path, values: dict[str, str] | None = None) -> dict[str, str]:
+def sites_enabled(values: dict[str, str]) -> bool:
+    return values.get("AIOS_SITES_ENABLED", "0") == "1"
+
+
+def sites_settings(values: dict[str, str]) -> dict[str, str | int]:
+    token = values.get("AIOS_SITES_ADMIN_TOKEN", "")
+    try:
+        token_bytes = token.encode("ascii")
+    except UnicodeEncodeError:
+        fail("AIOS_SITES_ADMIN_TOKEN must be 32–512 printable non-space ASCII characters.")
+    if not 32 <= len(token_bytes) <= 512 or any(byte < 0x21 or byte > 0x7E for byte in token_bytes):
+        fail("AIOS_SITES_ADMIN_TOKEN must be 32–512 printable non-space ASCII characters.")
+    if "CHANGE_ME" in token:
+        fail("AIOS_SITES_ADMIN_TOKEN must be freshly generated, not a placeholder.")
+
+    def read_port(key: str, default: int) -> int:
+        try:
+            port_value = int(values.get(key, str(default)))
+        except ValueError:
+            fail(f"{key} must be a TCP port number.")
+        if not 1024 <= port_value <= 65535:
+            fail(f"{key} must be between 1024 and 65535.")
+        return port_value
+
+    public_port = read_port("AIOS_SITES_PUBLIC_PORT", 3351)
+    admin_port = read_port("AIOS_SITES_ADMIN_PORT", 3352)
+    relay_port = int(values["BUZZ_HTTP_PORT"])
+    if len({relay_port, public_port, admin_port}) != 3:
+        fail("Relay, Sites public, and Sites admin ports must be distinct.")
+    dev_preview = values.get("AIOS_SITES_ENABLE_DEV_PREVIEW", "0")
+    if dev_preview not in ("0", "1"):
+        fail("AIOS_SITES_ENABLE_DEV_PREVIEW must be 0 or 1.")
+
+    public_origin = values.get("AIOS_SITES_PUBLIC_ORIGIN", "") or f"http://127.0.0.1:{public_port}"
+    try:
+        parsed = urlsplit(public_origin)
+        parsed_port = parsed.port
+    except ValueError:
+        fail("AIOS_SITES_PUBLIC_ORIGIN must be a valid HTTP or HTTPS origin without credentials or a path.")
+    if (
+        any(character.isspace() or ord(character) < 0x21 for character in public_origin)
+        or parsed.scheme not in ("http", "https")
+        or not parsed.hostname
+        or "%" in parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or "?" in public_origin
+        or "#" in public_origin
+        or parsed.netloc.endswith(":")
+        or parsed.path not in ("", "/")
+    ):
+        fail("AIOS_SITES_PUBLIC_ORIGIN must be a valid HTTP or HTTPS origin without credentials or a path.")
+    if parsed.scheme == "http":
+        try:
+            local_origin = parsed.hostname == "localhost" or ipaddress.ip_address(parsed.hostname).is_loopback
+        except ValueError:
+            local_origin = False
+        if not local_origin or parsed_port != public_port:
+            fail("An HTTP Sites public origin must use a loopback host and match AIOS_SITES_PUBLIC_PORT.")
+    return {
+        "token": token,
+        "public_port": public_port,
+        "admin_port": admin_port,
+        "public_origin": public_origin.rstrip("/"),
+        "dev_preview": dev_preview,
+    }
+
+
+def compose_env(
+    env_file: Path,
+    values: dict[str, str] | None = None,
+    *,
+    include_publisher: bool = False,
+) -> dict[str, str]:
     result = os.environ.copy()
     parsed = values if values is not None else parse_env(env_file)
     # The generated local file is authoritative. Ambient Buzz variables from a
@@ -134,6 +218,7 @@ def compose_env(env_file: Path, values: dict[str, str] | None = None) -> dict[st
     for key in parsed:
         result.pop(key, None)
     result["AIOS_ENV_FILE"] = str(env_file.resolve())
+    result["COMPOSE_PROFILES"] = "publisher" if include_publisher or sites_enabled(parsed) else ""
     return result
 
 
@@ -253,6 +338,13 @@ def config_json(project: str, env_file: Path, values: dict[str, str]) -> dict:
     relay_ports = config.get("services", {}).get("relay", {}).get("ports", [])
     if len(relay_ports) != 1 or relay_ports[0].get("host_ip") != "127.0.0.1":
         fail("Relay host port is not restricted to the loopback interface.")
+    try:
+        relay_host_port = int(relay_ports[0].get("published", ""))
+        relay_target_port = int(relay_ports[0].get("target", ""))
+    except (TypeError, ValueError):
+        fail("Rendered relay host and target ports are invalid.")
+    if relay_host_port != int(values["BUZZ_HTTP_PORT"]) or relay_target_port != 3000:
+        fail("Rendered relay ports do not match the private local environment.")
     for service in ("postgres", "redis", "minio"):
         if config.get("services", {}).get(service, {}).get("ports"):
             fail(f"{service} must not publish a host port in the local stack.")
@@ -260,6 +352,62 @@ def config_json(project: str, env_file: Path, values: dict[str, str]) -> dict:
         actual = config.get("volumes", {}).get(resource, {}).get("name", "")
         if not actual.startswith(f"{project}_"):
             fail(f"Compose volume {resource} is not isolated under project {project}.")
+    sites_volume = sites_volume_name(config, project)
+    if not sites_volume.startswith(f"{project}_"):
+        fail(f"Compose volume {SITES_VOLUME} is not isolated under project {project}.")
+    services = config.get("services", {})
+    publisher = services.get("sites-publisher")
+    if sites_enabled(values):
+        if not isinstance(publisher, dict):
+            fail("Sites Publisher is enabled but its Compose profile is not active.")
+        settings = sites_settings(values)
+        ports = publisher.get("ports", [])
+        expected_ports = {
+            (3351, int(settings["public_port"])),
+            (3352, int(settings["admin_port"])),
+        }
+        actual_ports: set[tuple[int, int]] = set()
+        for item in ports:
+            if not isinstance(item, dict) or item.get("host_ip") != "127.0.0.1":
+                fail("Sites Publisher host ports must be restricted to the loopback interface.")
+            try:
+                actual_ports.add((int(item.get("target", "")), int(item.get("published", ""))))
+            except (TypeError, ValueError):
+                fail("Rendered Sites Publisher host and target ports are invalid.")
+        if len(ports) != 2 or actual_ports != expected_ports:
+            fail("Sites Publisher must publish only its configured public and admin ports on loopback.")
+        if relay_host_port in {port for _, port in actual_ports}:
+            fail("Relay and Sites Publisher host ports must be distinct.")
+        environment = publisher.get("environment", {})
+        if not isinstance(environment, dict):
+            fail("Rendered Sites Publisher environment settings are missing.")
+        expected_environment = {
+            "AIOS_SITES_ADMIN_TOKEN": str(settings["token"]),
+            "AIOS_SITES_DATA_DIR": "/data",
+            "AIOS_SITES_CONTAINER_MODE": "1",
+            "AIOS_SITES_PUBLIC_ORIGIN": str(settings["public_origin"]),
+            "AIOS_SITES_ENABLE_DEV_PREVIEW": str(settings["dev_preview"]),
+        }
+        for key, expected_value in expected_environment.items():
+            actual_value = environment.get(key)
+            if key == "AIOS_SITES_PUBLIC_ORIGIN" and isinstance(actual_value, str):
+                actual_value = actual_value.rstrip("/")
+            if str(actual_value) != expected_value:
+                fail(f"Rendered Sites Publisher setting {key} does not match the private environment.")
+        configured_profiles = publisher.get("profiles", [])
+        if configured_profiles != ["publisher"]:
+            fail("Sites Publisher must remain behind the opt-in publisher Compose profile.")
+        mounts = publisher.get("volumes", [])
+        if not any(
+            isinstance(mount, dict)
+            and mount.get("type") == "volume"
+            and mount.get("source") == SITES_VOLUME
+            and mount.get("target") == "/data"
+            for mount in mounts
+        ):
+            fail("Sites Publisher must persist its data under /data in the project-scoped volume.")
+    elif publisher is not None:
+        fail("Sites Publisher must remain disabled unless AIOS_SITES_ENABLED=1.")
     return config
 
 
@@ -305,6 +453,70 @@ def openssl_random_hex(byte_count: int) -> str:
     if not re.fullmatch(rf"[0-9a-f]{{{byte_count * 2}}}", value):
         fail("OpenSSL returned a malformed random value.")
     return value
+
+
+def write_env_content_atomic(path: Path, content: str) -> None:
+    if path.is_symlink():
+        fail(f"Refusing to replace a symlink environment file: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        fd, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    except OSError as exc:
+        fail(f"Could not prepare a private environment update for {path}: {exc}")
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        os.chmod(path, 0o600)
+        directory_fd = os.open(path.parent, os.O_RDONLY)
+        try:
+            try:
+                os.fsync(directory_fd)
+            except OSError:
+                pass
+        finally:
+            os.close(directory_fd)
+    except OSError as exc:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        temporary.unlink(missing_ok=True)
+        fail(f"Could not atomically update private environment file {path}: {exc}")
+
+
+def update_env_values(path: Path, updates: dict[str, str]) -> None:
+    if path.is_symlink() or not path.is_file():
+        fail(f"Environment file not found or is a symlink: {path}.")
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"Cannot read environment file {path}: {exc}")
+    updated: set[str] = set()
+    output: list[str] = []
+    for raw_line in content.splitlines(keepends=True):
+        key, sep, _ = raw_line.partition("=")
+        normalized_key = key.strip()
+        if sep and normalized_key in updates:
+            if normalized_key in updated:
+                fail(f"Environment file contains a duplicate {normalized_key} entry; refusing to update it.")
+            output.append(f"{normalized_key}={updates[normalized_key]}\n")
+            updated.add(normalized_key)
+        else:
+            output.append(raw_line)
+    missing = [key for key in updates if key not in updated]
+    if missing:
+        updated_content = "".join(output)
+        if updated_content and not updated_content.endswith("\n"):
+            updated_content += "\n"
+        updated_content += "".join(f"{key}={updates[key]}\n" for key in missing)
+    else:
+        updated_content = "".join(output)
+    write_env_content_atomic(path, updated_content)
 
 
 def read_tlv(data: bytes, offset: int) -> tuple[int, bytes, int]:
@@ -440,6 +652,65 @@ def create_environment(path: Path, port: int) -> None:
     os.chmod(path, 0o600)
 
 
+def enable_publisher(env_file: Path, project: str) -> None:
+    values = private_env_file(env_file, allow_incomplete_publisher=True)
+    original = env_file.read_text(encoding="utf-8")
+    updates: dict[str, str] = {}
+    if values.get("AIOS_SITES_ENABLED") != "1":
+        updates["AIOS_SITES_ENABLED"] = "1"
+
+    def numeric_port(value: str) -> int | None:
+        try:
+            return int(value)
+        except ValueError:
+            return None
+
+    def next_port(start: int, reserved: set[int]) -> str:
+        for candidate_port in range(start, 65536):
+            if candidate_port not in reserved:
+                return str(candidate_port)
+        fail("Could not choose distinct local ports for Sites Publisher.")
+
+    relay_port = int(values["BUZZ_HTTP_PORT"])
+    public_existing = values.get("AIOS_SITES_PUBLIC_PORT", "")
+    admin_existing = values.get("AIOS_SITES_ADMIN_PORT", "")
+    reserved = {relay_port}
+    existing_admin_number = numeric_port(admin_existing)
+    if existing_admin_number is not None:
+        reserved.add(existing_admin_number)
+    public_port = public_existing or next_port(3351, reserved)
+    existing_public_number = numeric_port(public_port)
+    if existing_public_number is not None:
+        reserved.add(existing_public_number)
+    admin_port = admin_existing or next_port(3352, reserved)
+    defaults = {
+        "AIOS_SITES_PUBLIC_PORT": public_port,
+        "AIOS_SITES_ADMIN_PORT": admin_port,
+        "AIOS_SITES_PUBLIC_ORIGIN": values.get("AIOS_SITES_PUBLIC_ORIGIN") or f"http://127.0.0.1:{public_port}",
+        "AIOS_SITES_ENABLE_DEV_PREVIEW": values.get("AIOS_SITES_ENABLE_DEV_PREVIEW") or "0",
+        "AIOS_SITES_ADMIN_TOKEN": values.get("AIOS_SITES_ADMIN_TOKEN") or openssl_random_hex(32),
+    }
+    for key, value in defaults.items():
+        if not values.get(key):
+            updates[key] = value
+    candidate = {**values, **updates}
+    sites_settings(candidate)
+    if not updates:
+        config_json(project, env_file, values)
+        print(f"Sites Publisher is already enabled for project {project}.")
+        return
+
+    try:
+        update_env_values(env_file, updates)
+        updated_values = private_env_file(env_file)
+        config_json(project, env_file, updated_values)
+    except BaseException:
+        write_env_content_atomic(env_file, original)
+        raise
+    print(f"Sites Publisher enabled in the private environment for project {project}.")
+    print("Run scripts/aios-selfhost start to build and start it; the admin token remains in the mode-0600 env file.")
+
+
 def create_test_identity(path: Path) -> str:
     if path.exists() or path.is_symlink():
         fail(f"Refusing to overwrite existing identity file: {path}")
@@ -471,10 +742,25 @@ def volume_names(config: dict) -> dict[str, str]:
     return names
 
 
-def service_running(project: str, env_file: Path, values: dict[str, str]) -> list[str]:
+def sites_volume_name(config: dict, project: str | None = None) -> str:
+    name = config.get("volumes", {}).get(SITES_VOLUME, {}).get("name")
+    if name:
+        return name
+    if project:
+        return f"{project}_{SITES_VOLUME}"
+    fail("Compose did not resolve the Sites Publisher data volume.")
+
+
+def service_running(
+    project: str,
+    env_file: Path,
+    values: dict[str, str],
+    *,
+    include_publisher: bool = False,
+) -> list[str]:
     code, output = run_capture(
         compose_args(project, env_file, "ps", "--services", "--status", "running"),
-        env=compose_env(env_file, values),
+        env=compose_env(env_file, values, include_publisher=include_publisher),
         values=values,
         timeout=30,
     )
@@ -543,6 +829,12 @@ def backup(project: str, env_file: Path) -> None:
     values = validate_stack(project, env_file, require_engine=True)
     config = config_json(project, env_file, values)
     names = volume_names(config)
+    sites_volume = sites_volume_name(config, project)
+    include_sites = sites_enabled(values) or volume_exists(sites_volume)
+    if sites_enabled(values) and not volume_exists(sites_volume):
+        fail(f"Sites Publisher data volume is missing ({sites_volume}); start this project before backing it up.")
+    if include_sites:
+        names["sites"] = sites_volume
     for name in names.values():
         if not volume_exists(name):
             fail(f"Persistent volume is missing ({name}); start this project before backing it up.")
@@ -559,7 +851,7 @@ def backup(project: str, env_file: Path) -> None:
     archive_dir.mkdir(mode=0o700)
     os.chmod(archive_dir, 0o700)
     env_copy = destination / "environment.env"
-    running = service_running(project, env_file, values)
+    running = service_running(project, env_file, values, include_publisher=include_sites)
     stopped = False
     try:
         shutil.copyfile(env_file, env_copy)
@@ -567,7 +859,7 @@ def backup(project: str, env_file: Path) -> None:
         stopped = True
         run_stream(
             compose_args(project, env_file, "stop"),
-            env=compose_env(env_file, values),
+            env=compose_env(env_file, values, include_publisher=include_sites),
             values=values,
             timeout=120,
         )
@@ -575,10 +867,10 @@ def backup(project: str, env_file: Path) -> None:
             helper_container(volume, archive_dir, f"{service}.tar.gz", restore=False)
             os.chmod(archive_dir / f"{service}.tar.gz", 0o600)
         files = {"environment.env": sha256(env_copy)}
-        files.update({f"data/{service}.tar.gz": sha256(archive_dir / f"{service}.tar.gz") for service in VOLUMES})
+        files.update({f"data/{service}.tar.gz": sha256(archive_dir / f"{service}.tar.gz") for service in names})
         manifest = {
             "format": "aios-buzz-selfhost-backup",
-            "version": 1,
+            "version": 2 if include_sites else 1,
             "createdAt": dt.datetime.now(dt.timezone.utc).isoformat(),
             "sourceProject": project,
             "sourceCommit": source_revision(),
@@ -595,7 +887,7 @@ def backup(project: str, env_file: Path) -> None:
         if stopped and running:
             code, output = run_capture(
                 compose_args(project, env_file, "start", *running),
-                env=compose_env(env_file, values),
+                env=compose_env(env_file, values, include_publisher=include_sites),
                 values=values,
                 timeout=180,
             )
@@ -629,7 +921,8 @@ def verify_backup(directory: Path) -> tuple[dict, Path, dict[str, str]]:
         fail(f"Backup manifest is missing or invalid: {exc}")
     if not isinstance(manifest, dict):
         fail("Backup manifest must be a JSON object.")
-    if manifest.get("format") != "aios-buzz-selfhost-backup" or type(manifest.get("version")) is not int or manifest["version"] != 1:
+    version = manifest.get("version")
+    if manifest.get("format") != "aios-buzz-selfhost-backup" or type(version) is not int or version not in (1, 2):
         fail("Unsupported AIOS Buzz backup format.")
 
     source_project = manifest.get("sourceProject")
@@ -653,16 +946,26 @@ def verify_backup(directory: Path) -> tuple[dict, Path, dict[str, str]]:
         fail("Backup creation-time metadata is more than five minutes in the future.")
 
     expected_volumes = {service: f"{source_project}_{resource}" for service, resource in VOLUMES.items()}
+    if version == 2:
+        expected_volumes["sites"] = f"{source_project}_{SITES_VOLUME}"
     if manifest.get("volumes") != expected_volumes:
         fail("Backup source volume metadata does not match its Compose project and expected data services.")
     data_dir = directory / "data"
     if data_dir.is_symlink() or not data_dir.is_dir() or stat.S_IMODE(data_dir.stat().st_mode) & 0o077:
         fail("Backup data directory is missing, is a symlink, or has open permissions; restrict it with chmod 700.")
 
-    expected = {"environment.env"} | {f"data/{service}.tar.gz" for service in VOLUMES}
+    services = tuple(VOLUMES) + (("sites",) if version == 2 else ())
+    expected = {"environment.env"} | {f"data/{service}.tar.gz" for service in services}
     checksums = manifest.get("sha256", {})
     if not isinstance(checksums, dict) or set(checksums) != expected:
-        fail("Backup manifest does not contain the expected environment and four data archives.")
+        count = "four" if version == 1 else "five"
+        fail(f"Backup manifest does not contain the expected environment and {count} data archives.")
+    expected_root = {"manifest.json", "environment.env", "data"}
+    if {path.name for path in directory.iterdir()} != expected_root:
+        fail("Backup directory contains unexpected files or directories.")
+    expected_archives = {f"{service}.tar.gz" for service in services}
+    if {path.name for path in data_dir.iterdir()} != expected_archives:
+        fail("Backup data directory contains unexpected or missing archives.")
     for relative in sorted(expected):
         path = directory / relative
         if path.is_symlink() or not path.is_file():
@@ -678,11 +981,16 @@ def verify_backup(directory: Path) -> tuple[dict, Path, dict[str, str]]:
         if relative.startswith("data/"):
             safe_archive(path)
     values = private_env_file(env_copy)
+    if version == 1 and sites_enabled(values):
+        fail("Version 1 backups cannot enable Sites Publisher without a Sites data archive.")
     return manifest, env_copy, values
 
 
-def free_local_port(start: int) -> int:
+def free_local_port(start: int, excluded: set[int] | None = None) -> int:
+    excluded_ports = excluded or set()
     for port in list(range(max(1024, start), 65536)) + list(range(3341, max(1024, start))):
+        if port in excluded_ports:
+            continue
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
             try:
                 probe.bind(("127.0.0.1", port))
@@ -692,28 +1000,54 @@ def free_local_port(start: int) -> int:
     fail("Could not find an unused loopback TCP port for the restored stack.")
 
 
-def write_restored_env(source: Path, destination: Path, old_port: int, new_port: int, values: dict[str, str]) -> None:
+def write_restored_env(
+    source: Path,
+    destination: Path,
+    new_port: int,
+    values: dict[str, str],
+    new_sites_ports: tuple[int, int] | None = None,
+) -> None:
     content = source.read_text(encoding="utf-8")
     local_host = values.get("BUZZ_DOMAIN") in ("127.0.0.1", "localhost", "[::1]")
+    replacements: dict[str, str] = {}
+    required: set[str] = set()
     if local_host:
-        replacements = {
+        replacements.update({
             "BUZZ_HTTP_PORT": str(new_port),
             "RELAY_URL": f"ws://127.0.0.1:{new_port}",
             "BUZZ_MEDIA_BASE_URL": f"http://127.0.0.1:{new_port}/media",
             "BUZZ_CORS_ORIGINS": f"http://127.0.0.1:{new_port},http://localhost:{new_port}",
-        }
-        lines: list[str] = []
-        seen: set[str] = set()
-        for line in content.splitlines():
-            key, sep, _ = line.partition("=")
-            if sep and key in replacements:
-                lines.append(f"{key}={replacements[key]}")
-                seen.add(key)
-            else:
-                lines.append(line)
-        if set(replacements) != seen:
-            fail("The backup environment is missing local endpoint settings; refusing to edit it for restore.")
-        content = "\n".join(lines) + "\n"
+        })
+        required.update(replacements)
+    if new_sites_ports is not None:
+        new_public_port, new_admin_port = new_sites_ports
+        replacements["AIOS_SITES_PUBLIC_PORT"] = str(new_public_port)
+        replacements["AIOS_SITES_ADMIN_PORT"] = str(new_admin_port)
+        origin = values.get("AIOS_SITES_PUBLIC_ORIGIN", "")
+        if origin:
+            parsed_origin = urlsplit(origin)
+            if parsed_origin.scheme == "http":
+                hostname = parsed_origin.hostname or "127.0.0.1"
+                if ":" in hostname:
+                    hostname = f"[{hostname}]"
+                replacements["AIOS_SITES_PUBLIC_ORIGIN"] = f"http://{hostname}:{new_public_port}"
+
+    lines: list[str] = []
+    seen: set[str] = set()
+    for line in content.splitlines():
+        key, sep, _ = line.partition("=")
+        key = key.strip()
+        if sep and key in replacements:
+            lines.append(f"{key}={replacements[key]}")
+            seen.add(key)
+        else:
+            lines.append(line)
+    if not required.issubset(seen):
+        fail("The backup environment is missing local endpoint settings; refusing to edit it for restore.")
+    for key in replacements:
+        if key not in seen:
+            lines.append(f"{key}={replacements[key]}")
+    content = "\n".join(lines) + "\n"
     destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     destination.parent.chmod(0o700)
     fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -804,21 +1138,37 @@ def restore(directory: Path, requested_project: str | None, should_start: bool) 
         fail(f"Refusing to reuse an existing restore directory: {RESTORE_ROOT / project}")
     original_port = int(values["BUZZ_HTTP_PORT"])
     local_host = values.get("BUZZ_DOMAIN") in ("127.0.0.1", "localhost", "[::1]")
-    port = free_local_port(original_port + 1) if local_host else original_port
-    write_restored_env(env_copy, restored_env, original_port, port, values)
+    sites_settings_value = sites_settings(values) if sites_enabled(values) else None
+    source_ports = {original_port}
+    if sites_settings_value is not None:
+        source_ports.update({int(sites_settings_value["public_port"]), int(sites_settings_value["admin_port"])})
+    port = free_local_port(original_port + 1, source_ports) if local_host else original_port
+    allocated_ports = {*source_ports, port}
+    new_sites_ports: tuple[int, int] | None = None
+    if sites_settings_value is not None:
+        new_public_port = free_local_port(int(sites_settings_value["public_port"]) + 1, allocated_ports)
+        allocated_ports.add(new_public_port)
+        new_admin_port = free_local_port(int(sites_settings_value["admin_port"]) + 1, allocated_ports)
+        allocated_ports.add(new_admin_port)
+        new_sites_ports = (new_public_port, new_admin_port)
+    write_restored_env(env_copy, restored_env, port, values, new_sites_ports)
     restored_values = private_env_file(restored_env)
     config = config_json(project, restored_env, restored_values)
     names = volume_names(config)
-    existing = [name for name in names.values() if volume_exists(name)]
+    sites_name = sites_volume_name(config, project)
+    existing = [name for name in (*names.values(), sites_name) if volume_exists(name)]
     if existing:
         restored_env.unlink()
         fail("Restore target project already has persistent volumes; choose a new --project-name. No existing volume was changed.")
 
     backup_id = hashlib.sha256((str(directory.resolve()) + manifest["createdAt"]).encode()).hexdigest()[:16]
     created: list[str] = []
+    restore_volumes = dict(VOLUMES)
+    if manifest["version"] == 2:
+        restore_volumes["sites"] = SITES_VOLUME
     try:
-        for service, resource in VOLUMES.items():
-            volume = names[service]
+        for service, resource in restore_volumes.items():
+            volume = sites_name if service == "sites" else names[service]
             code, output = run_capture(
                 [
                     "docker",
@@ -848,6 +1198,8 @@ def restore(directory: Path, requested_project: str | None, should_start: bool) 
     print(f"Private environment copy: {restored_env}")
     if local_host:
         print(f"Loopback relay URL: ws://127.0.0.1:{port}")
+    if new_sites_ports is not None:
+        print(f"Sites Publisher loopback ports: public {new_sites_ports[0]}, admin {new_sites_ports[1]}")
     try:
         if local_host:
             rebind_local_community(project, restored_env, restored_values, original_port, port)
@@ -894,6 +1246,10 @@ def command_setup(args: argparse.Namespace) -> None:
     print(f"Run scripts/aios-selfhost doctor, then scripts/aios-selfhost start. Relay: ws://127.0.0.1:{args.port}")
 
 
+def command_enable_publisher(args: argparse.Namespace) -> None:
+    enable_publisher(args.env_file, args.project_name)
+
+
 def command_identity(args: argparse.Namespace) -> None:
     pubkey = create_test_identity(args.output)
     print(f"Local Nostr test identity created: {args.output} (mode 0600)")
@@ -921,7 +1277,7 @@ def command_stop(args: argparse.Namespace) -> None:
     engine_version()
     run_stream(
         compose_args(args.project_name, args.env_file, "down"),
-        env=compose_env(args.env_file, values),
+        env=compose_env(args.env_file, values, include_publisher=True),
         values=values,
         timeout=180,
     )
@@ -934,7 +1290,7 @@ def command_status(args: argparse.Namespace) -> None:
     engine_version()
     run_stream(
         compose_args(args.project_name, args.env_file, "ps"),
-        env=compose_env(args.env_file, values),
+        env=compose_env(args.env_file, values, include_publisher=True),
         values=values,
         timeout=30,
     )
@@ -965,6 +1321,12 @@ def parse_args() -> argparse.Namespace:
     setup_parser = subparsers.add_parser("setup", help="Generate private local secrets and validate Compose.")
     add_stack_options(setup_parser, setup=True)
     setup_parser.set_defaults(handler=command_setup)
+    publisher_parser = subparsers.add_parser(
+        "enable-publisher",
+        help="Enable the optional local Sites Publisher without replacing existing secrets.",
+    )
+    add_stack_options(publisher_parser)
+    publisher_parser.set_defaults(handler=command_enable_publisher)
     identity_parser = subparsers.add_parser("identity", help="Create a local, mode-0600 CLI test identity.")
     identity_parser.add_argument("--output", type=Path, default=DEFAULT_IDENTITY)
     identity_parser.set_defaults(handler=command_identity)

@@ -70,6 +70,25 @@ Compose's resolved project/volume names, loopback binding, internal-only data
 services, and whether Docker Engine is reachable. If the Engine is stopped,
 start Docker Desktop (or the configured daemon) and rerun it.
 
+The Sites Publisher is optional and stays off after `setup`. To add it to this
+local project, run:
+
+```bash
+scripts/aios-selfhost enable-publisher
+scripts/aios-selfhost doctor
+scripts/aios-selfhost start
+```
+
+`enable-publisher` adds a fresh operator token when one is missing and
+defaults to public port 3351, admin port 3352, and preview development
+origins disabled. Both ports bind only to loopback. It adds missing Publisher
+settings and flips the enable flag in the existing mode-0600 file; existing
+Buzz credentials and an existing Sites token are preserved. The token is never
+printed. To use other local ports or enable
+the Vite/E2E preview origins, edit the corresponding `AIOS_SITES_*` entries in
+`deploy/aios/.env` and rerun `doctor` before `start`. See [AIOS Sites](SITES.md)
+for the preview and publishing behavior.
+
 ## Connect Buzz Desktop or the CLI
 
 In Buzz Desktop, choose **Add community** in the community rail and enter:
@@ -110,9 +129,10 @@ volumes. Starting again rebuilds the local relay image as needed. Do not add
 
 The relay's messages, threads, channels, and event history live in Postgres;
 Redis persists its append-only data; media lives in MinIO; relay-hosted Git
-repositories have a separate persistent volume. The `backup` command stops
-this isolated project briefly, archives all four volumes as one consistent
-local snapshot, then restarts the services that were running:
+repositories have a separate persistent volume. If enabled, the Sites
+Publisher stores published snapshots in its own volume. The `backup` command
+stops this isolated project briefly, archives its persistent volumes as one
+consistent local snapshot, then restarts the services that were running:
 
 ```bash
 scripts/aios-selfhost backup
@@ -123,6 +143,13 @@ They contain the private environment file and potentially sensitive relay
 records. They are unencrypted; keep them local, restrict access, and do not
 upload them to source control or a third-party service.
 
+When Sites is disabled and its volume does not exist, backups keep the
+existing version 1 format with exactly four data archives. If Sites is enabled
+or its volume already exists, the backup uses version 2 and adds
+`data/sites.tar.gz`; this also preserves Publisher data if the profile is
+currently disabled. Both versions are checksum-verified, and restore accepts
+only the exact volume/archive set declared by the version.
+
 Restore always creates a new Compose project and fresh named volumes. Existing
 volumes are never overwritten. For a local restore:
 
@@ -130,9 +157,13 @@ volumes are never overwritten. For a local restore:
 scripts/aios-selfhost restore deploy/aios/backups/<backup-directory>
 ```
 
-By default this assigns a new project name and an available loopback port,
-restores the data, builds the relay, and starts the new stack. To restore data
-without leaving containers running, add `--no-start`. To choose a project name, add
+By default this assigns a new project name and available loopback ports,
+restores the data, builds the relay, and starts the new stack. A version 2
+backup restores the Sites volume into a fresh, project-scoped volume; an
+enabled Publisher also receives new public and admin ports while its operator
+token is preserved. A local HTTP public origin is rebased to the new public
+port; a custom HTTPS origin stays unchanged. To restore data without leaving
+containers running, add `--no-start`. To choose a project name, add
 `--project-name aios-buzz-recovered`. If any target volume already exists,
 restore refuses to proceed; choose another project name so existing data stays
 untouched.

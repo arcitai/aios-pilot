@@ -12,3 +12,34 @@ services:
         published: "${BUZZ_HTTP_PORT:-3341}"
         host_ip: 127.0.0.1
         protocol: tcp
+
+  sites-publisher:
+    profiles: [publisher]
+    build:
+      context: ../../
+      dockerfile: services/aios-sites/Dockerfile
+    environment:
+      AIOS_SITES_ADMIN_TOKEN: ${AIOS_SITES_ADMIN_TOKEN:-}
+      AIOS_SITES_DATA_DIR: /data
+      AIOS_SITES_CONTAINER_MODE: "1"
+      AIOS_SITES_PUBLIC_ORIGIN: "${AIOS_SITES_PUBLIC_ORIGIN:-http://127.0.0.1:${AIOS_SITES_PUBLIC_PORT:-3351}}"
+      AIOS_SITES_ENABLE_DEV_PREVIEW: ${AIOS_SITES_ENABLE_DEV_PREVIEW:-0}
+    ports:
+      - target: 3351
+        published: "${AIOS_SITES_PUBLIC_PORT:-3351}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+      - target: 3352
+        published: "${AIOS_SITES_ADMIN_PORT:-3352}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - aios-sites-data:/data
+    restart: unless-stopped
+    networks:
+      - buzz-net
+
+volumes:
+  aios-sites-data:
+    labels:
+      com.buzz.volume: sites-publisher
