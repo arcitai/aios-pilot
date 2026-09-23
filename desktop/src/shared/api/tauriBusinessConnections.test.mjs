@@ -27,6 +27,76 @@ test("Slack status requires and returns the verified workspace ID", async () => 
   );
 });
 
+test("Google Drive keeps public setup config local and scopes every provider call", async () => {
+  const scope = {
+    expectedRelayUrl: "wss://community.example",
+    expectedSignerPubkey: "a".repeat(64),
+  };
+  const calls = [];
+  const clientId = "123456789012-exampleclient.apps.googleusercontent.com";
+  const api = createBusinessConnectionsApi(async (command, args = {}) => {
+    calls.push({ command, args });
+    if (command === "get_google_drive_oauth_client_id") return clientId;
+    if (command === "set_google_drive_oauth_client_id") return args.clientId;
+    if (command === "get_google_drive_connection_status") {
+      return { connected: false };
+    }
+    if (command === "connect_google_drive_connection") {
+      return { connected: true };
+    }
+    if (command === "search_google_drive_files") {
+      return { files: [], hasMore: false, nextCursor: null };
+    }
+    if (command === "import_google_drive_document") {
+      return {
+        title: "Runbook",
+        content: "Selected text",
+        url: "https://docs.google.com/document/d/doc-123/edit",
+        kind: "url",
+        truncated: false,
+      };
+    }
+    return undefined;
+  });
+
+  assert.equal(await api.getGoogleDriveOAuthClientId(), clientId);
+  assert.equal(await api.setGoogleDriveOAuthClientId(clientId), clientId);
+  assert.deepEqual(await api.getGoogleDriveConnectionStatus(scope), {
+    connected: false,
+  });
+  assert.deepEqual(await api.connectGoogleDriveConnection(scope), {
+    connected: true,
+  });
+  await api.searchGoogleDriveFiles(scope, "runbook", "drive-cursor");
+  await api.importGoogleDriveDocument(scope, "doc-123");
+  await api.revokeGoogleDriveConnection(scope);
+
+  assert.deepEqual(
+    calls.map(({ command, args }) => ({
+      command,
+      expectedRelayUrl: args.expectedRelayUrl,
+      expectedSignerPubkey: args.expectedSignerPubkey,
+    })),
+    [
+      "get_google_drive_oauth_client_id",
+      "set_google_drive_oauth_client_id",
+      "get_google_drive_connection_status",
+      "connect_google_drive_connection",
+      "search_google_drive_files",
+      "import_google_drive_document",
+      "revoke_google_drive_connection",
+    ].map((command, index) => ({
+      command,
+      expectedRelayUrl: index < 2 ? undefined : scope.expectedRelayUrl,
+      expectedSignerPubkey: index < 2 ? undefined : scope.expectedSignerPubkey,
+    })),
+  );
+  assert.deepEqual(calls[1].args, { clientId });
+  assert.equal(calls[4].args.query, "runbook");
+  assert.equal(calls[4].args.cursor, "drive-cursor");
+  assert.equal(calls[5].args.fileId, "doc-123");
+});
+
 test("all provider commands keep the rendered A scope when native workspace is B", async () => {
   const renderedScopeA = {
     expectedRelayUrl: "wss://community-a.example",

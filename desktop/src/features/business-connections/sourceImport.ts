@@ -12,6 +12,7 @@ const NOTION_PAGE_ID_SUFFIX =
   /(?:^|-)([A-Fa-f0-9]{32}|[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12})$/;
 const SLACK_CHANNEL_ID = /^[CG][A-Z0-9]{8,31}$/;
 const SLACK_TEAM_ID = /^T[A-Z0-9]{7,31}$/;
+const GOOGLE_DRIVE_FILE_ID = /^[A-Za-z0-9_-]{1,256}$/;
 
 export type SanitizedConnectionImport = {
   source: BusinessConnectionSource;
@@ -49,7 +50,7 @@ function truncateUtf16(value: string, maxUnits: number): string {
 
 function sourceUrl(
   url: string,
-  provider: "github" | "notion" | "slack",
+  provider: "github" | "notion" | "slack" | "google",
   expectedResourceId?: string,
   expectedWorkspaceId?: string,
 ): string {
@@ -58,7 +59,7 @@ function sourceUrl(
     parsedUrl = new URL(url);
   } catch {
     throw new Error(
-      `${provider === "github" ? "GitHub" : provider === "notion" ? "Notion" : "Slack"} returned an invalid source link.`,
+      `${provider === "github" ? "GitHub" : provider === "notion" ? "Notion" : provider === "slack" ? "Slack" : "Google Drive"} returned an invalid source link.`,
     );
   }
   const commonInvalid =
@@ -110,7 +111,7 @@ function sourceUrl(
     ) {
       throw new Error("Notion returned an invalid page link.");
     }
-  } else {
+  } else if (provider === "slack") {
     const channelIds = parsedUrl.searchParams.getAll("channel");
     const teamIds = parsedUrl.searchParams.getAll("team");
     const queryKeys = [...parsedUrl.searchParams.keys()];
@@ -137,13 +138,33 @@ function sourceUrl(
     ) {
       throw new Error("Slack returned an invalid channel link.");
     }
+  } else {
+    const path = parsedUrl.pathname.split("/").filter(Boolean);
+    const expectedPath =
+      expectedResourceId && GOOGLE_DRIVE_FILE_ID.test(expectedResourceId)
+        ? `/document/d/${expectedResourceId}/edit`
+        : null;
+    if (
+      commonInvalid ||
+      parsedUrl.hostname !== "docs.google.com" ||
+      expectedPath === null ||
+      parsedUrl.pathname !== expectedPath ||
+      path.length !== 4 ||
+      path[0] !== "document" ||
+      path[1] !== "d" ||
+      path[3] !== "edit" ||
+      !GOOGLE_DRIVE_FILE_ID.test(path[2] ?? "") ||
+      path[2] !== expectedResourceId
+    ) {
+      throw new Error("Google Drive returned an invalid document link.");
+    }
   }
   return parsedUrl.toString().replace(/\/$/, "");
 }
 
 function sanitizeImport(
   input: unknown,
-  provider: "github" | "notion" | "slack",
+  provider: "github" | "notion" | "slack" | "google",
   expectedResourceId?: string,
   expectedWorkspaceId?: string,
 ): SanitizedConnectionImport {
@@ -152,7 +173,9 @@ function sanitizeImport(
       ? "GitHub"
       : provider === "notion"
         ? "Notion"
-        : "Slack";
+        : provider === "slack"
+          ? "Slack"
+          : "Google Drive";
   if (!input || typeof input !== "object") {
     throw new Error(`${providerName} returned an invalid source.`);
   }
@@ -229,6 +252,14 @@ export function sanitizeSlackImport(
   expectedWorkspaceId: string,
 ): SanitizedConnectionImport {
   return sanitizeImport(input, "slack", expectedChannelId, expectedWorkspaceId);
+}
+
+/** Validate Google Drive provenance against the selected document ID. */
+export function sanitizeGoogleDriveImport(
+  input: unknown,
+  expectedFileId: string,
+): SanitizedConnectionImport {
+  return sanitizeImport(input, "google", expectedFileId);
 }
 
 /** Compatibility helper for callers that only need the source contract. */

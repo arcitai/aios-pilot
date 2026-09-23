@@ -7,6 +7,7 @@ use reqwest::{
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use url::Url;
+use zeroize::Zeroizing;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
@@ -73,6 +74,18 @@ impl ProviderHttpClient {
     ) -> Result<RequestBuilder, TransportError> {
         let url = self.api_url(path)?;
         self.request_url(method, url, token, headers, body)
+    }
+
+    /// Build a form-encoded request against this client's fixed origin.
+    /// OAuth token endpoints use this path without attaching an access token.
+    pub fn request_form(
+        &self,
+        method: Method,
+        path: &str,
+        fields: &[(&str, &str)],
+    ) -> Result<RequestBuilder, TransportError> {
+        let url = self.api_url(path)?;
+        Ok(self.client.request(method, url).form(fields))
     }
 
     pub fn request_url(
@@ -148,6 +161,28 @@ pub(super) async fn decode_json_counted<T: DeserializeOwned>(
     Ok((value, length))
 }
 
+pub(super) async fn decode_text(
+    response: Response,
+    max_bytes: usize,
+) -> Result<String, TransportError> {
+    if !response.status().is_success() {
+        return Err(TransportError::HttpStatus(response.status().as_u16()));
+    }
+    let bytes = read_bounded_body(response, max_bytes).await?;
+    String::from_utf8(bytes).map_err(|_| TransportError::InvalidResponse)
+}
+
+pub(super) async fn decode_sensitive_json<T: DeserializeOwned>(
+    response: Response,
+    max_bytes: usize,
+) -> Result<T, TransportError> {
+    if !response.status().is_success() {
+        return Err(TransportError::HttpStatus(response.status().as_u16()));
+    }
+    let bytes = read_bounded_sensitive_body(response, max_bytes).await?;
+    serde_json::from_slice(&bytes).map_err(|_| TransportError::InvalidResponse)
+}
+
 async fn read_bounded_body(
     mut response: Response,
     max_bytes: usize,
@@ -159,6 +194,30 @@ async fn read_bounded_body(
         return Err(TransportError::ResponseTooLarge);
     }
     let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| TransportError::Network)?
+    {
+        if bytes.len().saturating_add(chunk.len()) > max_bytes {
+            return Err(TransportError::ResponseTooLarge);
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    Ok(bytes)
+}
+
+async fn read_bounded_sensitive_body(
+    mut response: Response,
+    max_bytes: usize,
+) -> Result<Zeroizing<Vec<u8>>, TransportError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_bytes as u64)
+    {
+        return Err(TransportError::ResponseTooLarge);
+    }
+    let mut bytes = Zeroizing::new(Vec::new());
     while let Some(chunk) = response
         .chunk()
         .await

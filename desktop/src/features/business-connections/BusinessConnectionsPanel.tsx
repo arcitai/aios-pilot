@@ -5,6 +5,7 @@ import type {
   BusinessConnectionSource,
 } from "@/shared/api/tauriBusinessConnections";
 import { GitHubConnectionCard } from "./GitHubConnectionCard";
+import { GoogleDriveConnectionCard } from "./GoogleDriveConnectionCard";
 import { NotionConnectionCard } from "./NotionConnectionCard";
 import { SlackConnectionCard } from "./SlackConnectionCard";
 import type { BusinessConnectionStatusReport } from "./connectionStatus";
@@ -13,7 +14,10 @@ import {
   type RunConnectionAction,
   type SharedConnectionAction,
 } from "./ProviderCard";
-import { BUSINESS_CONNECTION_PROVIDERS } from "./providerRegistry";
+import {
+  BUSINESS_CONNECTION_PROVIDERS,
+  type BusinessConnectionProviderDescriptor,
+} from "./providerRegistry";
 
 export type BusinessConnectionsPanelProps = BusinessConnectionScope & {
   onImportSource: (source: BusinessConnectionSource) => Promise<void>;
@@ -67,7 +71,9 @@ export function BusinessConnectionsPanel({
     [],
   );
 
-  const plannedProviders = BUSINESS_CONNECTION_PROVIDERS.filter(
+  const providerDescriptors: readonly BusinessConnectionProviderDescriptor[] =
+    BUSINESS_CONNECTION_PROVIDERS;
+  const plannedProviders = providerDescriptors.filter(
     (provider) => provider.availability === "planned",
   );
 
@@ -92,6 +98,13 @@ export function BusinessConnectionsPanel({
 
       <div className="grid gap-4">
         <GitHubConnectionCard
+          scope={scope}
+          busyAction={busyAction}
+          runAction={runAction}
+          onImportSource={onImportSource}
+          onConnectionStatus={reportStatus}
+        />
+        <GoogleDriveConnectionCard
           scope={scope}
           busyAction={busyAction}
           runAction={runAction}

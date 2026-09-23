@@ -70,9 +70,9 @@ export const BUSINESS_CONNECTION_PROVIDERS = [
   },
   {
     id: "google",
-    name: "Google",
-    availability: "planned",
-    description: "Not connected yet.",
+    name: "Google Drive",
+    availability: "available",
+    description: "Search Docs and import text from a document you select.",
   },
   {
     id: "notion",

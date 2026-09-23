@@ -1,5 +1,6 @@
 import type {
   GitHubConnectionStatus,
+  GoogleDriveConnectionStatus,
   NotionConnectionStatus,
   SlackConnectionStatus,
 } from "@/shared/api/tauriBusinessConnections";
@@ -10,6 +11,13 @@ type UnverifiedStatusReport = {
 };
 
 export type BusinessConnectionStatusReport =
+  | (UnverifiedStatusReport & { providerId: "google" })
+  | {
+      providerId: "google";
+      state: "connected";
+      verified: true;
+      label: "Google Drive";
+    }
   | (UnverifiedStatusReport & { providerId: "github" })
   | {
       providerId: "github";
@@ -31,6 +39,27 @@ export type BusinessConnectionStatusReport =
       verified: true;
       workspaceName: string;
     };
+
+export function checkingGoogleDriveStatus(): BusinessConnectionStatusReport {
+  return { providerId: "google", state: "checking", verified: false };
+}
+
+export function unknownGoogleDriveStatus(): BusinessConnectionStatusReport {
+  return { providerId: "google", state: "unknown", verified: false };
+}
+
+export function reportGoogleDriveStatus(
+  status: GoogleDriveConnectionStatus,
+): BusinessConnectionStatusReport {
+  return status.connected
+    ? {
+        providerId: "google",
+        state: "connected",
+        verified: true,
+        label: "Google Drive",
+      }
+    : { providerId: "google", state: "not_connected", verified: false };
+}
 
 export function checkingGitHubStatus(): BusinessConnectionStatusReport {
   return { providerId: "github", state: "checking", verified: false };

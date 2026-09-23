@@ -73,6 +73,22 @@ export type SlackChannelListResult = {
   nextCursor: string | null;
 };
 
+export type GoogleDriveConnectionStatus = { connected: boolean };
+
+export type GoogleDriveFile = {
+  id: string;
+  title: string;
+  mimeType: string;
+  modifiedTime: string | null;
+  url: string;
+};
+
+export type GoogleDriveSearchResult = {
+  files: GoogleDriveFile[];
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
 type BusinessConnectionInvoker = <T>(
   command: string,
   args?: Record<string, unknown>,
@@ -95,6 +111,70 @@ export function createBusinessConnectionsApi(
   }
 
   return {
+    async getGoogleDriveOAuthClientId(): Promise<string | null> {
+      const clientId = await invoke<string | null>(
+        "get_google_drive_oauth_client_id",
+      );
+      if (clientId !== null && typeof clientId !== "string") {
+        throw new Error(
+          "Google Drive configuration returned an invalid client ID.",
+        );
+      }
+      return clientId;
+    },
+
+    setGoogleDriveOAuthClientId(clientId: string): Promise<string> {
+      return invoke("set_google_drive_oauth_client_id", { clientId });
+    },
+
+    async getGoogleDriveConnectionStatus(
+      scope: BusinessConnectionScope,
+    ): Promise<GoogleDriveConnectionStatus> {
+      const status = await invokeInScope<{ connected: boolean }>(
+        scope,
+        "get_google_drive_connection_status",
+      );
+      if (typeof status.connected !== "boolean") {
+        throw new Error("Google Drive status was invalid.");
+      }
+      return { connected: status.connected };
+    },
+
+    async connectGoogleDriveConnection(
+      scope: BusinessConnectionScope,
+    ): Promise<GoogleDriveConnectionStatus> {
+      const status = await invokeInScope<{ connected: boolean }>(
+        scope,
+        "connect_google_drive_connection",
+      );
+      if (status.connected !== true) {
+        throw new Error("Google Drive did not verify the connection.");
+      }
+      return { connected: true };
+    },
+
+    revokeGoogleDriveConnection(scope: BusinessConnectionScope): Promise<void> {
+      return invokeInScope(scope, "revoke_google_drive_connection");
+    },
+
+    searchGoogleDriveFiles(
+      scope: BusinessConnectionScope,
+      query: string,
+      cursor?: string | null,
+    ): Promise<GoogleDriveSearchResult> {
+      return invokeInScope(scope, "search_google_drive_files", {
+        query,
+        cursor,
+      });
+    },
+
+    importGoogleDriveDocument(
+      scope: BusinessConnectionScope,
+      fileId: string,
+    ): Promise<BusinessConnectionImport> {
+      return invokeInScope(scope, "import_google_drive_document", { fileId });
+    },
+
     async getGitHubConnectionStatus(
       scope: BusinessConnectionScope,
     ): Promise<GitHubConnectionStatus> {
@@ -237,6 +317,21 @@ export function createBusinessConnectionsApi(
 }
 
 const businessConnectionsApi = createBusinessConnectionsApi(invokeTauri);
+
+export const getGoogleDriveOAuthClientId =
+  businessConnectionsApi.getGoogleDriveOAuthClientId;
+export const setGoogleDriveOAuthClientId =
+  businessConnectionsApi.setGoogleDriveOAuthClientId;
+export const getGoogleDriveConnectionStatus =
+  businessConnectionsApi.getGoogleDriveConnectionStatus;
+export const connectGoogleDriveConnection =
+  businessConnectionsApi.connectGoogleDriveConnection;
+export const revokeGoogleDriveConnection =
+  businessConnectionsApi.revokeGoogleDriveConnection;
+export const searchGoogleDriveFiles =
+  businessConnectionsApi.searchGoogleDriveFiles;
+export const importGoogleDriveDocument =
+  businessConnectionsApi.importGoogleDriveDocument;
 
 export const getGitHubConnectionStatus =
   businessConnectionsApi.getGitHubConnectionStatus;

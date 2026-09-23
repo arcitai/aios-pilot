@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   sanitizeGitHubImport,
   sanitizeGitHubSource,
+  sanitizeGoogleDriveImport,
   sanitizeNotionImport,
   sanitizeSlackImport,
 } from "./sourceImport.ts";
@@ -203,6 +204,40 @@ test("preserves Slack's native partial-history marker without adding another", (
   );
   assert.equal(result.truncated, true);
   assert.equal(result.source.content.split(marker).length - 1, 1);
+});
+
+test("accepts Google Drive provenance only for the explicitly selected Doc", () => {
+  const selectedId = "doc_id-123";
+  const source = {
+    title: "Runbook",
+    content: "# Runbook\nSelected document text",
+    url: `https://docs.google.com/document/d/${selectedId}/edit`,
+    kind: "url",
+    truncated: false,
+  };
+  assert.equal(
+    sanitizeGoogleDriveImport(source, selectedId).source.url,
+    source.url,
+  );
+  for (const url of [
+    `https://docs.google.com.evil.example/document/d/${selectedId}/edit`,
+    `https://docs.google.com/document/d/other-id/edit`,
+    `https://docs.google.com/document/d/${selectedId}/edit?redirect=https://evil.example`,
+    `https://docs.google.com/document/d/${selectedId}/edit/extra`,
+    `https://docs.google.com/document/d/${selectedId}/edit/`,
+    `https://user:password@docs.google.com/document/d/${selectedId}/edit`,
+    `https://docs.google.com:444/document/d/${selectedId}/edit`,
+    `http://docs.google.com/document/d/${selectedId}/edit`,
+  ]) {
+    assert.throws(
+      () => sanitizeGoogleDriveImport({ ...source, url }, selectedId),
+      /invalid document link/,
+    );
+  }
+  assert.throws(
+    () => sanitizeGoogleDriveImport(source, "another-selected-id"),
+    /invalid document link/,
+  );
 });
 
 test("rejects incomplete README sources", () => {

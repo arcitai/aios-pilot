@@ -7,6 +7,12 @@ import {
 } from "./providerRegistry";
 
 export type SharedConnectionAction =
+  | "google:connect"
+  | "google:configure"
+  | "google:revoke"
+  | "google:list"
+  | "google:import"
+  | "google:status"
   | "github:connect"
   | "github:revoke"
   | "github:list"

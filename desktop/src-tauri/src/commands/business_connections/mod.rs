@@ -1,4 +1,5 @@
 mod adapter;
+mod google_drive;
 mod notion;
 mod notion_content;
 mod scope;
@@ -7,25 +8,35 @@ mod slack_content;
 mod source_text;
 mod transport;
 
-use tauri::State;
+use std::{fs::File, io::Read};
+
+use tauri::{AppHandle, Manager, State};
+use tauri_plugin_opener::OpenerExt;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::{app_state::AppState, relay, secret_store::SecretStore};
 
 pub use self::adapter::{GitHubAccount, GitHubConnectionStatus, GitHubRepository, ImportedReadme};
+pub use self::google_drive::{
+    GoogleDriveConnectionStatus, GoogleDriveFile, GoogleDriveOAuthClientConfig,
+    GoogleDriveSearchResult, ImportedGoogleDoc,
+};
 pub use self::notion::{
     ImportedNotionPage, NotionAccount, NotionConnectionStatus, NotionPageSearchResult,
 };
 pub use self::slack::{
-    ImportedSlackHistory, SlackChannel, SlackChannelListResult, SlackConnectionStatus,
-    SlackWorkspaceAccount,
+    ImportedSlackHistory, SlackChannelListResult, SlackConnectionStatus, SlackWorkspaceAccount,
 };
 use self::{
     adapter::{CredentialStore, GitHubAdapter},
+    google_drive::{validate_configured_client_id, GoogleDriveAdapter},
     notion::NotionAdapter,
     scope::{require_matching_scope, ConnectionScope},
     slack::SlackAdapter,
 };
+
+const GOOGLE_DRIVE_OAUTH_CONFIG_FILE: &str = "google-drive-oauth.json";
+const GOOGLE_DRIVE_OAUTH_CONFIG_MAX_BYTES: u64 = 4096;
 
 impl CredentialStore for SecretStore {
     fn load(&self, key: &str) -> Result<Option<String>, String> {
@@ -83,6 +94,73 @@ fn slack_adapter() -> Result<SlackAdapter<'static>, String> {
     // Slack bot tokens use the same build-specific, scope-keyed OS keyring.
     SlackAdapter::new(SecretStore::shared(crate::app_state::keyring_service()))
         .map_err(|error| error.to_string())
+}
+
+fn google_drive_adapter() -> Result<GoogleDriveAdapter<'static>, String> {
+    GoogleDriveAdapter::new(SecretStore::shared(crate::app_state::keyring_service()))
+        .map_err(|error| error.to_string())
+}
+
+fn google_drive_oauth_config_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    app.path()
+        .app_config_dir()
+        .map(|directory| directory.join(GOOGLE_DRIVE_OAUTH_CONFIG_FILE))
+        .map_err(|error| format!("could not locate Buzz's local configuration directory: {error}"))
+}
+
+fn read_google_drive_client_id(app: &AppHandle) -> Result<Option<String>, String> {
+    let path = google_drive_oauth_config_path(app)?;
+    let file = match File::open(&path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("could not read the local Google Drive configuration".to_string()),
+    };
+    if file
+        .metadata()
+        .map_err(|_| "could not read the local Google Drive configuration".to_string())?
+        .len()
+        > GOOGLE_DRIVE_OAUTH_CONFIG_MAX_BYTES
+    {
+        return Err("the local Google Drive configuration is too large".to_string());
+    }
+    let mut bytes = Vec::new();
+    file.take(GOOGLE_DRIVE_OAUTH_CONFIG_MAX_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "could not read the local Google Drive configuration".to_string())?;
+    if bytes.len() as u64 > GOOGLE_DRIVE_OAUTH_CONFIG_MAX_BYTES {
+        return Err("the local Google Drive configuration is too large".to_string());
+    }
+    let config: GoogleDriveOAuthClientConfig = serde_json::from_slice(&bytes)
+        .map_err(|_| "the local Google Drive configuration is invalid".to_string())?;
+    validate_configured_client_id(&config.client_id).map_err(|error| error.to_string())?;
+    Ok(Some(config.client_id))
+}
+
+/// Read the installation-local public Google Desktop OAuth client ID.
+#[tauri::command]
+pub fn get_google_drive_oauth_client_id(app: AppHandle) -> Result<Option<String>, String> {
+    read_google_drive_client_id(&app)
+}
+
+/// Save only the public Google Desktop OAuth client ID in Buzz app config.
+#[tauri::command]
+pub fn set_google_drive_oauth_client_id(
+    app: AppHandle,
+    client_id: String,
+) -> Result<String, String> {
+    validate_configured_client_id(&client_id).map_err(|error| error.to_string())?;
+    let path = google_drive_oauth_config_path(&app)?;
+    let directory = path
+        .parent()
+        .ok_or_else(|| "could not locate Buzz's local configuration directory".to_string())?;
+    std::fs::create_dir_all(directory)
+        .map_err(|_| "could not create Buzz's local configuration directory".to_string())?;
+    let payload = serde_json::to_vec(&GoogleDriveOAuthClientConfig {
+        client_id: client_id.clone(),
+    })
+    .map_err(|_| "could not encode the local Google Drive configuration".to_string())?;
+    crate::managed_agents::storage::atomic_write_json_restricted(&path, &payload)?;
+    Ok(client_id)
 }
 
 /// Verify the saved token with GitHub; a keyring entry alone never means connected.
@@ -397,6 +475,91 @@ pub async fn import_slack_channel_history(
     );
     let source = adapter
         .import_channel_history(&token, &channel_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    ensure_scope_is_current(&scope, &state)?;
+    Ok(source)
+}
+
+/// Run Google Desktop OAuth in the system browser and store verified tokens locally.
+#[tauri::command]
+pub async fn connect_google_drive_connection(
+    app: AppHandle,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<GoogleDriveConnectionStatus, String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    let client_id = read_google_drive_client_id(&app)?
+        .ok_or_else(|| "Set up a Google Desktop OAuth client ID first.".to_string())?;
+    google_drive_adapter()?
+        .connect(&scope, &client_id, |url| {
+            app.opener().open_url(url, None::<&str>).map_err(|_| ())
+        })
+        .await
+        .map_err(|error| error.to_string())?;
+    ensure_scope_is_current(&scope, &state)?;
+    Ok(GoogleDriveConnectionStatus { connected: true })
+}
+
+/// Verify a saved Google token using only Drive's minimal about resource.
+#[tauri::command]
+pub async fn get_google_drive_connection_status(
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<GoogleDriveConnectionStatus, String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    let status = google_drive_adapter()?
+        .status(&scope)
+        .await
+        .map_err(|error| error.to_string())?;
+    ensure_scope_is_current(&scope, &state)?;
+    Ok(status)
+}
+
+/// Remove only this community and identity's local Google token pair.
+#[tauri::command]
+pub fn revoke_google_drive_connection(
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    google_drive_adapter()?
+        .revoke(&scope)
+        .map_err(|error| error.to_string())
+}
+
+/// Search a bounded page of Google Docs by title using Drive's read-only API.
+#[tauri::command]
+pub async fn search_google_drive_files(
+    query: String,
+    cursor: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<GoogleDriveSearchResult, String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    let result = google_drive_adapter()?
+        .search_files(&scope, &query, cursor.as_deref())
+        .await
+        .map_err(|error| error.to_string())?;
+    ensure_scope_is_current(&scope, &state)?;
+    Ok(result)
+}
+
+/// Import text only from the Google Doc ID explicitly selected in the UI.
+#[tauri::command]
+pub async fn import_google_drive_document(
+    file_id: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<ImportedGoogleDoc, String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    let source = google_drive_adapter()?
+        .import_document(&scope, &file_id)
         .await
         .map_err(|error| error.to_string())?;
     ensure_scope_is_current(&scope, &state)?;
