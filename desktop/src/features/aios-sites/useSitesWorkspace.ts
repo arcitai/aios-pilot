@@ -163,6 +163,9 @@ export function useSitesWorkspace({
   const loadWorkspace = React.useCallback(
     async (targetContext: WorkspaceContext) => {
       const generation = ++channelLoadGeneration.current;
+      // A refresh invalidates any canvas request started by the workspace it
+      // is replacing, even while the refreshed channel list is still loading.
+      canvasLoadGeneration.current += 1;
       const targetKey = contextKey(targetContext);
       setLoadedContextKey(targetKey);
       setContextChangePending(false);

@@ -22,12 +22,12 @@ export const MAX_SITE_CHANNELS = 100;
 const SITE_HISTORY_PAGE_SIZE = 20;
 
 export class MalformedSiteCanvasError extends Error {
-  constructor(
-    message: string,
-    readonly rawContent: string,
-  ) {
+  readonly rawContent: string;
+
+  constructor(message: string, rawContent: string) {
     super(message);
     this.name = "MalformedSiteCanvasError";
+    this.rawContent = rawContent;
   }
 }
 

@@ -2,8 +2,6 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use sha2::{Digest, Sha256};
 use url::{Host, Url};
 
-pub const SITES_PUBLISHER_DEFAULT_ORIGIN: &str = "http://127.0.0.1:3352";
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PublisherScope {
     pub manager_origin: String,

@@ -134,12 +134,14 @@ export function SitesPublisherPanel({
           ) : (
             <div className="flex flex-wrap items-center gap-2">
               <Button
+                disabled={publisher.isDisconnecting}
                 onClick={() => void publisher.disconnect()}
                 size="sm"
                 type="button"
                 variant="outline"
               >
-                <Unplug /> Disconnect
+                <Unplug />
+                {publisher.isDisconnecting ? "Disconnecting…" : "Disconnect"}
               </Button>
               <p className="text-2xs text-muted-foreground">
                 Token stays in the OS keyring.

@@ -18,7 +18,6 @@ use self::{
     scope::{require_matching_scope, PublisherScope},
 };
 
-pub use self::scope::SITES_PUBLISHER_DEFAULT_ORIGIN;
 pub use self::types::{
     SitesPublisherConnectionStatus, SitesPublisherFiles, SitesPublisherPreview,
     SitesPublisherResult, SitesPublisherSiteStatus,
