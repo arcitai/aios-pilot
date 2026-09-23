@@ -1,0 +1,20 @@
+{
+  "contractVersion": 1,
+  "fieldLengthUnit": "UTF-16 code units",
+  "documentLengthUnit": "UTF-8 bytes",
+  "limits": {
+    "title": 120,
+    "indexHtml": 120000,
+    "styleCss": 80000,
+    "appJs": 80000,
+    "document": 200000
+  },
+  "unicode": {
+    "sample": "æ",
+    "validTitleCodeUnits": 100,
+    "overflowTitleCodeUnits": 121,
+    "validIndexHtmlCodeUnits": 60001,
+    "validStyleCssCodeUnits": 40001,
+    "validAppJsCodeUnits": 40001
+  }
+}

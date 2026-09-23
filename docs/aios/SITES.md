@@ -38,12 +38,14 @@ The canvas stores one strict JSON document. Its fixed v1 files are `indexHtml`,
 }
 ```
 
-The document is capped at 200,000 UTF-8 bytes. Titles are at most 120
-characters; HTML, CSS, and JavaScript are capped at 120,000, 80,000, and
-80,000 bytes respectively. The application checks the full serialized document
-size as well as each field. Unknown fields and unsupported schema versions are
-rejected. If a canvas is malformed, the editor leaves it untouched and offers
-the original content as a download.
+Each text field is limited in UTF-16 code units, matching JavaScript string
+length and browser editor limits: title 120, HTML 120,000, CSS 80,000, and
+JavaScript 80,000. The complete serialized document is limited to 200,000
+UTF-8 bytes. A title with 100 Danish letters such as `æ` uses 100 field units
+even though it takes 200 UTF-8 bytes. Desktop, native publisher requests, the
+CLI, and the publisher service share these limits. Unknown fields and
+unsupported schema versions are rejected. If a canvas is malformed, the editor
+leaves it untouched and offers the original content as a download.
 
 Canvas writes use the existing compare-and-set revision. A stale save is
 reported as a conflict, the latest version is loaded for comparison, and the
@@ -51,16 +53,22 @@ draft is retained until the owner chooses to use the latest version or
 explicitly overwrite it. History selection loads a past document into the
 current draft; saving it creates a new revision rather than rewriting history.
 
-Agents and CLI users can use the same channel canvas:
+Agents and CLI users can use the same saved document contract:
 
 ```sh
-buzz canvas get --channel <private-site-channel-id>
-buzz canvas set --channel <private-site-channel-id> --content - < site.json
+buzz sites list --business-channel <business-channel-id>
+buzz sites show --business-channel <business-channel-id> --site-channel <site-channel-id>
+buzz sites update --business-channel <business-channel-id> --site-channel <site-channel-id> \
+  --expected-revision <canvas-event-id> --document - < site.json
+buzz sites export --business-channel <business-channel-id> --site-channel <site-channel-id>
 ```
 
-The CLI content is the JSON document itself. Canvas history remains managed by
-Buzz. Any direct CLI or agent edit is visible in the site's history and can
-cause an editor conflict if it changes the head while the UI has a draft open.
+The update document is the complete strict `aios.site` v1 JSON object shown
+above. Its `siteId` and `parentBusinessChannelId` must exactly match the two
+explicit channel flags. Updates require the current canvas event ID (or
+`none` only when no canvas head exists); Buzz preserves accepted writes in
+canvas history. A direct CLI or agent edit can cause an editor conflict if it
+changes the head while the UI has a draft open.
 
 ## Preview and publishing
 

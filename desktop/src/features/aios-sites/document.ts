@@ -4,7 +4,11 @@ export const SITE_DOCUMENT_KIND = "aios.site" as const;
 export const SITE_SCHEMA_VERSION = 1 as const;
 export const SITE_CHANNEL_MARKER = "[aios.site-channel:v1]";
 export const MAX_SITE_DOCUMENT_BYTES = 200_000;
-export const MAX_SITE_TITLE_LENGTH = 120;
+export const MAX_SITE_TITLE_CODE_UNITS = 120;
+export const MAX_SITE_HTML_CODE_UNITS = 120_000;
+export const MAX_SITE_CSS_CODE_UNITS = 80_000;
+export const MAX_SITE_JS_CODE_UNITS = 80_000;
+export const MAX_SITE_TITLE_LENGTH = MAX_SITE_TITLE_CODE_UNITS;
 
 const channelIdSchema = z
   .string()
@@ -21,13 +25,13 @@ export const siteDocumentSchema = z
     title: z
       .string()
       .min(1)
-      .max(MAX_SITE_TITLE_LENGTH)
+      .max(MAX_SITE_TITLE_CODE_UNITS)
       .refine((value) => value.trim().length > 0),
     files: z
       .object({
-        indexHtml: z.string().max(120_000),
-        styleCss: z.string().max(80_000),
-        appJs: z.string().max(80_000),
+        indexHtml: z.string().max(MAX_SITE_HTML_CODE_UNITS),
+        styleCss: z.string().max(MAX_SITE_CSS_CODE_UNITS),
+        appJs: z.string().max(MAX_SITE_JS_CODE_UNITS),
       })
       .strict(),
   })

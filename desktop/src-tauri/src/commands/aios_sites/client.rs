@@ -14,6 +14,10 @@ pub(super) const API_PREFIX: &str = "/api";
 const MAX_TOKEN_BYTES: usize = 512;
 const MAX_SITE_BYTES: usize = 200_000;
 const MAX_SITE_ID_BYTES: usize = 128;
+const MAX_SITE_TITLE_CODE_UNITS: usize = 120;
+const MAX_SITE_HTML_CODE_UNITS: usize = 120_000;
+const MAX_SITE_CSS_CODE_UNITS: usize = 80_000;
+const MAX_SITE_JS_CODE_UNITS: usize = 80_000;
 const MAX_RESPONSE_BYTES: usize = 256_000;
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(4);
@@ -167,10 +171,10 @@ pub(super) fn validate_site(
         return Err("This site has an invalid Buzz channel id.".to_string());
     }
     if title.trim().is_empty()
-        || title.len() > 120
-        || files.index_html.len() > 120_000
-        || files.style_css.len() > 80_000
-        || files.app_js.len() > 80_000
+        || title.encode_utf16().count() > MAX_SITE_TITLE_CODE_UNITS
+        || files.index_html.encode_utf16().count() > MAX_SITE_HTML_CODE_UNITS
+        || files.style_css.encode_utf16().count() > MAX_SITE_CSS_CODE_UNITS
+        || files.app_js.encode_utf16().count() > MAX_SITE_JS_CODE_UNITS
     {
         return Err("The Sites content exceeds its supported field limits.".to_string());
     }
@@ -239,6 +243,7 @@ pub(super) async fn fetch_health(
 mod tests {
     use super::super::types::SitesPublisherFiles;
     use super::{checked_public_url, validate_site};
+    use serde_json::Value;
 
     #[test]
     fn site_upload_limits_and_urls_are_checked_at_the_native_boundary() {
@@ -263,5 +268,71 @@ mod tests {
         assert!(
             checked_public_url("https://sites.example/sites/wrong", "/sites/channel_123").is_err()
         );
+    }
+
+    #[test]
+    fn native_publisher_limits_match_the_shared_utf16_contract() {
+        let contract: Value = serde_json::from_str(include_str!(
+            "../../../../../fixtures/aios-sites/site-v1-length-contract.json"
+        ))
+        .expect("valid shared Sites length fixture");
+        assert_eq!(contract["limits"]["title"], 120);
+        assert_eq!(contract["limits"]["indexHtml"], 120_000);
+        assert_eq!(contract["limits"]["styleCss"], 80_000);
+        assert_eq!(contract["limits"]["appJs"], 80_000);
+        assert_eq!(contract["limits"]["document"], MAX_SITE_BYTES);
+
+        let unicode = &contract["unicode"];
+        let sample = unicode["sample"].as_str().expect("unicode sample");
+        let title = sample.repeat(
+            unicode["validTitleCodeUnits"]
+                .as_u64()
+                .expect("title boundary") as usize,
+        );
+        assert_eq!(title.encode_utf16().count(), 100);
+        assert!(title.len() > title.encode_utf16().count());
+        let empty = SitesPublisherFiles {
+            index_html: String::new(),
+            style_css: String::new(),
+            app_js: String::new(),
+        };
+        assert!(validate_site("channel_123", &title, &empty).is_ok());
+
+        let mut unicode_html = empty.clone();
+        unicode_html.index_html = sample.repeat(
+            unicode["validIndexHtmlCodeUnits"]
+                .as_u64()
+                .expect("HTML boundary") as usize,
+        );
+        assert!(unicode_html.index_html.len() > MAX_SITE_HTML_CODE_UNITS);
+        assert!(validate_site("channel_123", "site", &unicode_html).is_ok());
+
+        let mut unicode_styles = empty.clone();
+        unicode_styles.style_css = sample.repeat(
+            unicode["validStyleCssCodeUnits"]
+                .as_u64()
+                .expect("CSS boundary") as usize,
+        );
+        unicode_styles.app_js = sample.repeat(
+            unicode["validAppJsCodeUnits"]
+                .as_u64()
+                .expect("JS boundary") as usize,
+        );
+        assert!(validate_site("channel_123", "site", &unicode_styles).is_ok());
+        assert!(validate_site(
+            "channel_123",
+            &"x".repeat(MAX_SITE_TITLE_CODE_UNITS + 1),
+            &empty
+        )
+        .is_err());
+        assert!(validate_site(
+            "channel_123",
+            "site",
+            &SitesPublisherFiles {
+                index_html: "x".repeat(MAX_SITE_HTML_CODE_UNITS + 1),
+                ..empty.clone()
+            }
+        )
+        .is_err());
     }
 }

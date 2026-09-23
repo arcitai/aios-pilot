@@ -460,7 +460,7 @@ mod tests {
         assert!(normalize_origin("http://sites.example").is_err());
         assert!(normalize_origin("https://user@sites.example").is_err());
         let mut request = site_request();
-        request.files.app_js = "x".repeat(MAX_JS_BYTES + 1);
+        request.files.app_js = "x".repeat(MAX_JS_CODE_UNITS + 1);
         assert!(validate_publish_request(&request).is_err());
     }
 

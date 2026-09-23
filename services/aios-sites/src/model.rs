@@ -10,10 +10,10 @@ use std::{
 
 pub(crate) const MAX_SITE_BYTES: usize = 200_000;
 pub(crate) const MAX_REQUEST_BYTES: usize = 220_000;
-pub(crate) const MAX_TITLE_BYTES: usize = 120;
-pub(crate) const MAX_HTML_BYTES: usize = 120_000;
-pub(crate) const MAX_CSS_BYTES: usize = 80_000;
-pub(crate) const MAX_JS_BYTES: usize = 80_000;
+pub(crate) const MAX_TITLE_CODE_UNITS: usize = 120;
+pub(crate) const MAX_HTML_CODE_UNITS: usize = 120_000;
+pub(crate) const MAX_CSS_CODE_UNITS: usize = 80_000;
+pub(crate) const MAX_JS_CODE_UNITS: usize = 80_000;
 pub(crate) const PREVIEW_TTL: Duration = Duration::from_secs(30 * 60);
 pub(crate) const MAX_PREVIEWS: usize = 8;
 pub(crate) const MAX_PREVIEW_BYTES: usize = 2_000_000;
@@ -180,10 +180,10 @@ pub(crate) fn escape_html(value: &str) -> String {
 
 pub(crate) fn validate_publish_request(request: &PublishRequest) -> Result<(), ()> {
     if request.title.trim().is_empty()
-        || request.title.as_bytes().len() > MAX_TITLE_BYTES
-        || request.files.index_html.as_bytes().len() > MAX_HTML_BYTES
-        || request.files.style_css.as_bytes().len() > MAX_CSS_BYTES
-        || request.files.app_js.as_bytes().len() > MAX_JS_BYTES
+        || request.title.encode_utf16().count() > MAX_TITLE_CODE_UNITS
+        || request.files.index_html.encode_utf16().count() > MAX_HTML_CODE_UNITS
+        || request.files.style_css.encode_utf16().count() > MAX_CSS_CODE_UNITS
+        || request.files.app_js.encode_utf16().count() > MAX_JS_CODE_UNITS
     {
         return Err(());
     }
@@ -224,6 +224,118 @@ pub(crate) fn valid_preview_id(preview_id: &str) -> bool {
 
 pub(crate) fn valid_hash(hash: &str) -> bool {
     hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    #[test]
+    fn publisher_validation_matches_shared_utf16_contract() {
+        let contract: Value = serde_json::from_str(include_str!(
+            "../../../fixtures/aios-sites/site-v1-length-contract.json"
+        ))
+        .expect("valid shared Sites length fixture");
+        assert_eq!(contract["limits"]["title"], MAX_TITLE_CODE_UNITS);
+        assert_eq!(contract["limits"]["indexHtml"], MAX_HTML_CODE_UNITS);
+        assert_eq!(contract["limits"]["styleCss"], MAX_CSS_CODE_UNITS);
+        assert_eq!(contract["limits"]["appJs"], MAX_JS_CODE_UNITS);
+        assert_eq!(contract["limits"]["document"], MAX_SITE_BYTES);
+
+        let unicode = &contract["unicode"];
+        let sample = unicode["sample"].as_str().expect("unicode sample");
+        let title = sample.repeat(
+            unicode["validTitleCodeUnits"]
+                .as_u64()
+                .expect("title boundary") as usize,
+        );
+        assert_eq!(title.encode_utf16().count(), 100);
+        assert!(title.len() > title.encode_utf16().count());
+        let empty = SiteFiles {
+            index_html: String::new(),
+            style_css: String::new(),
+            app_js: String::new(),
+        };
+        assert!(validate_publish_request(&PublishRequest {
+            title: title.clone(),
+            files: empty.clone(),
+        })
+        .is_ok());
+
+        let mut unicode_html = empty.clone();
+        unicode_html.index_html = sample.repeat(
+            unicode["validIndexHtmlCodeUnits"]
+                .as_u64()
+                .expect("HTML boundary") as usize,
+        );
+        assert!(unicode_html.index_html.len() > MAX_HTML_CODE_UNITS);
+        assert!(validate_publish_request(&PublishRequest {
+            title: title.clone(),
+            files: unicode_html,
+        })
+        .is_ok());
+
+        let mut unicode_styles = empty.clone();
+        unicode_styles.style_css = sample.repeat(
+            unicode["validStyleCssCodeUnits"]
+                .as_u64()
+                .expect("CSS boundary") as usize,
+        );
+        unicode_styles.app_js = sample.repeat(
+            unicode["validAppJsCodeUnits"]
+                .as_u64()
+                .expect("JS boundary") as usize,
+        );
+        assert!(validate_publish_request(&PublishRequest {
+            title: title.clone(),
+            files: unicode_styles,
+        })
+        .is_ok());
+
+        assert!(validate_publish_request(&PublishRequest {
+            title: sample.repeat(MAX_TITLE_CODE_UNITS + 1),
+            files: empty.clone(),
+        })
+        .is_err());
+        assert!(validate_publish_request(&PublishRequest {
+            title: "site".into(),
+            files: SiteFiles {
+                index_html: "x".repeat(MAX_HTML_CODE_UNITS + 1),
+                ..empty.clone()
+            },
+        })
+        .is_err());
+        assert!(validate_publish_request(&PublishRequest {
+            title: "site".into(),
+            files: SiteFiles {
+                style_css: "x".repeat(MAX_CSS_CODE_UNITS + 1),
+                ..empty.clone()
+            },
+        })
+        .is_err());
+        assert!(validate_publish_request(&PublishRequest {
+            title: "site".into(),
+            files: SiteFiles {
+                app_js: "x".repeat(MAX_JS_CODE_UNITS + 1),
+                ..empty
+            },
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn publisher_still_enforces_total_serialized_utf8_bytes() {
+        let request = PublishRequest {
+            title: "site".into(),
+            files: SiteFiles {
+                index_html: "x".repeat(MAX_HTML_CODE_UNITS),
+                style_css: "x".repeat(60_000),
+                app_js: "x".repeat(30_000),
+            },
+        };
+        assert!(validate_publish_request(&request).is_err());
+    }
 }
 
 pub(crate) fn prune_expired_previews(previews: &mut HashMap<String, PreviewEntry>) {

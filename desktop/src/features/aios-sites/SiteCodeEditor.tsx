@@ -3,7 +3,12 @@ import { Code2, FileCode2, FileText } from "lucide-react";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui/tabs";
 import { Textarea } from "@/shared/ui/textarea";
-import type { SiteFiles } from "./document";
+import {
+  MAX_SITE_CSS_CODE_UNITS,
+  MAX_SITE_HTML_CODE_UNITS,
+  MAX_SITE_JS_CODE_UNITS,
+  type SiteFiles,
+} from "./document";
 
 type SiteFile = keyof SiteFiles;
 
@@ -73,7 +78,13 @@ export function SiteCodeEditor({
               className="h-full min-h-[24rem] resize-none border-0 bg-muted/20 font-mono text-xs leading-relaxed shadow-none focus-visible:ring-0"
               disabled={disabled}
               id={`site-source-${id}`}
-              maxLength={id === "indexHtml" ? 120_000 : 80_000}
+              maxLength={
+                id === "indexHtml"
+                  ? MAX_SITE_HTML_CODE_UNITS
+                  : id === "styleCss"
+                    ? MAX_SITE_CSS_CODE_UNITS
+                    : MAX_SITE_JS_CODE_UNITS
+              }
               onChange={(event) => onChange(id, event.target.value)}
               spellCheck={false}
               value={value[id]}
