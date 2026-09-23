@@ -9,6 +9,7 @@ mod config;
 mod engram_fetch;
 mod filter;
 mod observer;
+mod path;
 mod permission;
 mod pool;
 mod pool_lifecycle;

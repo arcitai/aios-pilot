@@ -51,14 +51,14 @@ impl GitEnvironment {
             display_name.as_deref(),
             inherited,
         );
-        let mut paths = vec![dir.path().to_path_buf()];
-        paths.extend(std::env::split_paths(
+        let path = crate::path::build_agent_path(
+            dir.path(),
+            executable,
             &std::env::var_os("PATH").unwrap_or_default(),
-        ));
+        )?;
         env.push((
             "PATH".into(),
-            std::env::join_paths(paths)?
-                .into_string()
+            path.into_string()
                 .map_err(|_| anyhow::anyhow!("Git PATH is not UTF-8"))?,
         ));
         env.push(("GIT_TERMINAL_PROMPT".into(), "0".into()));

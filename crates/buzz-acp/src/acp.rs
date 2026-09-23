@@ -3434,6 +3434,120 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'
         );
     }
 
+    #[test]
+    fn acp_child_path_probe() {
+        let Some(expected_sidecar_dir) = std::env::var_os("BUZZ_ACP_TEST_SIDECAR_DIR") else {
+            return;
+        };
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let entries: Vec<_> = std::env::split_paths(&path).collect();
+        assert!(
+            entries
+                .first()
+                .and_then(|entry| entry.file_name())
+                .is_some_and(|name| { name.to_string_lossy().starts_with("buzz-acp-git-") }),
+            "harness Git helpers must remain first in the child PATH"
+        );
+        assert_eq!(
+            entries.get(1).map(std::path::PathBuf::as_path),
+            Some(std::path::Path::new(&expected_sidecar_dir)),
+            "the packaged sidecar directory must follow Git helpers"
+        );
+
+        let result = std::process::Command::new("buzz")
+            .args([
+                "--exact",
+                "acp::tests::packaged_cli_lookup_probe",
+                "--nocapture",
+            ])
+            .env("BUZZ_ACP_TEST_PACKAGED_CLI_PROBE", "1")
+            .output()
+            .expect("bare buzz command resolves from the packaged sidecar directory");
+        assert!(
+            result.status.success()
+                && String::from_utf8_lossy(&result.stdout)
+                    .contains("BUZZ_ACP_PACKAGED_CLI_PROBE_OK"),
+            "bare buzz must execute the sidecar probe; status={}, stderr={}",
+            result.status,
+            String::from_utf8_lossy(&result.stderr)
+        );
+        println!("BUZZ_ACP_CHILD_PATH_PROBE_OK");
+    }
+
+    #[test]
+    fn packaged_cli_lookup_probe() {
+        if std::env::var_os("BUZZ_ACP_TEST_PACKAGED_CLI_PROBE").is_some() {
+            println!("BUZZ_ACP_PACKAGED_CLI_PROBE_OK");
+        }
+    }
+
+    #[tokio::test]
+    async fn spawn_gives_every_adapter_the_packaged_cli_on_path() {
+        let temp = tempfile::tempdir().expect("create isolated sidecar fixture");
+        let sidecar_dir = temp.path().join("packaged-binaries");
+        std::fs::create_dir_all(&sidecar_dir).expect("create packaged sidecar directory");
+        let current_exe = std::env::current_exe().expect("locate test executable");
+        let executable_suffix = if cfg!(windows) { ".exe" } else { "" };
+        let packaged_acp = sidecar_dir.join(format!("buzz-acp{executable_suffix}"));
+        let packaged_cli = sidecar_dir.join(format!("buzz{executable_suffix}"));
+        std::fs::copy(&current_exe, &packaged_acp).expect("stage fixture ACP executable");
+        std::fs::copy(&current_exe, &packaged_cli).expect("stage fixture CLI executable");
+        #[cfg(unix)]
+        for path in [&packaged_acp, &packaged_cli] {
+            use std::os::unix::fs::PermissionsExt;
+            let mut permissions = std::fs::metadata(path)
+                .expect("stat fixture executable")
+                .permissions();
+            permissions.set_mode(0o755);
+            std::fs::set_permissions(path, permissions).expect("make fixture executable");
+        }
+
+        let git_environment = crate::git::GitEnvironment::install(
+            &nostr::Keys::generate(),
+            "ws://relay.invalid",
+            &packaged_acp,
+        )
+        .expect("build managed child environment");
+        let mut extra_env = git_environment.env.clone();
+        extra_env.push((
+            "BUZZ_ACP_TEST_SIDECAR_DIR".into(),
+            sidecar_dir.to_string_lossy().into_owned(),
+        ));
+
+        let probe_args = vec![
+            "--exact".into(),
+            "acp::tests::acp_child_path_probe".into(),
+            "--nocapture".into(),
+        ];
+        let mut client = AcpClient::spawn(
+            current_exe.to_str().expect("test executable path is UTF-8"),
+            &probe_args,
+            &extra_env,
+            false,
+        )
+        .await
+        .expect("spawn adapter with managed environment");
+        let probe_result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            loop {
+                match client.reader.next().await {
+                    Some(Ok(line)) if line == "BUZZ_ACP_CHILD_PATH_PROBE_OK" => break Ok(()),
+                    Some(Ok(_)) => continue,
+                    Some(Err(error)) => break Err(error.to_string()),
+                    None => break Err("adapter exited before the PATH probe completed".into()),
+                }
+            }
+        })
+        .await
+        .expect("PATH probe completes within ten seconds");
+        assert!(probe_result.is_ok(), "PATH probe failed: {probe_result:?}");
+        let status = client
+            .child
+            .wait()
+            .await
+            .expect("wait for PATH probe adapter");
+        assert!(status.success(), "PATH probe adapter exited with {status}");
+    }
+
     #[tokio::test]
     async fn idle_timeout_fires_on_silent_process() {
         let mut client = spawn_script("sleep 10").await;
