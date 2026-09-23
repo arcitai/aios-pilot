@@ -7,20 +7,25 @@ import { pickWelcomeGuideAgentForRelay } from "@/features/onboarding/welcomeGuid
 import type { CanvasScope } from "@/shared/api/canvasTypes";
 import { Button } from "@/shared/ui/button";
 import { startBusinessConversation } from "./mainAgent";
+import { BusinessVoiceAction } from "@/features/business-voice";
+import { useHuddle } from "@/features/huddle/HuddleContext";
 
 /** Reuse Buzz's configuration surface without sending users out of their work. */
 export function BusinessAgentControls({
   channelId,
+  channelName,
   scope,
   started,
   onStarted,
 }: {
   channelId: string;
+  channelName: string;
   scope: CanvasScope;
   started: boolean;
   onStarted: () => void;
 }) {
   const agents = useManagedAgentsQuery();
+  const huddle = useHuddle();
   const mainAgent = pickWelcomeGuideAgentForRelay(
     agents.data ?? [],
     scope.expectedRelayUrl,
@@ -120,6 +125,17 @@ export function BusinessAgentControls({
           Your request is in the conversation. Your agent needs a working model
           connection to respond.
         </p>
+      ) : null}
+      {mainAgent &&
+      (mainAgent.status === "running" || mainAgent.status === "deployed") ? (
+        <BusinessVoiceAction
+          channelId={channelId}
+          channelName={channelName}
+          relayUrl={scope.expectedRelayUrl}
+          signerPubkey={scope.expectedSignerPubkey}
+          mainAgentPubkey={mainAgent.pubkey}
+          huddle={huddle}
+        />
       ) : null}
       {configOpen && mainAgent ? (
         <AgentDialog

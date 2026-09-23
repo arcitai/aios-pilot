@@ -358,6 +358,7 @@ export function BusinessWorkspace({
                 <BusinessAgentControls
                   key={workspace.channel.id}
                   channelId={workspace.channel.id}
+                  channelName={workspace.channel.name}
                   scope={workspace.canvasScope}
                   started={started}
                   onStarted={() =>

@@ -3801,6 +3801,8 @@ type MockHuddleState = {
   transcription_enabled: boolean;
   is_creator: boolean;
   voice_input_mode: "push_to_talk" | "voice_activity";
+  workspace_relay_url?: string;
+  workspace_signer_pubkey?: string;
 };
 
 type PersistedMockHuddle = {
@@ -12041,6 +12043,8 @@ export function maybeInstallE2eTauriMocks() {
           ],
           state: {
             phase: "creating",
+            workspace_relay_url: getRelayWsUrl(activeConfig),
+            workspace_signer_pubkey: selfPubkey,
             parent_channel_id: request.parentChannelId,
             ephemeral_channel_id: ephemeralChannelId,
             huddle_thread_event_id: null,

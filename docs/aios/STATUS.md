@@ -1,6 +1,6 @@
 # AIOS implementation status
 
-Updated 23 September 2026, evening (Europe/Copenhagen).
+Updated during the night of 23–24 September 2026 (Europe/Copenhagen).
 
 ## Current state
 
@@ -8,13 +8,17 @@ Updated 23 September 2026, evening (Europe/Copenhagen).
 - Base: `5621006bcf84b82e5da489824a5b4d76568d8602`.
 - Product contract: `AIOS_PILOT.md`.
 - Research sources: `/tmp/ai-os-research-20260923/` (read-only references).
-- Implementation authorized. Business route, typed context, source editor,
-  first-agent invitation and scoped canvas/creation operations implemented.
-- Frontend typecheck and initial E2E-mode build passed; 4 document tests passed.
-  Two initial browser scenarios passed, including a concurrent edit conflict.
-  `just desktop-tauri-check` and all 14 native canvas unit tests passed.
-  Sidecars built successfully. The isolated native app is being compiled and
-  extended browser tests are underway.
+- Business context, sources/history, main-agent creation and settings,
+  GitHub/Notion, per-app Slides/Calendar/Design, business CLI, and a local
+  self-hosted relay with backup/restore are integrated and tested.
+- The isolated macOS package was built and signature-verified from `ca01845`.
+  Later first-agent, permission, voice, Mesh and Slack integrations must be
+  included in the next package. Native window interaction remains unavailable
+  while the computer is locked. Detailed evidence and limits are below.
+- Active integration: voice action and Slack; next deliveries: per-agent
+  skills, app agent access/CLI, Sites Publisher and incoming calls. Google Drive
+  OAuth is being built with provider-enforced read-only access. The full
+  platform is not complete; [FEATURES](FEATURES.md) tracks the wider outcome.
 - An hourly heartbeat in the lead task resumes authorized work until the
   product goal is verified or meaningful progress requires a missing external
   prerequisite. Morning status after 08:00 on 24 September. Automation id:
@@ -30,6 +34,9 @@ Updated 23 September 2026, evening (Europe/Copenhagen).
   `/Users/gustavanderson/Documents/Codex/2026-09-23/aios-self-hosting/buzz`.
 - Connections: `01a0cfcd-f659-7ea1-a638-6a44ae8420f3`, clone under
   `/Users/gustavanderson/Documents/Codex/2026-09-23/aios-connections/buzz`.
+- Permissions and real-model proof: `01a0cfeb-1ee1-7cb0-9aa5-f202480c8af9`.
+- Sites: `01a0d001-aa57-7bc1-ba54-117aa13fe2d0`.
+- Voice and calls: `01a0d015-95a6-7d83-b20c-cc96cd82e185`.
 
 All are under AIOS Development. Use compact `wait_threads` snapshots and reuse
 the same worker for revisions. They return isolated commits; lead integrates.
@@ -313,3 +320,23 @@ inspected. This does not prove live relay persistence or model execution.
   flows pass. TypeScript/build, file-size policy and targeted formatting pass.
   These are mock-bridge UI tests plus real native validation, not a claim that
   the locked native window was exercised.
+
+## Voice, Mesh and Slack integration — 24 September
+
+- Voice task `3eea308` integrated as `8d2d355`. Business exposes an explicit
+  voice action for its running main agent. Three combined browser tests pass
+  with synthetic media: captured workspace start/end, refusal before opening
+  a microphone when the binding differs, and microphone cleanup when the
+  binding changes after capture. Seven focused voice tests pass. English-only
+  Parakeet remains the current STT; native hardware and Danish speech are not
+  verified. Incoming signed call requests and their CLI are still in progress.
+- Mesh task `773957b` integrated as `7a90590`. Worker results: 85 native Mesh
+  tests passed, one ignored; eight frontend state tests and two browser tests
+  passed. Production joins are awaited and advertised readiness depends on
+  real inference. The next desktop package explicitly enables `mesh-llm`;
+  the earlier default-feature package did not include that capability.
+- Slack task `1f17413` integrated as `3ec4a9a`; five native commands are wired.
+  All 35 native connection tests now pass in the lead desktop crate. Combined
+  Slack browser proof and a correction to its source deep links are pending.
+  Google Drive work uses read-only OAuth and synthetic fixtures; no private
+  external account has been connected by these development tasks.

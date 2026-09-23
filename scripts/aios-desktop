@@ -64,9 +64,9 @@ if [[ "$AIOS_ACTION" == build || "$AIOS_ACTION" == dev ]]; then
   export CARGO_TARGET_DIR="$AIOS_ROOT/desktop/src-tauri/target"
   pnpm install --frozen-lockfile
   if [[ "$AIOS_ACTION" == dev ]]; then
-    exec pnpm tauri dev --config src-tauri/tauri.aios.conf.json
+    exec pnpm tauri dev --features mesh-llm --config src-tauri/tauri.aios.conf.json
   fi
-  pnpm tauri build --debug --bundles app --config src-tauri/tauri.aios.conf.json
+  pnpm tauri build --debug --bundles app --features mesh-llm --config src-tauri/tauri.aios.conf.json
   AIOS_APP="$AIOS_ROOT/desktop/src-tauri/target/debug/bundle/macos/AIOS Pilot.app"
   # The upstream Info.plist pins Buzz's display name. Give this isolated
   # development bundle its own visible name before signing the final resources.

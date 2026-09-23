@@ -23,6 +23,7 @@ export default defineConfig({
         "**/business-connections.spec.ts",
         "**/business-onboarding.spec.ts",
         "**/business-apps.spec.ts",
+        "**/business-voice.spec.ts",
         "**/agent-permissions.spec.ts",
         "**/smoke.spec.ts",
         "**/mock-subscription-readiness.spec.ts",

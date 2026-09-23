@@ -24,6 +24,12 @@ whether the checkout had changes, and the build time. Build tools are pinned by 
 the dependency lockfiles. The app bundle is under
 `desktop/src-tauri/target/debug/bundle/macos/AIOS Pilot.app`.
 
+The launcher enables the native `mesh-llm` feature so local model sharing and
+client controls are present in the pilot. Sharing remains an explicit choice
+in Settings. The runtime and selected model are installed on demand; see
+[Mesh](MESH.md). A successful default-feature build alone does not verify that
+this optional capability was packaged.
+
 For development, `scripts/aios-desktop dev` uses Vite on port 1437 and the same
 isolated pilot identity. Close a running pilot before starting another copy.
 Model and tool credentials are configured in the app, never compiled into it.
