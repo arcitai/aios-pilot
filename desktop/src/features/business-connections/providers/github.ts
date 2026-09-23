@@ -38,8 +38,12 @@ export const githubConnectionAdapter: BusinessConnectionAdapter<
   revoke(scope) {
     return revokeGitHubConnection(scope);
   },
-  listResources(scope) {
-    return listGitHubRepositories(scope);
+  async listResources(scope) {
+    return {
+      items: await listGitHubRepositories(scope),
+      hasMore: false,
+      nextCursor: null,
+    };
   },
   async importResource(scope, repository) {
     return importGitHubReadme(scope, repository.id);

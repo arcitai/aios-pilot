@@ -1,6 +1,6 @@
 import type {
+  BusinessConnectionImport,
   BusinessConnectionScope,
-  BusinessConnectionSource,
 } from "@/shared/api/tauriBusinessConnections";
 
 export type BusinessConnectionProviderId = "github" | "google" | "notion";
@@ -22,8 +22,23 @@ export type ProviderConnectionStatus =
   | { connected: false }
   | { connected: true; account: ProviderAccount };
 
+export type ProviderResourcePage<Resource> = {
+  items: readonly Resource[];
+  hasMore: boolean;
+  nextCursor: string | null;
+};
+
+export type ProviderListOptions = {
+  query?: string;
+  cursor?: string | null;
+};
+
 /** Small adapter contract shared by real provider modules. */
-export interface BusinessConnectionAdapter<Credential, Resource> {
+export interface BusinessConnectionAdapter<
+  Credential,
+  Resource,
+  Options extends ProviderListOptions = ProviderListOptions,
+> {
   readonly descriptor: BusinessConnectionProviderDescriptor;
   connect(
     scope: BusinessConnectionScope,
@@ -31,11 +46,14 @@ export interface BusinessConnectionAdapter<Credential, Resource> {
   ): Promise<ProviderAccount>;
   status(scope: BusinessConnectionScope): Promise<ProviderConnectionStatus>;
   revoke(scope: BusinessConnectionScope): Promise<void>;
-  listResources(scope: BusinessConnectionScope): Promise<readonly Resource[]>;
+  listResources(
+    scope: BusinessConnectionScope,
+    options?: Options,
+  ): Promise<ProviderResourcePage<Resource>>;
   importResource(
     scope: BusinessConnectionScope,
     resource: Resource,
-  ): Promise<BusinessConnectionSource>;
+  ): Promise<BusinessConnectionImport>;
 }
 
 /** Planned providers have no adapter and cannot be used as active connections. */
@@ -55,7 +73,7 @@ export const BUSINESS_CONNECTION_PROVIDERS = [
   {
     id: "notion",
     name: "Notion",
-    availability: "planned",
-    description: "Not connected yet.",
+    availability: "available",
+    description: "Search shared pages and import their text read-only.",
   },
 ] as const satisfies readonly BusinessConnectionProviderDescriptor[];

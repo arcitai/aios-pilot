@@ -1,5 +1,9 @@
 mod adapter;
+mod notion;
+mod notion_content;
 mod scope;
+mod source_text;
+mod transport;
 
 use tauri::State;
 use zeroize::{Zeroize, Zeroizing};
@@ -7,8 +11,13 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{app_state::AppState, relay, secret_store::SecretStore};
 
 pub use self::adapter::{GitHubAccount, GitHubConnectionStatus, GitHubRepository, ImportedReadme};
+pub use self::notion::{
+    ImportedNotionPage, NotionAccount, NotionConnectionStatus, NotionPageSearchResult,
+    NotionPageSummary,
+};
 use self::{
     adapter::{CredentialStore, GitHubAdapter},
+    notion::NotionAdapter,
     scope::{require_matching_scope, ConnectionScope},
 };
 
@@ -56,6 +65,11 @@ fn github_adapter() -> Result<GitHubAdapter<'static>, String> {
     // Share the same build-specific blob as identity and managed-agent secrets;
     // keyring_service() selects the isolated demo service for demo builds.
     GitHubAdapter::new(SecretStore::shared(crate::app_state::keyring_service()))
+        .map_err(|error| error.to_string())
+}
+
+fn notion_adapter() -> Result<NotionAdapter<'static>, String> {
+    NotionAdapter::new(SecretStore::shared(crate::app_state::keyring_service()))
         .map_err(|error| error.to_string())
 }
 
@@ -160,6 +174,114 @@ pub async fn import_github_readme(
     );
     let source = adapter
         .import_readme(&token, repository_id)
+        .await
+        .map_err(|error| error.to_string())?;
+    ensure_scope_is_current(&scope, &state)?;
+    Ok(source)
+}
+
+/// Verify the saved Notion integration token before reporting a connection.
+#[tauri::command]
+pub async fn get_notion_connection_status(
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<NotionConnectionStatus, String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    let status = notion_adapter()?
+        .status(&scope)
+        .await
+        .map_err(|error| error.to_string())?;
+    ensure_scope_is_current(&scope, &state)?;
+    Ok(status)
+}
+
+/// Verify a read-only Notion internal integration token, then save it locally.
+#[tauri::command]
+pub async fn connect_notion_connection(
+    token: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<NotionAccount, String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    let adapter = notion_adapter()?;
+    let mut submitted = Zeroizing::new(token);
+    let normalized_token = submitted.trim().to_string();
+    submitted.zeroize();
+    let token = Zeroizing::new(normalized_token);
+    let account = adapter
+        .verify_token(&token)
+        .await
+        .map_err(|error| error.to_string())?;
+    ensure_scope_is_current(&scope, &state)?;
+    adapter
+        .save_verified_token(&scope, &token)
+        .map_err(|error| error.to_string())?;
+    ensure_scope_is_current(&scope, &state)?;
+    Ok(account)
+}
+
+/// Remove only this community and identity's Notion token from the keyring.
+#[tauri::command]
+pub fn revoke_notion_connection(
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    notion_adapter()?
+        .revoke(&scope)
+        .map_err(|error| error.to_string())
+}
+
+/// Search only accessible Notion pages, using a bounded opaque pagination cursor.
+#[tauri::command]
+pub async fn search_notion_pages(
+    query: String,
+    cursor: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<NotionPageSearchResult, String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    let adapter = notion_adapter()?;
+    let token = Zeroizing::new(
+        adapter
+            .load_token(&scope)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| {
+                "Notion is not connected for this community and identity.".to_string()
+            })?,
+    );
+    let pages = adapter
+        .search_pages(&token, &query, cursor.as_deref())
+        .await
+        .map_err(|error| error.to_string())?;
+    ensure_scope_is_current(&scope, &state)?;
+    Ok(pages)
+}
+
+/// Import text from one selected page ID; arbitrary URLs are never accepted.
+#[tauri::command]
+pub async fn import_notion_page(
+    page_id: String,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    state: State<'_, AppState>,
+) -> Result<ImportedNotionPage, String> {
+    let scope = require_active_scope(&expected_relay_url, &expected_signer_pubkey, &state)?;
+    let adapter = notion_adapter()?;
+    let token = Zeroizing::new(
+        adapter
+            .load_token(&scope)
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| {
+                "Notion is not connected for this community and identity.".to_string()
+            })?,
+    );
+    let source = adapter
+        .import_page(&token, &page_id)
         .await
         .map_err(|error| error.to_string())?;
     ensure_scope_is_current(&scope, &state)?;

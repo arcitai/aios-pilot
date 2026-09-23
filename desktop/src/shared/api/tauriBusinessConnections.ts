@@ -7,6 +7,10 @@ export type BusinessConnectionSource = {
   kind: "url";
 };
 
+export type BusinessConnectionImport = BusinessConnectionSource & {
+  truncated: boolean;
+};
+
 /** Scope captured from the parent workspace render that owns this request. */
 export type BusinessConnectionScope = {
   expectedRelayUrl: string;
@@ -29,6 +33,25 @@ export type GitHubRepository = {
   private: boolean;
   description?: string | null;
   url: string;
+};
+
+export type NotionConnectionStatus =
+  | { connected: false; name: null }
+  | { connected: true; name: string };
+
+export type NotionAccount = { id: string; name: string };
+
+export type NotionPageSummary = {
+  id: string;
+  title: string;
+  url: string;
+  lastEditedTime: string | null;
+};
+
+export type NotionPageSearchResult = {
+  pages: NotionPageSummary[];
+  hasMore: boolean;
+  nextCursor: string | null;
 };
 
 type BusinessConnectionInvoker = <T>(
@@ -91,8 +114,50 @@ export function createBusinessConnectionsApi(
     importGitHubReadme(
       scope: BusinessConnectionScope,
       repositoryId: number,
-    ): Promise<BusinessConnectionSource> {
+    ): Promise<BusinessConnectionImport> {
       return invokeInScope(scope, "import_github_readme", { repositoryId });
+    },
+
+    async getNotionConnectionStatus(
+      scope: BusinessConnectionScope,
+    ): Promise<NotionConnectionStatus> {
+      const status = await invokeInScope<{
+        connected: boolean;
+        name?: string | null;
+      }>(scope, "get_notion_connection_status");
+      if (!status.connected) return { connected: false, name: null };
+      if (typeof status.name !== "string" || !status.name.trim()) {
+        throw new Error(
+          "Notion status did not include a verified integration.",
+        );
+      }
+      return { connected: true, name: status.name };
+    },
+
+    connectNotionConnection(
+      scope: BusinessConnectionScope,
+      token: string,
+    ): Promise<NotionAccount> {
+      return invokeInScope(scope, "connect_notion_connection", { token });
+    },
+
+    revokeNotionConnection(scope: BusinessConnectionScope): Promise<void> {
+      return invokeInScope(scope, "revoke_notion_connection");
+    },
+
+    searchNotionPages(
+      scope: BusinessConnectionScope,
+      query: string,
+      cursor?: string | null,
+    ): Promise<NotionPageSearchResult> {
+      return invokeInScope(scope, "search_notion_pages", { query, cursor });
+    },
+
+    importNotionPage(
+      scope: BusinessConnectionScope,
+      pageId: string,
+    ): Promise<BusinessConnectionImport> {
+      return invokeInScope(scope, "import_notion_page", { pageId });
     },
   };
 }
@@ -108,3 +173,11 @@ export const revokeGitHubConnection =
 export const listGitHubRepositories =
   businessConnectionsApi.listGitHubRepositories;
 export const importGitHubReadme = businessConnectionsApi.importGitHubReadme;
+export const getNotionConnectionStatus =
+  businessConnectionsApi.getNotionConnectionStatus;
+export const connectNotionConnection =
+  businessConnectionsApi.connectNotionConnection;
+export const revokeNotionConnection =
+  businessConnectionsApi.revokeNotionConnection;
+export const searchNotionPages = businessConnectionsApi.searchNotionPages;
+export const importNotionPage = businessConnectionsApi.importNotionPage;

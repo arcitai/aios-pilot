@@ -1,20 +1,23 @@
-use std::{fmt, time::Duration};
+use std::fmt;
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use reqwest::header::{HeaderValue, ACCEPT, AUTHORIZATION};
+use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use zeroize::Zeroizing;
 
-use super::scope::ConnectionScope;
+use super::{
+    scope::ConnectionScope,
+    source_text::{apply_source_limit, strip_controls},
+    transport::{decode_json, ProviderHttpClient, TransportError},
+};
 
 const GITHUB_API_ORIGIN: &str = "https://api.github.com/";
 const GITHUB_API_VERSION: &str = "2026-03-10";
-const MAX_TOKEN_BYTES: usize = 512;
 const MAX_USER_RESPONSE_BYTES: usize = 64 * 1024;
 const MAX_REPOSITORIES_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_README_RESPONSE_BYTES: usize = 1024 * 1024;
-const MAX_README_CONTENT_BYTES: usize = 256 * 1024;
+const MAX_README_CONTENT_BYTES: usize = 768 * 1024;
 const MAX_REPOSITORIES: usize = 25;
 
 /// Small injectable boundary around the existing Buzz OS-keyring store.
@@ -98,6 +101,7 @@ pub struct ImportedReadme {
     pub content: String,
     pub url: String,
     pub kind: &'static str,
+    pub truncated: bool,
 }
 
 #[derive(Deserialize)]
@@ -131,32 +135,17 @@ struct ApiReadme {
 /// Read-only GitHub REST adapter. Production construction always uses the fixed
 /// GitHub API origin and disables redirects before attaching credentials.
 pub(super) struct GitHubAdapter<'a> {
-    client: reqwest::Client,
-    api_origin: Url,
+    client: ProviderHttpClient,
     credentials: &'a dyn CredentialStore,
 }
 
 impl<'a> GitHubAdapter<'a> {
     pub fn new(credentials: &'a dyn CredentialStore) -> Result<Self, GitHubConnectionError> {
-        let api_origin =
+        let origin =
             Url::parse(GITHUB_API_ORIGIN).map_err(|_| GitHubConnectionError::InvalidResponse)?;
-        Self::with_origin(credentials, api_origin)
-    }
-
-    fn with_origin(
-        credentials: &'a dyn CredentialStore,
-        api_origin: Url,
-    ) -> Result<Self, GitHubConnectionError> {
-        let client = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(3))
-            .timeout(Duration::from_secs(10))
-            .redirect(reqwest::redirect::Policy::none())
-            .user_agent("Buzz-Desktop")
-            .build()
-            .map_err(|_| GitHubConnectionError::Network)?;
+        let client = ProviderHttpClient::new(origin).map_err(map_transport_error)?;
         Ok(Self {
             client,
-            api_origin,
             credentials,
         })
     }
@@ -166,7 +155,11 @@ impl<'a> GitHubAdapter<'a> {
         credentials: &'a dyn CredentialStore,
         origin: Url,
     ) -> Result<Self, GitHubConnectionError> {
-        Self::with_origin(credentials, origin)
+        let client = ProviderHttpClient::for_test(origin).map_err(map_transport_error)?;
+        Ok(Self {
+            client,
+            credentials,
+        })
     }
 
     pub fn load_token(
@@ -296,8 +289,19 @@ impl<'a> GitHubAdapter<'a> {
         path: &str,
         token: &str,
     ) -> Result<reqwest::RequestBuilder, GitHubConnectionError> {
-        let url = self.api_url(path)?;
-        self.authenticated_get_url(url, token)
+        validate_token(token)?;
+        self.client
+            .request(
+                Method::GET,
+                path,
+                token,
+                &[
+                    ("Accept", "application/vnd.github+json"),
+                    ("X-GitHub-Api-Version", GITHUB_API_VERSION),
+                ],
+                None,
+            )
+            .map_err(map_transport_error)
     }
 
     fn authenticated_get_url(
@@ -306,20 +310,22 @@ impl<'a> GitHubAdapter<'a> {
         token: &str,
     ) -> Result<reqwest::RequestBuilder, GitHubConnectionError> {
         validate_token(token)?;
-        let authorization = HeaderValue::from_str(&format!("Bearer {token}"))
-            .map_err(|_| GitHubConnectionError::InvalidToken)?;
-        Ok(self
-            .client
-            .get(url)
-            .header(ACCEPT, "application/vnd.github+json")
-            .header(AUTHORIZATION, authorization)
-            .header("X-GitHub-Api-Version", GITHUB_API_VERSION))
+        self.client
+            .request_url(
+                Method::GET,
+                url,
+                token,
+                &[
+                    ("Accept", "application/vnd.github+json"),
+                    ("X-GitHub-Api-Version", GITHUB_API_VERSION),
+                ],
+                None,
+            )
+            .map_err(map_transport_error)
     }
 
     fn api_url(&self, path: &str) -> Result<Url, GitHubConnectionError> {
-        self.api_origin
-            .join(path)
-            .map_err(|_| GitHubConnectionError::InvalidResponse)
+        self.client.api_url(path).map_err(map_transport_error)
     }
 
     async fn decode_json<T: for<'de> Deserialize<'de>>(
@@ -327,15 +333,12 @@ impl<'a> GitHubAdapter<'a> {
         response: reqwest::Response,
         max_bytes: usize,
     ) -> Result<T, GitHubConnectionError> {
-        let status = response.status();
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Err(GitHubConnectionError::RejectedCredentials);
-        }
-        if !status.is_success() {
-            return Err(GitHubConnectionError::HttpStatus(status.as_u16()));
-        }
-        let bytes = read_bounded_body(response, max_bytes).await?;
-        serde_json::from_slice(&bytes).map_err(|_| GitHubConnectionError::InvalidResponse)
+        decode_json(response, max_bytes)
+            .await
+            .map_err(|error| match error {
+                TransportError::HttpStatus(401 | 403) => GitHubConnectionError::RejectedCredentials,
+                other => map_transport_error(other),
+            })
     }
 }
 
@@ -409,20 +412,19 @@ fn imported_readme(
     if content.trim().is_empty() {
         return Err(GitHubConnectionError::InvalidResponse);
     }
+    let (content, truncated) = apply_source_limit(
+        &content,
+        false,
+        "[README truncated to fit Buzz's 40,000 UTF-16-unit source limit.]",
+    );
 
     Ok(ImportedReadme {
         title: format!("{} README", repository.full_name),
         content,
         url: repository.url,
         kind: "url",
+        truncated,
     })
-}
-
-fn strip_controls(value: &str) -> String {
-    value
-        .chars()
-        .filter(|character| !character.is_control() || matches!(character, '\n' | '\r' | '\t'))
-        .collect()
 }
 
 fn valid_login(value: &str) -> bool {
@@ -446,42 +448,19 @@ fn valid_repository_name(value: &str) -> bool {
 }
 
 fn validate_token(token: &str) -> Result<(), GitHubConnectionError> {
-    if token.len() < 20
-        || token.len() > MAX_TOKEN_BYTES
-        || !token.is_ascii()
-        || token
-            .bytes()
-            .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
-    {
-        return Err(GitHubConnectionError::InvalidToken);
-    }
-    HeaderValue::from_str(&format!("Bearer {token}"))
-        .map_err(|_| GitHubConnectionError::InvalidToken)?;
-    Ok(())
+    super::transport::validate_token(token).map_err(map_transport_error)
 }
 
-async fn read_bounded_body(
-    mut response: reqwest::Response,
-    max_bytes: usize,
-) -> Result<Vec<u8>, GitHubConnectionError> {
-    if response
-        .content_length()
-        .is_some_and(|length| length > max_bytes as u64)
-    {
-        return Err(GitHubConnectionError::ResponseTooLarge);
-    }
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| GitHubConnectionError::Network)?
-    {
-        if bytes.len().saturating_add(chunk.len()) > max_bytes {
-            return Err(GitHubConnectionError::ResponseTooLarge);
+fn map_transport_error(error: TransportError) -> GitHubConnectionError {
+    match error {
+        TransportError::InvalidOrigin | TransportError::InvalidResponse => {
+            GitHubConnectionError::InvalidResponse
         }
-        bytes.extend_from_slice(&chunk);
+        TransportError::InvalidToken => GitHubConnectionError::InvalidToken,
+        TransportError::Network => GitHubConnectionError::Network,
+        TransportError::HttpStatus(status) => GitHubConnectionError::HttpStatus(status),
+        TransportError::ResponseTooLarge => GitHubConnectionError::ResponseTooLarge,
     }
-    Ok(bytes)
 }
 
 #[cfg(test)]
@@ -511,6 +490,7 @@ mod tests {
         MAX_USER_RESPONSE_BYTES,
     };
     use crate::commands::business_connections::scope::ConnectionScope;
+    use crate::commands::business_connections::source_text::BUSINESS_SOURCE_MAX_UTF16_UNITS;
 
     const TEST_TOKEN: &str = "ghp_test_token_12345678901234567890";
     const TEST_AUTHORIZATION: &str = "Bearer ghp_test_token_12345678901234567890";
@@ -677,6 +657,7 @@ mod tests {
         assert_eq!(source.url, "https://github.com/acme/launchpad");
         assert_eq!(source.content, "# Acme\n\tRead-only adapter\n");
         assert_eq!(source.kind, "url");
+        assert!(!source.truncated);
         server.abort();
     }
 
@@ -839,5 +820,32 @@ mod tests {
             super::imported_readme(repository, payload).unwrap_err(),
             GitHubConnectionError::ResponseTooLarge
         );
+    }
+
+    #[test]
+    fn readme_import_truncates_to_business_source_utf16_limit_with_marker() {
+        let content = "🧭".repeat(BUSINESS_SOURCE_MAX_UTF16_UNITS / 2 + 5);
+        let payload = super::ApiReadme {
+            name: "README.md".to_string(),
+            path: "README.md".to_string(),
+            encoding: "base64".to_string(),
+            content: BASE64.encode(content.as_bytes()),
+        };
+        let repository = super::GitHubRepository {
+            id: 42,
+            name: "launchpad".to_string(),
+            full_name: "acme/launchpad".to_string(),
+            private: false,
+            description: None,
+            url: "https://github.com/acme/launchpad".to_string(),
+        };
+
+        let imported = super::imported_readme(repository, payload).expect("bounded README");
+        assert!(imported.truncated);
+        assert!(imported.content.encode_utf16().count() <= BUSINESS_SOURCE_MAX_UTF16_UNITS);
+        assert!(imported
+            .content
+            .ends_with("40,000 UTF-16-unit source limit.]"));
+        assert!(!imported.content.contains('\u{fffd}'));
     }
 }
