@@ -29,6 +29,8 @@ export interface HuddleContextValue {
   localAudioTrack: MediaStreamTrack | null;
   isStarting: boolean;
   huddleError: string | null;
+  leaveHuddleFailed: boolean;
+  getLastLeaveHuddleError?: () => string | null;
   clearHuddleError: () => void;
   micConnected: boolean;
   isMuted: boolean;

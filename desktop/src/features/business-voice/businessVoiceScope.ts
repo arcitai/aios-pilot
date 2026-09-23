@@ -8,6 +8,13 @@ export interface BusinessVoiceScope {
   mainAgentPubkey: string;
 }
 
+export interface BusinessVoiceHuddleLeavePort {
+  activeEphemeralChannelId: string | null;
+  activeHuddleBinding: HuddleActiveBinding | null;
+  leaveHuddle: () => Promise<boolean>;
+  getLastLeaveHuddleError?: () => string | null;
+}
+
 function normalizeRelayUrl(relayUrl: string): string | null {
   try {
     const parsed = new URL(relayUrl.trim());
@@ -75,4 +82,30 @@ export function businessVoiceBindingMatches(
           pubkey.toLowerCase() === scope.mainAgentPubkey.toLowerCase(),
       ),
   );
+}
+
+export async function leaveMatchingBusinessVoiceHuddle(
+  scope: BusinessVoiceScope,
+  huddle: BusinessVoiceHuddleLeavePort,
+): Promise<string | null> {
+  const binding = huddle.activeHuddleBinding;
+  if (
+    !binding ||
+    !businessVoiceBindingMatches(scope, binding) ||
+    huddle.activeEphemeralChannelId !== binding.ephemeralChannelId
+  ) {
+    return null;
+  }
+
+  try {
+    if (await huddle.leaveHuddle()) return null;
+    return (
+      huddle.getLastLeaveHuddleError?.() ??
+      "The voice session could not be ended. Retry ending it from the active huddle controls."
+    );
+  } catch (error) {
+    if (typeof error === "string" && error.trim()) return error;
+    if (error instanceof Error && error.message.trim()) return error.message;
+    return "The voice session could not be ended. Retry ending it from the active huddle controls.";
+  }
 }

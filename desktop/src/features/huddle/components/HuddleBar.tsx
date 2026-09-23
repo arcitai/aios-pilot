@@ -161,6 +161,7 @@ export function HuddleBar({
     voiceInputMode,
     setVoiceInputMode,
     huddleError,
+    leaveHuddleFailed,
     clearHuddleError,
     audioDevices,
     selectedDeviceId,
@@ -189,6 +190,7 @@ export function HuddleBar({
     hasSeenHeadphonesHint,
   );
   const [isLeaving, setIsLeaving] = React.useState(false);
+  const [leaveFailed, setLeaveFailed] = React.useState(false);
   const [showAddAgent, setShowAddAgent] = React.useState(false);
   const [agentAddError, setAgentAddError] = React.useState<string | null>(null);
   const [isReactionPickerOpen, setIsReactionPickerOpen] = React.useState(false);
@@ -510,6 +512,7 @@ export function HuddleBar({
 
   async function handleLeave() {
     if (isLeaving) return;
+    setLeaveFailed(false);
     const leavingChannelId = barState?.ephemeral_channel_id ?? null;
     stateGenerationRef.current += 1;
     locallyLeavingChannelRef.current = leavingChannelId;
@@ -517,6 +520,7 @@ export function HuddleBar({
     try {
       const backendClean = await leaveHuddle();
       if (backendClean) {
+        setLeaveFailed(false);
         setState(null);
         // A companion is the active huddle room, not a persistent transcript
         // viewer. Close it immediately after it ends instead of depending on
@@ -525,11 +529,13 @@ export function HuddleBar({
           void getCurrentWindow().close();
         }
       } else {
+        setLeaveFailed(true);
         locallyLeavingChannelRef.current = null;
         stateGenerationRef.current += 1;
       }
       // If cleanup failed, keep the bar visible so the user can retry.
     } catch (e) {
+      setLeaveFailed(true);
       locallyLeavingChannelRef.current = null;
       stateGenerationRef.current += 1;
       console.error("Failed to leave huddle:", e);
@@ -863,7 +869,11 @@ export function HuddleBar({
         )}
 
         <Button
-          aria-label="Leave huddle"
+          aria-label={
+            leaveHuddleFailed || leaveFailed
+              ? "Retry ending voice session"
+              : "Leave huddle"
+          }
           className="h-12 gap-2 px-4"
           disabled={isLeaving}
           aria-busy={isLeaving}
@@ -872,7 +882,7 @@ export function HuddleBar({
           variant="destructive"
         >
           <PhoneOff className="h-4 w-4" />
-          Leave
+          {leaveHuddleFailed || leaveFailed ? "Retry leave" : "Leave"}
         </Button>
       </div>
 

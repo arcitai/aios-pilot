@@ -32,6 +32,13 @@ test("preserves other string and Error messages", () => {
     formatHuddleActionError(new Error("Connection timed out"), "start"),
     "Connection timed out",
   );
+  assert.equal(
+    formatHuddleActionError(
+      new Error("leave_huddle failed: session remains active"),
+      "leave",
+    ),
+    "leave_huddle failed: session remains active",
+  );
 });
 
 test("uses action-specific fallback copy for unknown errors", () => {
@@ -42,5 +49,9 @@ test("uses action-specific fallback copy for unknown errors", () => {
   assert.equal(
     formatHuddleActionError(null, "start"),
     "Couldn’t start the huddle.",
+  );
+  assert.equal(
+    formatHuddleActionError(null, "leave"),
+    "Couldn’t end the huddle.",
   );
 });

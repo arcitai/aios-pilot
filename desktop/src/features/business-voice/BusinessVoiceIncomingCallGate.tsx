@@ -5,7 +5,10 @@ import { useManagedAgentsQuery } from "@/features/agents/hooks";
 import { getAgentObserverSnapshot } from "@/features/agents/observerRelayStore";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useHuddle } from "@/features/huddle/HuddleContext";
-import { businessVoiceBindingMatches } from "@/features/business-voice/businessVoiceScope";
+import {
+  businessVoiceBindingMatches,
+  leaveMatchingBusinessVoiceHuddle,
+} from "@/features/business-voice/businessVoiceScope";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { relayClient } from "@/shared/api/relayClient";
 import type { RelayEvent } from "@/shared/api/types";
@@ -424,23 +427,16 @@ export function BusinessVoiceIncomingCallGate() {
   const leaveExactRequestHuddle = React.useCallback(
     async (request: BusinessVoiceCallRequest) => {
       const currentHuddle = scopeRef.current.huddle;
-      const binding = currentHuddle.activeHuddleBinding;
-      if (
-        binding &&
-        businessVoiceBindingMatches(
-          {
-            channelId: request.channelId,
-            channelName: "",
-            relayUrl: request.relayUrl,
-            signerPubkey: request.ownerPubkey,
-            mainAgentPubkey: request.agentPubkey,
-          },
-          binding,
-        ) &&
-        currentHuddle.activeEphemeralChannelId === binding.ephemeralChannelId
-      ) {
-        await currentHuddle.leaveHuddle();
-      }
+      return leaveMatchingBusinessVoiceHuddle(
+        {
+          channelId: request.channelId,
+          channelName: "",
+          relayUrl: request.relayUrl,
+          signerPubkey: request.ownerPubkey,
+          mainAgentPubkey: request.agentPubkey,
+        },
+        currentHuddle,
+      );
     },
     [],
   );
@@ -522,10 +518,13 @@ export function BusinessVoiceIncomingCallGate() {
           );
         }
       } catch (error) {
+        let cleanupError: string | null = null;
         if (huddleStartAttempted) {
-          await leaveExactRequestHuddle(request).catch(() => undefined);
+          cleanupError = await leaveExactRequestHuddle(request);
         }
-        const message = errorMessage(error);
+        const message = cleanupError
+          ? `${errorMessage(error)} Huddle cleanup failed: ${cleanupError}. Retry ending the session from the huddle controls.`
+          : errorMessage(error);
         toast.error(message);
         let currentMembership = false;
         if (isCurrentRequest(request)) {
@@ -558,9 +557,12 @@ export function BusinessVoiceIncomingCallGate() {
         await sendDecision(request, "accept");
         closeRequest(request);
       } catch (error) {
-        await leaveExactRequestHuddle(request).catch(() => undefined);
+        const cleanupError = await leaveExactRequestHuddle(request);
         closeRequest(request);
-        const message = `The private voice session started, but the agent response could not be confirmed. ${errorMessage(error)}`;
+        const cleanupMessage = cleanupError
+          ? ` Huddle cleanup failed: ${cleanupError}. Retry ending the session from the huddle controls.`
+          : "";
+        const message = `The private voice session started, but the agent response could not be confirmed. ${errorMessage(error)}${cleanupMessage}`;
         setActionError({
           requestId: request.requestId,
           message,

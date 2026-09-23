@@ -192,13 +192,24 @@ export function parseIncomingBusinessCallRequest(
   };
 }
 
-/** Build the owner response while echoing every request-binding field. */
+/** Build the owner response from protocol fields only. */
 export function createBusinessVoiceCallDecision(
   request: BusinessVoiceCallRequest,
   decision: "accept" | "decline",
 ): BusinessVoiceCallDecision {
-  const { type: _type, ...binding } = request;
-  return { ...binding, type: "call_decision", decision };
+  return {
+    type: "call_decision",
+    version: request.version,
+    requestId: request.requestId,
+    decision,
+    ownerPubkey: request.ownerPubkey,
+    agentPubkey: request.agentPubkey,
+    relayUrl: request.relayUrl,
+    runtimeStartNonce: request.runtimeStartNonce,
+    channelId: request.channelId,
+    createdAt: request.createdAt,
+    expiresAt: request.expiresAt,
+  };
 }
 
 /** Verify an owner decision carries the exact binding and remains unexpired. */

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   businessVoiceBindingMatches,
+  leaveMatchingBusinessVoiceHuddle,
   validateBusinessVoiceScope,
 } from "./businessVoiceScope.ts";
 
@@ -54,4 +55,63 @@ test("binding requires the same channel, relay, owner, and main agent", () => {
     }),
     false,
   );
+});
+
+test("failed exact-scope cleanup retains the native error for retry UI", async () => {
+  const failure = "Rust leave_huddle failed: session is still active";
+  const huddle = {
+    activeEphemeralChannelId: "ephemeral-a",
+    activeHuddleBinding: {
+      parentChannelId: SCOPE.channelId,
+      ephemeralChannelId: "ephemeral-a",
+      relayUrl: SCOPE.relayUrl,
+      signerPubkey: SCOPE.signerPubkey,
+      agentPubkeys: [SCOPE.mainAgentPubkey],
+    },
+    async leaveHuddle() {
+      return false;
+    },
+    getLastLeaveHuddleError() {
+      return failure;
+    },
+  };
+
+  assert.equal(await leaveMatchingBusinessVoiceHuddle(SCOPE, huddle), failure);
+});
+
+test("failed cleanup preserves rejected errors and never leaves another huddle", async () => {
+  const huddle = {
+    activeEphemeralChannelId: "ephemeral-a",
+    activeHuddleBinding: {
+      parentChannelId: SCOPE.channelId,
+      ephemeralChannelId: "ephemeral-a",
+      relayUrl: SCOPE.relayUrl,
+      signerPubkey: SCOPE.signerPubkey,
+      agentPubkeys: [SCOPE.mainAgentPubkey],
+    },
+    async leaveHuddle() {
+      throw new Error("native command rejected");
+    },
+  };
+  assert.equal(
+    await leaveMatchingBusinessVoiceHuddle(SCOPE, huddle),
+    "native command rejected",
+  );
+
+  let leaveCount = 0;
+  assert.equal(
+    await leaveMatchingBusinessVoiceHuddle(SCOPE, {
+      ...huddle,
+      activeHuddleBinding: {
+        ...huddle.activeHuddleBinding,
+        parentChannelId: "different-channel",
+      },
+      async leaveHuddle() {
+        leaveCount += 1;
+        return true;
+      },
+    }),
+    null,
+  );
+  assert.equal(leaveCount, 0);
 });

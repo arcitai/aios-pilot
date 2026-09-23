@@ -194,6 +194,36 @@ test("requires a decision to echo every field and come from the owner", () => {
   );
 });
 
+test("call decisions exclude UI-only fields on enriched incoming requests", () => {
+  const request = parsedRequest();
+  const decision = createBusinessVoiceCallDecision(
+    {
+      ...request,
+      agentName: "UI-only agent label",
+      channelName: "UI-only workspace label",
+      accidentalExtra: { shouldNotSerialize: true },
+    },
+    "decline",
+  );
+
+  assert.deepEqual(decision, {
+    type: "call_decision",
+    version: request.version,
+    requestId: request.requestId,
+    decision: "decline",
+    ownerPubkey: request.ownerPubkey,
+    agentPubkey: request.agentPubkey,
+    relayUrl: request.relayUrl,
+    runtimeStartNonce: request.runtimeStartNonce,
+    channelId: request.channelId,
+    createdAt: request.createdAt,
+    expiresAt: request.expiresAt,
+  });
+  assert.equal("agentName" in decision, false);
+  assert.equal("channelName" in decision, false);
+  assert.equal("accidentalExtra" in decision, false);
+});
+
 test("uses the newest matching runtime lifecycle and fails closed after stop", () => {
   const events = [
     {

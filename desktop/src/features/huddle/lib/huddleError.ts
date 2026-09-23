@@ -1,4 +1,4 @@
-export type HuddleAction = "join" | "start";
+export type HuddleAction = "join" | "start" | "leave";
 
 const HUDDLE_AUDIO_UNAVAILABLE_MESSAGE =
   "Huddle audio isn’t available on this server. Ask an administrator to turn it on.";
@@ -31,7 +31,12 @@ export function formatHuddleActionError(
     return message;
   }
 
-  return action === "join"
-    ? "Couldn’t join the huddle."
-    : "Couldn’t start the huddle.";
+  switch (action) {
+    case "join":
+      return "Couldn’t join the huddle.";
+    case "leave":
+      return "Couldn’t end the huddle.";
+    case "start":
+      return "Couldn’t start the huddle.";
+  }
 }

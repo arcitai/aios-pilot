@@ -189,6 +189,12 @@ export function HuddleProvider({
     React.useState<MediaStreamTrack | null>(null);
   const [isStarting, setIsStarting] = React.useState(false);
   const [huddleError, setHuddleError] = React.useState<string | null>(null);
+  const [leaveHuddleFailed, setLeaveHuddleFailed] = React.useState(false);
+  const lastLeaveHuddleErrorRef = React.useRef<string | null>(null);
+  const getLastLeaveHuddleError = React.useCallback(
+    () => lastLeaveHuddleErrorRef.current,
+    [],
+  );
   const clearHuddleError = React.useCallback(() => setHuddleError(null), []);
   const [micConnected, setMicConnected] = React.useState(false);
   const [isMuted, setIsMuted] = React.useState(false);
@@ -567,16 +573,23 @@ export function HuddleProvider({
   }, [disconnectMedia, ownsAudioSession]);
 
   const leaveHuddle = React.useCallback(async (): Promise<boolean> => {
-    await disconnectMedia();
+    lastLeaveHuddleErrorRef.current = null;
+    setLeaveHuddleFailed(false);
+    setHuddleError(null);
     try {
+      await disconnectMedia();
       // `leave_huddle` is idempotent in Rust. Always call it so a provider
       // remount cannot leave Rust's huddle state active while this ref is false.
       await invoke("leave_huddle");
       rustActiveRef.current = false;
-    } catch {
+      return true; // Backend cleanup succeeded (or was not needed)
+    } catch (error) {
+      const message = formatHuddleActionError(error, "leave");
+      lastLeaveHuddleErrorRef.current = message;
+      setLeaveHuddleFailed(true);
+      setHuddleError(message);
       return false; // Signal that backend cleanup failed
     }
-    return true; // Backend cleanup succeeded (or was not needed)
   }, [disconnectMedia]);
 
   /**
@@ -771,6 +784,8 @@ export function HuddleProvider({
       isMutedRef.current = startMuted;
       setIsMuted(startMuted);
       setHuddleError(null);
+      lastLeaveHuddleErrorRef.current = null;
+      setLeaveHuddleFailed(false);
       setIsStarting(true);
       onHuddleStartPendingChange?.(true);
       try {
@@ -861,6 +876,8 @@ export function HuddleProvider({
       isMutedRef.current = startMuted;
       setIsMuted(startMuted);
       setHuddleError(null);
+      lastLeaveHuddleErrorRef.current = null;
+      setLeaveHuddleFailed(false);
       setIsStarting(true);
 
       try {
@@ -1051,6 +1068,8 @@ export function HuddleProvider({
       localAudioTrack,
       isStarting,
       huddleError,
+      leaveHuddleFailed,
+      getLastLeaveHuddleError,
       clearHuddleError,
       micConnected: effectiveMicConnected,
       isMuted: effectiveIsMuted,
@@ -1083,8 +1102,10 @@ export function HuddleProvider({
       effectiveMicConnected,
       effectiveVoiceInputMode,
       ephemeralChannelId,
+      getLastLeaveHuddleError,
       huddleError,
       isStarting,
+      leaveHuddleFailed,
       joinHuddle,
       leaveHuddle,
       localAudioTrack,
