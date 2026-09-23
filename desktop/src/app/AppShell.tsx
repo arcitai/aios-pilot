@@ -8,6 +8,7 @@ import { AppShellProvider } from "@/app/AppShellContext";
 import { AppShellOverlays, TerminalBootstrap } from "@/app/AppShellOverlays";
 import { AppShellChannelSurface } from "@/app/AppShellChannelSurface";
 import { AppHuddleShell } from "@/app/AppHuddleShell";
+import { AppAgentPermissions } from "@/app/AppAgentPermissions";
 import { AppTopChrome } from "@/app/AppTopChrome";
 import {
   type TerminalContextOverride,
@@ -699,6 +700,7 @@ export function AppShell() {
   });
   return (
     <PreventSleepProvider>
+      {!isHuddleRoom ? <AppAgentPermissions /> : null}
       {!isHuddleRoom ? (
         <AppShellTrayMenu
           channels={channels}

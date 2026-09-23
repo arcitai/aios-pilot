@@ -135,7 +135,7 @@ export function AgentPermissionGate({
   );
   const request: ActivePermissionRequest | null = activeRequests[0] ?? null;
   const error =
-    errorState?.requestId === request?.binding.requestId
+    errorState && errorState.requestId === request?.binding.requestId
       ? errorState.message
       : null;
   const requestAgent = request

@@ -49,7 +49,17 @@ export async function sendAgentPermissionDecision(
 
   await sendAgentObserverControl(binding.agentPubkey, {
     type: "resolve_permission",
-    ...binding,
+    // The observer payload also contains display-only fields. Copy only the
+    // binding, so untrusted extra keys can never replace the control verb.
+    requestId: binding.requestId,
+    ownerPubkey: binding.ownerPubkey,
+    agentPubkey: binding.agentPubkey,
+    relayUrl: binding.relayUrl,
+    runtimeStartNonce: binding.runtimeStartNonce,
+    agentIndex: binding.agentIndex,
+    sessionId: binding.sessionId,
+    turnId: binding.turnId,
+    channelId: binding.channelId,
     decision,
   });
 }

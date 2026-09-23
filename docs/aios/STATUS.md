@@ -212,3 +212,24 @@ inspected. This does not prove live relay persistence or model execution.
 - Main-agent kickoff now includes the concrete `buzz business show/update`
   commands and mandates revision checks plus readback. The updated packaged
   CLI sidecar and permission-gated real model write still need combined proof.
+
+## App-wide permissions and local model admission — 23:38 local
+
+- ACP broker commit `3927986` integrated as `04f4541`. Owner prompts now mount
+  in the main app independently of the active conversation. Three combined
+  browser tests passed: navigate while pending, approve once with the exact
+  binding, and reject requests for another owner. TypeScript and targeted
+  formatting passed. Screenshot: `desktop/test-results/aios-agent-permission.png`.
+- Integration caught and fixed a null error-state startup crash. The decision
+  adapter now copies only named binding fields; an injected observer `type`
+  cannot replace the `resolve_permission` control verb. That attack-shaped
+  payload is covered in the browser test. Provider mode confirmation and the
+  signed relay runtime roundtrip remain in progress; the UI fixture proof does
+  not establish either.
+- The Mesh task repaired the bounded same-host admission smoke. Its real
+  SmolLM2 run admitted the trusted client and returned PONG; a non-member saw
+  model gossip but inference was rejected. Production desktop join paths are
+  being audited separately. No two-machine inference claim is made.
+- Local desktop packaging entrypoint/config are in place, including a distinct
+  application/keyring namespace. `scripts/aios-desktop doctor` passed; the
+  actual macOS bundle still needs building after integration.
