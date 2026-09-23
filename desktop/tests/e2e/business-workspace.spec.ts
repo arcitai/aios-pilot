@@ -46,7 +46,9 @@ test("private company context, source and main-agent recovery stay inside Buzz",
   await expect(page.getByRole("alert")).toContainText("Set up your main agent");
   await page.getByRole("button", { name: "Connections", exact: true }).click();
   await expect(
-    page.getByText("Connection status could not be verified.", { exact: true }),
+    page
+      .locator('[data-provider="github"]')
+      .getByText("Connection status could not be verified.", { exact: true }),
   ).toBeVisible();
   await page.setViewportSize({ width: 760, height: 900 });
   await waitForAnimations(page);
@@ -403,6 +405,7 @@ test("verified connection imports one attributed source and disconnect keeps the
     .fill("Connected Studio");
   await page.getByRole("button", { name: "Create my workspace" }).click();
   await page.getByRole("button", { name: "Connections", exact: true }).click();
+  const github = page.locator('[data-provider="github"]');
   await expect(page.getByText("Not connected.", { exact: true })).toBeVisible();
   await page
     .getByLabel("Fine-grained personal access token")
@@ -410,7 +413,7 @@ test("verified connection imports one attributed source and disconnect keeps the
   await page
     .getByRole("button", { name: "Connect GitHub", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText("rejected");
+  await expect(github.getByRole("alert")).toContainText("rejected");
   await expect(page.getByText("Not connected.", { exact: true })).toBeVisible();
   await page
     .getByLabel("Fine-grained personal access token")
@@ -433,7 +436,7 @@ test("verified connection imports one attributed source and disconnect keeps the
   await page
     .getByRole("button", { name: "Import README", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(github.getByRole("alert")).toContainText(
     "already in your workspace",
   );
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();

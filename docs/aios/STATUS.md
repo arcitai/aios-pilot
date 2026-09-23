@@ -233,3 +233,20 @@ inspected. This does not prove live relay persistence or model execution.
 - Local desktop packaging entrypoint/config are in place, including a distinct
   application/keyring namespace. `scripts/aios-desktop doctor` passed; the
   actual macOS bundle still needs building after integration.
+
+## Notion integration — 23:47 local
+
+- Notion provider commit `63af27d` integrated as `080b9ac`; five native
+  commands are registered in the main desktop handler. Connection docs stay
+  at the canonical `docs/aios/CONNECTIONS.md` route.
+- All 23 native connection tests, all 10 frontend connection tests, TypeScript
+  and the E2E build passed. Eight combined business/browser scenarios passed,
+  including Notion verification/import/partial content notice/attribution,
+  duplicate refusal, disconnect, empty token field, and absence of the
+  credential from the saved business canvas. Tests use synthetic provider
+  fixtures; real Notion access is not claimed.
+- Mesh smoke commit `37ceabe` integrated as `7941cbf`. The Mesh task continues
+  by checking the production node constructor and desktop join/status path.
+- Connections task continues with an explicit read-only Slack source adapter,
+  bounded user-selected imports and clearer setup copy. No external accounts
+  are connected by the development tasks.
