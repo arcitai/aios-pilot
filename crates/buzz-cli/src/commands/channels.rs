@@ -278,7 +278,7 @@ pub async fn cmd_list_channel_members(
 /// observe the caller's own recent writes, so it sets `consistency: strong` to
 /// pin the relay read to the writer pool. The display path (`get`) leaves it
 /// `false` and stays replica-eligible.
-async fn fetch_canvas_head(
+pub(crate) async fn fetch_canvas_head(
     client: &BuzzClient,
     channel_id: &str,
     writer_pinned: bool,
@@ -576,7 +576,7 @@ pub async fn cmd_restore_canvas(
 /// [`buzz_sdk::canvas_write_survived`] walk `expected-revision` links back
 /// through a descendant chain (A→B→C) so a legitimate later write layered on
 /// ours is not misread as a supersession. An empty vec means no canvas exists.
-async fn fetch_canvas_ancestry(
+pub(crate) async fn fetch_canvas_ancestry(
     client: &BuzzClient,
     channel_id: &str,
 ) -> Result<Vec<(String, Option<String>)>, CliError> {
@@ -611,7 +611,7 @@ async fn fetch_canvas_ancestry(
 /// of ancestry position: an unconditional ("legacy") write can become head
 /// without building an `expected-revision` link to the event being checked,
 /// so a bounded ancestry walk alone cannot confirm presence.
-async fn fetch_canvas_event_exists(
+pub(crate) async fn fetch_canvas_event_exists(
     client: &BuzzClient,
     channel_id: &str,
     event_id: &str,

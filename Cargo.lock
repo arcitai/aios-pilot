@@ -1041,11 +1041,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "buzz-business"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "url",
+]
+
+[[package]]
 name = "buzz-cli"
 version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "buzz-business",
  "buzz-core",
  "buzz-persona",
  "buzz-sdk",

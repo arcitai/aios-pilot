@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "kind": "aios.business-workspace",
+  "company": {
+    "name": "Example",
+    "website": "",
+    "summary": "",
+    "audience": "",
+    "offers": [],
+    "goals": [],
+    "accessToken": "fixture-placeholder"
+  },
+  "sources": [
+    {
+      "id": "source-1",
+      "title": "Interview",
+      "kind": "note",
+      "content": "Første samtale",
+      "url": "https://example.test/kilde",
+      "createdAt": "2026-09-23T14:30:00+02:00"
+    }
+  ],
+  "connections": [
+    {
+      "id": "connection-1",
+      "provider": "google_drive",
+      "label": "Research",
+      "status": "not_configured"
+    }
+  ]
+}

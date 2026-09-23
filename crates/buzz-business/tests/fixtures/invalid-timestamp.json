@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "kind": "aios.business-workspace",
+  "company": {
+    "name": "Example",
+    "website": "",
+    "summary": "København-based studio",
+    "audience": "Små virksomheder",
+    "offers": [],
+    "goals": []
+  },
+  "sources": [
+    {
+      "id": "source-1",
+      "title": "Interview",
+      "kind": "note",
+      "content": "",
+      "createdAt": "yesterday"
+    }
+  ],
+  "connections": [
+    {
+      "id": "connection-1",
+      "provider": "google_drive",
+      "label": "Research",
+      "status": "not_configured"
+    }
+  ]
+}
