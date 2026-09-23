@@ -256,6 +256,9 @@ test("starting the main agent publishes the request before launching a stopped r
       index > sendIndex && entry.command === "start_managed_agent",
   );
   expect(sendIndex).toBeGreaterThan(-1);
+  expect(log[sendIndex].payload?.content).toBe(
+    "Fizz, help me get my business ready in this workspace. Let's start with what we do, who we help and our current priorities. Read the company context we already have and ask me one useful question at a time.",
+  );
   expect(startIndex).toBeGreaterThan(sendIndex);
   expect(log[startIndex].payload).toMatchObject({
     pubkey: agentPubkey,

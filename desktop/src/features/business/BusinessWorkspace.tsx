@@ -171,8 +171,8 @@ export function BusinessWorkspace({
           {history}
           <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
             <LockKeyhole className="mt-0.5 size-4 shrink-0" />
-            Starts as a private room on your workspace's relay. You decide which
-            people and agents to invite.
+            Your workspace starts private. You decide which people and agents to
+            invite.
           </p>
         </div>
       </div>

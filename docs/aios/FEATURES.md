@@ -12,12 +12,13 @@ observed behavior through its real interface, not only source code.
 | Company context | Versioned domain document in dedicated private channel canvas | Live native and CLI round-trip, history, stale-write/outsider denial; browser conflict/recovery pass | Canvas conflict checks remain advisory, not atomic CAS |
 | Sources and business knowledge | Attributed text/file/link snapshots with editing, removal, search and history | Browser add/edit/remove/recover and GitHub import-to-context flows pass | More formats, incremental indexing, provider refresh and stale-source detection |
 | Connections | Native read-only GitHub, Notion and Slack adapters with OS-keyring credentials scoped to relay and identity | GitHub/Notion browser flows and native checks pass; Slack selected-channel/attribution/duplicate/disconnect browser flow passes, with workspace-aware links | Real account credentials not exercised; Drive OAuth in progress; provider refresh and runtime agent access remain |
-| Agent specialization and skills | Private per-agent skills, capability-based discovery, starter workflows and opt-in snapshot export | Eight native skills checks and specialist-editor browser flow pass in the integrated checkout; public sharing omits skills | Real specialist consuming its selected skill and approved context |
+| Agent specialization and skills | Private per-agent skills, capability-based discovery, starter workflows and opt-in snapshot export | Eight native skills checks and specialist-editor browser flow pass; bundled-agent skill discovery/staging has additional native and real-process checks; public sharing omits skills | Real specialist consuming its selected skill and approved context |
 | Agent teams and delegation | Buzz team/persona runtime | Existing source | Context inheritance, visible work status and acceptance |
 | More computers / remote agents | Buzz backend providers; OpenAgents reference | Source only | Pairing flow, remote execution, disconnection/recovery proof |
 | Local models | OpenAI-compatible endpoints / Ollama; optional MeshLLM | Same-host real SmolLM2 inference returned PONG for an admitted peer; non-member denied; production join/readiness fix integrated with 85 native and two browser checks; clean Mesh-enabled macOS package built | Model tool-use and real second-machine proof |
 | Browser use | OpenAgents reference; runtime adapter still to select and verify | Research only; no verified built-in agent browser adapter | Isolated browser session, visible control and access |
 | Built-in Design, Slides and Calendar | Modular app registry, private per-app Canvas documents, replaceable storage | Editors integrated in Business; scoped write/reopen, draft guards and save-race browser checks pass; 11 domain/export checks pass | Agent access and app CLI underway; rich visual design, provider sync and real-relay app roundtrip remain |
+| Tables and data-backed apps | Kylon typed tables, saved views and database-app flow are behavioral references | Public documentation reviewed; no table editor or database-backed generated app implemented yet | Typed fields/rows, useful views, agent/CLI parity, then a separate authenticated data adapter for generated apps |
 | Forms, Plans and Clips | Bounded app extensions informed by Agent Native | Research only | Implement after core app contract and two usable editors |
 | Generated sites/webapps | Private HTML/CSS/JS documents, isolated preview and static Publisher service | Worker browser flow proves save/preview/JavaScript/publish/revoke404; service 9 checks pass; lead native scope 4 and document/export 5 checks pass | Combined UI integration, reviewed asynchronous-state fixes, agent generation and CLI, hosting/restore; full-stack apps remain beyond static sites |
 | Schedules, automations and follow-ups | Existing Buzz workflows | Source only; upstream approval executor gap noted | Trigger/retry/cancel/approval behavior, missed-run recovery |
@@ -44,3 +45,10 @@ builder; retain provenance and check the actual component's license on reuse.
 
 Buzz: 5621006bcf84b82e5da489824a5b4d76568d8602 is the local fork base. Preserve
 upstream attribution and independently verify the product flows we expose.
+
+Kylon also separates [tables](https://docs.kylon.io/concepts/tables) from
+[database apps](https://docs.kylon.io/concepts/database-apps). Our static Sites
+Publisher does not supply that database or authenticated data access. A private
+table editor is the next bounded app contract; exposing its data to a generated
+app will need an explicit server-side access boundary, not a public copy of the
+company context or its signing key.
