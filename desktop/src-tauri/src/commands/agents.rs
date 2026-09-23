@@ -57,6 +57,8 @@ pub(super) fn summarize_from_disk(
 
 #[path = "agents_create_fields.rs"]
 mod create_fields;
+#[path = "agents_create_scope.rs"]
+mod create_scope;
 use create_fields::{normalize_relay_mesh, resolve_created_avatar_url, trim_to_optional_string};
 
 #[cfg(feature = "mesh-llm")]
@@ -340,10 +342,19 @@ pub async fn list_managed_agents(app: AppHandle) -> Result<Vec<ManagedAgentSumma
 
 #[tauri::command]
 pub async fn create_managed_agent(
-    input: CreateManagedAgentRequest,
+    mut input: CreateManagedAgentRequest,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<CreateManagedAgentResponse, String> {
+    let creation_scope = create_scope::prepare(
+        &app,
+        &state,
+        &mut input,
+        expected_relay_url.as_deref(),
+        expected_signer_pubkey.as_deref(),
+    )?;
     let name = input.name.trim().to_string();
     let requested_persona_id = input
         .persona_id
@@ -436,7 +447,10 @@ pub async fn create_managed_agent(
     // Agents authenticate via the auth tag in their kind:0 profile event.
     // No tokens are minted. Fail closed: bad auth tag → don't create agent.
     let auth_tag = {
-        let owner_keys = state.signing_keys()?;
+        let owner_keys = match &creation_scope {
+            Some(scope) => scope.owner_keys.clone(),
+            None => state.signing_keys()?,
+        };
         // Bridge nostr 0.37 → 0.36 (buzz-sdk) via hex round-trip.
         let compat_owner = nostr::Keys::parse(&owner_keys.secret_key().to_secret_hex())
             .map_err(|e| format!("failed to bridge owner keys: {e}"))?;
@@ -704,7 +718,11 @@ pub async fn create_managed_agent(
         // Publish the agent to the relay. Inside the Phase-3 lock, after save,
         // before any .await — owner-authored, every agent (Will's ruling: no
         // is_builtin/persona-membership gate).
-        retain_managed_agent_pending(&app, &state, record);
+        if let Some(scope) = &creation_scope {
+            create_scope::retain(scope, record);
+        } else {
+            retain_managed_agent_pending(&app, &state, record);
+        }
         // Effective owner-authored description for the kind:0 `about`.
         let profile_about = crate::managed_agents::record_effective_description(record, &personas);
         (
@@ -761,8 +779,12 @@ pub async fn create_managed_agent(
         auth_tag.as_deref(),
     )
     .await;
-    profile_sync_error =
-        super::agent_models::flush_managed_agent_policy(&app, &state, profile_sync_error).await;
+    profile_sync_error = match &creation_scope {
+        Some(scope) => create_scope::flush(scope, &state, profile_sync_error).await,
+        None => {
+            super::agent_models::flush_managed_agent_policy(&app, &state, profile_sync_error).await
+        }
+    };
 
     let spawn_error = if input.spawn_after_create && input.backend != BackendKind::Local {
         if let BackendKind::Provider { ref id, ref config } = input.backend {

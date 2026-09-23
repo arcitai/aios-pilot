@@ -1,10 +1,6 @@
-import {
-  addChannelMembers,
-  listManagedAgents,
-  sendChannelMessage,
-} from "@/shared/api/tauri";
+import { addChannelMembers, sendChannelMessage } from "@/shared/api/tauri";
 import { startManagedAgent } from "@/shared/api/tauriManagedAgents";
-import { pickWelcomeGuideAgentForRelay } from "@/features/onboarding/welcomeGuide";
+import { ensureBusinessMainAgent } from "./provisionMainAgent";
 
 // Retain an acknowledged kickoff if launching the runtime fails. Retrying in
 // this session starts that same request instead of publishing a second one.
@@ -16,14 +12,10 @@ export async function inviteMainAgent(
   relayUrl: string,
   pubkey: string,
 ) {
-  const agent = pickWelcomeGuideAgentForRelay(
-    await listManagedAgents(),
-    relayUrl,
-  );
-  if (!agent)
-    throw new Error(
-      "Set up your main agent in Agents, then come back to begin.",
-    );
+  const agent = await ensureBusinessMainAgent({
+    expectedRelayUrl: relayUrl,
+    expectedSignerPubkey: pubkey,
+  });
   const result = await addChannelMembers({
     channelId,
     pubkeys: [agent.pubkey],

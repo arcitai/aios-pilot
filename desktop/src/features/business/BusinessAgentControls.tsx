@@ -43,10 +43,10 @@ export function BusinessAgentControls({
         scope.expectedSignerPubkey,
       );
       onStarted();
-      await agents.refetch();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
+      await agents.refetch();
       submitting.current = false;
       setPending(false);
     }
@@ -65,8 +65,8 @@ export function BusinessAgentControls({
         </div>
       ) : (
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Your main agent has not been set up yet. Check your AI settings, then
-          add Fizz from Agents to begin.
+          Begin to create your main agent here. It will use your AI settings and
+          help you build your company context one conversation at a time.
         </p>
       )}
       <Button

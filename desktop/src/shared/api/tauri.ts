@@ -728,10 +728,15 @@ export async function listManagedAgents(): Promise<ManagedAgent[]> {
     fromRawManagedAgent,
   );
 }
-export async function createManagedAgent(input: CreateManagedAgentInput) {
+export async function createManagedAgent(
+  input: CreateManagedAgentInput,
+  scope?: { expectedRelayUrl: string; expectedSignerPubkey: string },
+) {
   const response = await invokeTauri<RawCreateManagedAgentResponse>(
     "create_managed_agent",
     {
+      expectedRelayUrl: scope?.expectedRelayUrl,
+      expectedSignerPubkey: scope?.expectedSignerPubkey,
       input: {
         name: input.name,
         personaId: input.personaId,

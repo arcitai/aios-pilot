@@ -57,3 +57,109 @@ test("missing-agent recovery exposes AI settings without discarding the workspac
     "Setup Studio",
   );
 });
+
+test("begin creates one scoped main agent before membership, kickoff and start", async ({
+  page,
+}) => {
+  await installMockBridge(page);
+  await page.goto("/");
+  await page.getByTestId("open-business-view").click();
+  await page
+    .getByLabel("What is your business called?")
+    .fill("First conversation");
+  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page
+    .getByRole("button", { name: "Begin with my agent", exact: true })
+    .click();
+  const controls = page.getByTestId("business-agent-controls");
+  await expect(controls).toContainText("Ready — continue in the conversation");
+  const log = await page.evaluate(() => window.__BUZZ_E2E_COMMAND_LOG__ ?? []);
+  const creations = log.filter((row) => row.command === "create_managed_agent");
+  expect(creations).toHaveLength(1);
+  expect(creations[0].payload).toMatchObject({
+    expectedRelayUrl: "ws://localhost:3000",
+    expectedSignerPubkey: "deadbeef".repeat(8),
+    input: {
+      name: "Fizz",
+      personaId: "builtin:fizz",
+      relayUrl: "ws://localhost:3000",
+      spawnAfterCreate: false,
+      startOnAppLaunch: false,
+      respondTo: "owner-only",
+    },
+  });
+  const createIndex = log.findIndex(
+    (row) => row.command === "create_managed_agent",
+  );
+  const addIndex = log.findIndex(
+    (row, index) =>
+      index > createIndex && row.command === "add_channel_members",
+  );
+  const sendIndex = log.findIndex(
+    (row, index) => index > addIndex && row.command === "send_channel_message",
+  );
+  const startIndex = log.findIndex(
+    (row, index) => index > sendIndex && row.command === "start_managed_agent",
+  );
+  expect(addIndex).toBeGreaterThan(createIndex);
+  expect(sendIndex).toBeGreaterThan(addIndex);
+  expect(startIndex).toBeGreaterThan(sendIndex);
+  await page
+    .getByRole("button", { name: "Company context", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Main agent", exact: true }).click();
+  await expect(
+    controls.getByRole("button", { name: "Main agent settings" }),
+  ).toBeVisible();
+});
+
+test("retry after profile sync failure reuses the created main agent", async ({
+  page,
+}) => {
+  await installMockBridge(page);
+  await page.goto("/");
+  await page.getByTestId("open-business-view").click();
+  await page.getByLabel("What is your business called?").fill("Retry Studio");
+  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.evaluate(() => {
+    const native = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke: (
+            command: string,
+            args?: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const invoke = native.invoke;
+    native.invoke = async (command, args) => {
+      const result = await invoke(command, args);
+      return command === "create_managed_agent"
+        ? {
+            ...(result as Record<string, unknown>),
+            profile_sync_error: "Synthetic relay interruption",
+          }
+        : result;
+    };
+  });
+  const begin = page.getByRole("button", {
+    name: "Begin with my agent",
+    exact: true,
+  });
+  await begin.click();
+  await expect(
+    page.getByTestId("business-agent-controls").getByRole("alert"),
+  ).toContainText("was created");
+  await begin.click();
+  await expect(page.getByTestId("business-agent-controls")).toContainText(
+    "Ready — continue in the conversation",
+  );
+  const count = await page.evaluate(
+    () =>
+      (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).filter(
+        (row) => row.command === "create_managed_agent",
+      ).length,
+  );
+  expect(count).toBe(1);
+});

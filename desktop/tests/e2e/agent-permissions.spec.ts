@@ -177,3 +177,52 @@ test("a request for another owner never opens the prompt", async ({ page }) => {
   await prompt.getByRole("button", { name: "Deny", exact: true }).click();
   await expect(prompt).not.toBeVisible();
 });
+
+test("tool access status follows reported provider mode rather than startup intent", async ({
+  page,
+}) => {
+  await setup(page);
+  await seed(page, { ownerPubkey: "11".repeat(32) });
+  const notice = page.getByTestId("agent-tool-mode-notice");
+  await expect(notice).toBeVisible();
+  await notice.locator("summary").click();
+  await expect(notice).toContainText("has not confirmed");
+  await expect(notice).not.toContainText("Can use tools without asking");
+  async function report(
+    seq: number,
+    currentModeId: string | null,
+    status: string,
+  ) {
+    await page.evaluate(
+      ({ agent, seq, currentModeId, status }) => {
+        window.__BUZZ_E2E_SEED_OBSERVER_EVENTS__?.({
+          agentPubkey: agent,
+          events: [
+            {
+              seq,
+              timestamp: new Date().toISOString(),
+              kind: "permission_mode_status",
+              agentIndex: 0,
+              channelId: null,
+              sessionId: "session-one",
+              turnId: null,
+              payload: {
+                requestedMode: "default",
+                currentModeId,
+                status,
+                mechanism: "legacy_mode",
+              },
+            },
+          ],
+        });
+      },
+      { agent: AGENT, seq, currentModeId, status },
+    );
+  }
+  await report(4, null, "unsupported");
+  await expect(notice).toContainText("does not support");
+  await report(5, "bypassPermissions", "rejected");
+  await expect(notice).toContainText("Can use tools without asking");
+  await report(6, "default", "confirmed");
+  await expect(notice).not.toBeVisible();
+});

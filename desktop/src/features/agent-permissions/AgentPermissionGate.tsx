@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { sendAgentPermissionDecision } from "@/shared/api/tauriAgentPermissions";
+import { AgentModeNotice } from "./AgentModeNotice";
 import {
   deriveAgentPermissionSnapshot,
   PERMISSION_REQUEST_TTL_MS,
@@ -145,9 +146,6 @@ export function AgentPermissionGate({
           request.binding.agentPubkey.toLowerCase(),
       ) ?? null)
     : null;
-  const autonomousAgents = activeAgents.filter(
-    (agent) => snapshots[agent.pubkey.toLowerCase()]?.autonomous,
-  );
 
   React.useEffect(() => {
     if (activeRequests.length === 0) return;
@@ -196,10 +194,6 @@ export function AgentPermissionGate({
   );
 
   const isSending = request != null && sendingId === request.binding.requestId;
-  const autonomousNames = autonomousAgents
-    .slice(0, 3)
-    .map((agent) => agent.name)
-    .join(", ");
 
   return (
     <>
@@ -214,25 +208,7 @@ export function AgentPermissionGate({
         />
       ))}
 
-      {autonomousAgents.length > 0 ? (
-        <div
-          aria-live="polite"
-          className="pointer-events-none fixed bottom-4 left-4 z-40 max-w-sm rounded-xl border border-amber-500/50 bg-background/95 px-4 py-3 text-sm shadow-lg"
-          data-testid="agent-autonomous-mode-notice"
-          role="status"
-        >
-          <p className="font-semibold text-amber-700 dark:text-amber-300">
-            Autonomous tool access is enabled
-          </p>
-          <p className="mt-1 text-muted-foreground">
-            {autonomousNames || "An agent"} bypasses approval prompts
-            {autonomousAgents.length > 3
-              ? ` and ${autonomousAgents.length - 3} more`
-              : ""}
-            .
-          </p>
-        </div>
-      ) : null}
+      <AgentModeNotice agents={activeAgents} snapshots={snapshots} />
 
       <AlertDialog
         onOpenChange={(open) => {

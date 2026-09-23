@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
 import { waitForAnimations } from "../helpers/animations";
 
-test("private company context, source and main-agent recovery stay inside Buzz", async ({
+test("private company context, source and first agent stay inside Buzz", async ({
   page,
 }) => {
   await installMockBridge(page);
@@ -43,7 +43,9 @@ test("private company context, source and main-agent recovery stay inside Buzz",
   await page
     .getByRole("button", { name: "Begin with my agent", exact: true })
     .click();
-  await expect(page.getByRole("alert")).toContainText("Set up your main agent");
+  await expect(page.getByTestId("business-agent-controls")).toContainText(
+    "Ready — continue in the conversation",
+  );
   await page.getByRole("button", { name: "Connections", exact: true }).click();
   await expect(
     page

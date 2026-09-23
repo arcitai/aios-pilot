@@ -285,3 +285,31 @@ inspected. This does not prove live relay persistence or model execution.
   passed. The build script now repeats those steps and records source revision
   and dirty state. The artifact must be rebuilt for integrated apps; native
   window interaction is still unverified because the computer is locked.
+
+## First-agent recovery and provider mode evidence — 00:16 local
+
+- The app package was rebuilt from clean `ca01845`, including the three app
+  editors. The automatic display-name correction, sidecar/app ad-hoc signing,
+  deep signature check and source metadata file all passed. It is a local debug
+  distribution, not a notarized release.
+- ACP follow-up `274194a` integrated as `0b8e3b8`. Worker evidence: 978 ACP
+  unit tests, two Git bootstrap and nine lifecycle tests passed, four tests
+  ignored. A separately enabled live test on relay 3341 delivered the encrypted
+  owner decision and observed exactly one fixture effect. Real model context
+  updating with the new broker is being tested separately.
+- The global tool-access notice now uses actual provider session state,
+  distinguishes unconfirmed/unsupported/rejected settings, and only describes
+  bypass when the provider reported it. Four permission browser flows and
+  thirteen focused parser/API tests pass. The worker's full desktop run had
+  one unrelated deterministic call-order assertion failure in
+  `useKnownAgentPubkeys.test.mjs`; this remains to assess in combined review.
+- “Begin with my agent” now creates a missing Fizz directly in Business,
+  using the existing persona/runtime configuration. Creation stays stopped;
+  membership, the kickoff message and scoped start follow in order. Existing
+  agents are reused, including after a profile sync interruption.
+- Native creation captures owner keys, relay and retention scope before its
+  effects; scoped callers cannot silently start or deploy a different backend.
+  Two new native scope/denial tests and all eleven business/onboarding browser
+  flows pass. TypeScript/build, file-size policy and targeted formatting pass.
+  These are mock-bridge UI tests plus real native validation, not a claim that
+  the locked native window was exercised.
