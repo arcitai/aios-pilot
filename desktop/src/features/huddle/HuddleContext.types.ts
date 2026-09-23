@@ -12,6 +12,19 @@ export interface HuddleLevelsValue {
   speakerLevels: Record<string, number>;
 }
 
+export interface HuddleStartScope {
+  relayUrl: string;
+  signerPubkey: string;
+}
+
+export interface HuddleActiveBinding {
+  parentChannelId: string;
+  ephemeralChannelId: string;
+  relayUrl: string;
+  signerPubkey: string;
+  agentPubkeys: string[];
+}
+
 export interface HuddleContextValue {
   localAudioTrack: MediaStreamTrack | null;
   isStarting: boolean;
@@ -34,17 +47,20 @@ export interface HuddleContextValue {
   selectedOutputDevice: string;
   setSelectedOutputDevice: (name: string) => void;
   activeEphemeralChannelId: string | null;
+  activeHuddleBinding: HuddleActiveBinding | null;
   showHuddleInMainApp: (ephemeralChannelId: string) => void;
   viewHuddleChannel: (ephemeralChannelId: string) => void;
   startHuddle: (
     parentChannelId: string,
     memberPubkeys: string[],
     channelName?: string,
+    scope?: HuddleStartScope,
   ) => Promise<void>;
   joinHuddle: (
     parentChannelId: string,
     ephemeralChannelId: string,
     huddleThreadEventId?: string,
+    scope?: HuddleStartScope,
   ) => Promise<void>;
   leaveHuddle: () => Promise<boolean>;
 }

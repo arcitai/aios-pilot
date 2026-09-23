@@ -48,6 +48,18 @@ pub struct HuddleState {
     pub phase: HuddlePhase,
     pub parent_channel_id: Option<String>,
     pub ephemeral_channel_id: Option<String>,
+    /// Relay and signer captured when this huddle was created or joined.
+    /// These public identity values let the UI label a session without
+    /// retargeting it after a community switch.
+    pub workspace_relay_url: Option<String>,
+    pub workspace_signer_pubkey: Option<String>,
+    /// Exact HTTP endpoint paired with `workspace_relay_url` for native I/O.
+    #[serde(skip)]
+    pub workspace_api_base_url: Option<String>,
+    /// Signing key captured for this huddle's relay cleanup and delayed posts.
+    /// Kept in memory only; never returned through Tauri state serialization.
+    #[serde(skip)]
+    pub workspace_signing_keys: Option<nostr::Keys>,
     /// Root event for the huddle's visible parent-channel thread. Transcript
     /// messages reply here while audio coordination stays ephemeral.
     pub huddle_thread_event_id: Option<String>,
@@ -191,6 +203,10 @@ impl Clone for HuddleState {
             phase: self.phase.clone(),
             parent_channel_id: self.parent_channel_id.clone(),
             ephemeral_channel_id: self.ephemeral_channel_id.clone(),
+            workspace_relay_url: self.workspace_relay_url.clone(),
+            workspace_signer_pubkey: self.workspace_signer_pubkey.clone(),
+            workspace_api_base_url: self.workspace_api_base_url.clone(),
+            workspace_signing_keys: self.workspace_signing_keys.clone(),
             huddle_thread_event_id: self.huddle_thread_event_id.clone(),
             audio_ws_cancel: None,    // Never clone handles.
             audio_relay_pcm_tx: None, // Never clone handles.
@@ -228,6 +244,10 @@ impl Default for HuddleState {
             phase: HuddlePhase::Idle,
             parent_channel_id: None,
             ephemeral_channel_id: None,
+            workspace_relay_url: None,
+            workspace_signer_pubkey: None,
+            workspace_api_base_url: None,
+            workspace_signing_keys: None,
             huddle_thread_event_id: None,
             audio_ws_cancel: None,
             audio_relay_pcm_tx: None,
@@ -522,6 +542,23 @@ mod tests {
         stale_sentinel.store(false, Ordering::Release);
 
         assert!(state.stt_starting.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn workspace_signing_key_is_kept_out_of_serialized_huddle_state() {
+        let keys = nostr::Keys::generate();
+        let signer = keys.public_key().to_hex();
+        let mut state = HuddleState::default();
+        state.workspace_relay_url = Some("wss://relay.example".to_string());
+        state.workspace_signer_pubkey = Some(signer.clone());
+        state.workspace_api_base_url = Some("https://relay.example".to_string());
+        state.workspace_signing_keys = Some(keys);
+
+        let serialized = serde_json::to_value(&state).expect("huddle state serializes");
+        assert_eq!(serialized["workspace_relay_url"], "wss://relay.example");
+        assert_eq!(serialized["workspace_signer_pubkey"], signer);
+        assert!(serialized.get("workspace_api_base_url").is_none());
+        assert!(serialized.get("workspace_signing_keys").is_none());
     }
 }
 

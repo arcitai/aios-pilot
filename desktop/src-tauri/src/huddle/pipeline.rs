@@ -20,6 +20,7 @@ use crate::events;
 
 use super::models;
 use super::relay_api::{self, fetch_channel_members, parse_channel_uuid};
+use super::scope::HuddleWorkspaceScope;
 use super::state::{HuddlePhase, HuddleState, VoiceInputMode};
 use super::stt;
 use super::tts;
@@ -179,7 +180,9 @@ pub(crate) async fn post_connect_setup(
     state: &AppState,
     ephemeral_channel_id: &str,
     huddle_generation: u64,
+    scope: &HuddleWorkspaceScope,
 ) -> Result<PostConnectOutcome, String> {
+    scope.assert_current(state)?;
     {
         let hs = state.huddle()?;
         if !hs.is_current_huddle(ephemeral_channel_id, huddle_generation) {
@@ -193,6 +196,7 @@ pub(crate) async fn post_connect_setup(
         fetch_channel_members(ephemeral_channel_id, Some("bot"), state),
         fetch_channel_members(ephemeral_channel_id, None, state),
     );
+    scope.assert_current(state)?;
     let (roster_changed, transcription_auto_enabled) = {
         let mut hs = state.huddle()?;
         if !hs.is_current_huddle(ephemeral_channel_id, huddle_generation) {
@@ -240,8 +244,15 @@ pub(crate) async fn post_connect_setup(
         }
         hs.parent_channel_id.clone()
     };
+    scope.assert_current(state)?;
     let audio_result =
         relay_api::connect_audio_relay(ephemeral_channel_id, parent_id.as_deref(), state).await;
+    if let Err(error) = scope.assert_current(state) {
+        if let Ok((cancel, _)) = audio_result {
+            cancel.cancel();
+        }
+        return Err(error);
+    }
     {
         let mut hs = state.huddle()?;
         if !hs.is_current_huddle(ephemeral_channel_id, huddle_generation) {
@@ -263,6 +274,7 @@ pub(crate) async fn post_connect_setup(
     {
         return Ok(PostConnectOutcome::Stale);
     }
+    scope.assert_current(state)?;
     if let Err(e) = maybe_start_tts_pipeline(state).await {
         eprintln!("buzz-desktop: TTS pipeline failed to start: {e}");
     }
@@ -638,11 +650,20 @@ pub(crate) fn spawn_transcription_task(
     let spawned_gen = session_generation.load(Ordering::Acquire);
 
     let http_client = state.http_client.clone();
-    let keys = match state.keys.lock() {
-        Ok(k) => k.clone(),
-        Err(_) => return,
+    let (keys, relay_base_url) = match HuddleWorkspaceScope::from_huddle_state(state) {
+        Ok(Some(scope)) => (scope.keys().clone(), scope.api_base_url().to_string()),
+        Ok(None) => match state.signing_keys() {
+            Ok(keys) => (keys, crate::relay::relay_api_base_url_with_override(state)),
+            Err(error) => {
+                eprintln!("buzz-desktop: STT publish identity unavailable: {error}");
+                return;
+            }
+        },
+        Err(error) => {
+            eprintln!("buzz-desktop: STT huddle scope unavailable: {error}");
+            return;
+        }
     };
-    let relay_base_url = crate::relay::relay_api_base_url_with_override(state);
 
     tauri::async_runtime::spawn(async move {
         // recv().await yields (not blocks) until text arrives or sender is dropped.

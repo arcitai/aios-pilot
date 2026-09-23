@@ -19,6 +19,8 @@ use uuid::Uuid;
 use crate::app_state::AppState;
 use crate::relay::query_relay;
 
+use super::scope::HuddleWorkspaceScope;
+
 /// Maximum number of agents that can be invited to a single huddle.
 pub(crate) const MAX_HUDDLE_AGENTS: usize = 20;
 
@@ -183,8 +185,15 @@ pub(crate) async fn connect_audio_relay(
     parent_channel_id: Option<&str>,
     state: &AppState,
 ) -> Result<(CancellationToken, tokio::sync::mpsc::Sender<Vec<u8>>), String> {
-    let relay_url = crate::relay::relay_ws_url_with_override(state);
-    let keys = state.keys.lock().map_err(|e| e.to_string())?.clone();
+    let huddle_scope = HuddleWorkspaceScope::from_huddle_state(state)?;
+    let relay_url = huddle_scope
+        .as_ref()
+        .map(|scope| scope.relay_url().to_owned())
+        .unwrap_or_else(|| crate::relay::relay_ws_url_with_override(state));
+    let keys = match huddle_scope.as_ref() {
+        Some(scope) => scope.keys().clone(),
+        None => state.signing_keys()?,
+    };
 
     // TTS interrupt flags — recv task cancels TTS when remote humans speak.
     let (
@@ -321,7 +330,9 @@ pub(crate) async fn connect_tts_audio_publisher(
     auth_tag_json: Option<&str>,
     local_tts_publishers: super::tts::LocalTtsPublishers,
 ) -> Result<super::tts::TtsAudioPublisher, String> {
-    let relay_url = crate::relay::relay_ws_url_with_override(state);
+    let relay_url = HuddleWorkspaceScope::from_huddle_state(state)?
+        .map(|scope| scope.relay_url().to_owned())
+        .unwrap_or_else(|| crate::relay::relay_ws_url_with_override(state));
     let (ws_tx, ws_rx, peer_index, _) = connect_authenticated_audio_socket(
         channel_id,
         parent_channel_id,
@@ -611,17 +622,28 @@ pub(crate) async fn fetch_channel_members_with_roles(
     channel_id: &str,
     state: &AppState,
 ) -> Result<Vec<(String, Option<String>)>, String> {
+    let scope = HuddleWorkspaceScope::from_huddle_state(state)?;
+    fetch_channel_members_with_roles_in_scope(channel_id, state, scope.as_ref()).await
+}
+
+pub(crate) async fn fetch_channel_members_with_roles_in_scope(
+    channel_id: &str,
+    state: &AppState,
+    scope: Option<&HuddleWorkspaceScope>,
+) -> Result<Vec<(String, Option<String>)>, String> {
     let filter = serde_json::json!({
         "kinds": [39002],
         "#d": [channel_id],
         "limit": 1,
     });
-    let events = query_relay(state, std::slice::from_ref(&filter))
-        .await
-        .map_err(|e| {
-            eprintln!("buzz-desktop: fetch channel members failed: {e}");
-            e
-        })?;
+    let events = match scope {
+        Some(scope) => scope.query(state, std::slice::from_ref(&filter)).await,
+        None => query_relay(state, std::slice::from_ref(&filter)).await,
+    }
+    .map_err(|e| {
+        eprintln!("buzz-desktop: fetch channel members failed: {e}");
+        e
+    })?;
 
     let Some(event) = events.first() else {
         return Ok(Vec::new());
@@ -650,7 +672,17 @@ pub(crate) async fn fetch_channel_members(
     role_filter: Option<&str>,
     state: &AppState,
 ) -> Result<Vec<String>, String> {
-    let all = fetch_channel_members_with_roles(channel_id, state).await?;
+    let scope = HuddleWorkspaceScope::from_huddle_state(state)?;
+    fetch_channel_members_in_scope(channel_id, role_filter, state, scope.as_ref()).await
+}
+
+pub(crate) async fn fetch_channel_members_in_scope(
+    channel_id: &str,
+    role_filter: Option<&str>,
+    state: &AppState,
+    scope: Option<&HuddleWorkspaceScope>,
+) -> Result<Vec<String>, String> {
+    let all = fetch_channel_members_with_roles_in_scope(channel_id, state, scope).await?;
     Ok(all
         .into_iter()
         .filter(|(_, role)| role_filter.is_none_or(|r| role.as_deref() == Some(r)))

@@ -22,10 +22,9 @@ use crate::{
         fetch_channel_members, fetch_channel_members_with_roles, validate_pubkey_hex,
         MAX_HUDDLE_AGENTS,
     },
-    relay::submit_event,
 };
 
-use super::{pipeline::start_auto_enabled_transcription, HuddlePhase};
+use super::{pipeline::start_auto_enabled_transcription, submit_huddle_event, HuddlePhase};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -99,7 +98,7 @@ pub async fn add_agent_to_huddle(
 ) -> Result<AgentAddResult, String> {
     // 1. Add agent to ephemeral channel (required — fail hard on rejection).
     let add_eph = events::build_add_member(ephemeral_channel_id, agent_pubkey, Some("bot"))?;
-    submit_event(add_eph, state).await?;
+    submit_huddle_event(add_eph, state).await?;
 
     // 2. Preserve any active parent membership, regardless of role. Rewriting
     //    an existing DM member as `bot` is both unnecessary and forbidden for
@@ -115,7 +114,7 @@ pub async fn add_agent_to_huddle(
         (true, None)
     } else {
         let add_parent = events::build_add_member(parent_channel_id, agent_pubkey, Some("bot"))?;
-        match submit_event(add_parent, state).await {
+        match submit_huddle_event(add_parent, state).await {
             Ok(_) => (true, None),
             Err(e) => {
                 let active_after_error =

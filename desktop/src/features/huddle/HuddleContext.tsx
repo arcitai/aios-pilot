@@ -14,8 +14,10 @@ import { useHuddleSpeakerActivity } from "./lib/useHuddleSpeakerActivity";
 import { useMicLevelAnalyser } from "./lib/useMicLevelAnalyser";
 import { useTtsSubscription } from "./lib/useTtsSubscription";
 import type {
+  HuddleActiveBinding,
   HuddleContextValue,
   HuddleLevelsValue,
+  HuddleStartScope,
 } from "./HuddleContext.types";
 
 /**
@@ -30,6 +32,102 @@ import type {
 type HuddleJoinInfo = {
   ephemeral_channel_id: string;
 };
+
+type HuddleBackendState = {
+  phase?: string;
+  parent_channel_id?: string | null;
+  ephemeral_channel_id?: string | null;
+  workspace_relay_url?: string | null;
+  workspace_signer_pubkey?: string | null;
+  agent_pubkeys?: string[];
+};
+
+type HuddleStartupBinding = {
+  scope: HuddleStartScope;
+  parentChannelId: string;
+  ephemeralChannelId: string;
+  requiredAgentPubkeys?: string[];
+};
+
+function activeBindingFromBackend(
+  state: HuddleBackendState,
+): HuddleActiveBinding | null {
+  if (
+    state.phase === "idle" ||
+    !state.parent_channel_id ||
+    !state.ephemeral_channel_id ||
+    !state.workspace_relay_url ||
+    !state.workspace_signer_pubkey
+  ) {
+    return null;
+  }
+  return {
+    parentChannelId: state.parent_channel_id,
+    ephemeralChannelId: state.ephemeral_channel_id,
+    relayUrl: state.workspace_relay_url,
+    signerPubkey: state.workspace_signer_pubkey,
+    agentPubkeys: state.agent_pubkeys ?? [],
+  };
+}
+
+function huddleScopeArgs(scope?: HuddleStartScope) {
+  return scope
+    ? {
+        expectedRelayUrl: scope.relayUrl,
+        expectedSignerPubkey: scope.signerPubkey,
+      }
+    : {};
+}
+
+function normalizeHuddleRelayUrl(relayUrl: string): string | null {
+  try {
+    const parsed = new URL(relayUrl);
+    if (
+      (parsed.protocol !== "wss:" && parsed.protocol !== "ws:") ||
+      !parsed.hostname ||
+      parsed.username ||
+      parsed.password ||
+      parsed.hash
+    ) {
+      return null;
+    }
+    const path = parsed.pathname === "/" ? "" : parsed.pathname;
+    return `${parsed.origin}${path}${parsed.search}`;
+  } catch {
+    return null;
+  }
+}
+
+function verifyHuddleStartupBinding(
+  state: HuddleBackendState,
+  expected: HuddleStartupBinding,
+): HuddleActiveBinding {
+  const active = activeBindingFromBackend(state);
+  const activeRelay = active ? normalizeHuddleRelayUrl(active.relayUrl) : null;
+  const expectedRelay = normalizeHuddleRelayUrl(expected.scope.relayUrl);
+  const relayMatches = activeRelay !== null && activeRelay === expectedRelay;
+  const signerMatches =
+    active?.signerPubkey.toLowerCase() ===
+    expected.scope.signerPubkey.toLowerCase();
+  const agentsMatch = (expected.requiredAgentPubkeys ?? []).every((pubkey) =>
+    active?.agentPubkeys.some(
+      (activePubkey) => activePubkey.toLowerCase() === pubkey.toLowerCase(),
+    ),
+  );
+  if (
+    !active ||
+    active.parentChannelId !== expected.parentChannelId ||
+    active.ephemeralChannelId !== expected.ephemeralChannelId ||
+    !relayMatches ||
+    !signerMatches ||
+    !agentsMatch
+  ) {
+    throw new Error(
+      "The voice session could not be bound to this workspace and agent.",
+    );
+  }
+  return active;
+}
 
 type HuddleAudioMirrorState = {
   isMuted: boolean;
@@ -117,6 +215,8 @@ export function HuddleProvider({
   const [ephemeralChannelId, setEphemeralChannelId] = React.useState<
     string | null
   >(null);
+  const [activeHuddleBinding, setActiveHuddleBinding] =
+    React.useState<HuddleActiveBinding | null>(null);
   /** Self pubkey — fetched once, used to filter out own messages from TTS */
   const selfPubkeyRef = React.useRef<string | null>(null);
   const { activeSpeakers, resetSpeakerActivity, speakerLevels } =
@@ -422,6 +522,7 @@ export function HuddleProvider({
     setLocalAudioTrack(null);
     setMicConnected(false);
     setEphemeralChannelId(null);
+    setActiveHuddleBinding(null);
     resetSpeakerActivity();
   }, [resetSpeakerActivity]); // Stable — reads track from ref, not state.
 
@@ -433,16 +534,12 @@ export function HuddleProvider({
   React.useEffect(() => {
     if (!ownsAudioSession) return;
 
-    type HuddleBackendState = {
-      phase?: string;
-      ephemeral_channel_id?: string | null;
-    };
-
     const applyBackendState = (state: HuddleBackendState) => {
       if (state.phase === "idle") {
         void disconnectMedia();
         return;
       }
+      setActiveHuddleBinding(activeBindingFromBackend(state));
       if (state.ephemeral_channel_id) {
         setEphemeralChannelId(state.ephemeral_channel_id);
       }
@@ -498,6 +595,7 @@ export function HuddleProvider({
       setLocalAudioTrack(null);
       setMicConnected(false);
       setEphemeralChannelId(null);
+      setActiveHuddleBinding(null);
       resetSpeakerActivity();
       if (rustActiveRef.current) {
         if (isCreator) {
@@ -538,6 +636,7 @@ export function HuddleProvider({
       setLocalAudioTrack(null);
       setMicConnected(false);
       setEphemeralChannelId(null);
+      setActiveHuddleBinding(null);
       resetSpeakerActivity();
     },
     [resetSpeakerActivity],
@@ -549,10 +648,23 @@ export function HuddleProvider({
     async (
       joinInfo: HuddleJoinInfo,
       myToken: number,
+      startupBinding?: HuddleStartupBinding,
     ): Promise<{
       worklet: AudioWorkletHandle;
       stream: MediaStream;
     }> => {
+      if (tokenRef.current !== myToken) throw new Error("superseded");
+      if (startupBinding) {
+        const backendState = await invoke<HuddleBackendState>(
+          "get_huddle_state",
+          huddleScopeArgs(startupBinding.scope),
+        );
+        if (tokenRef.current !== myToken) throw new Error("superseded");
+        const active = verifyHuddleStartupBinding(backendState, startupBinding);
+        setActiveHuddleBinding(active);
+        setEphemeralChannelId(active.ephemeralChannelId);
+      }
+
       // Fetch self pubkey once for TTS filtering
       if (!selfPubkeyRef.current) {
         try {
@@ -587,6 +699,17 @@ export function HuddleProvider({
           throw new Error("superseded");
         }
 
+        if (startupBinding) {
+          const backendState = await invoke<HuddleBackendState>(
+            "get_huddle_state",
+            huddleScopeArgs(startupBinding.scope),
+          );
+          if (tokenRef.current !== myToken) throw new Error("superseded");
+          setActiveHuddleBinding(
+            verifyHuddleStartupBinding(backendState, startupBinding),
+          );
+        }
+
         setLocalAudioTrack(audioTrack);
         setMicConnected(true);
 
@@ -606,7 +729,15 @@ export function HuddleProvider({
 
         workletRef.current = worklet;
         setEphemeralChannelId(joinInfo.ephemeral_channel_id);
-        await invoke("confirm_huddle_active");
+        if (startupBinding) {
+          await invoke(
+            "confirm_huddle_active",
+            huddleScopeArgs(startupBinding.scope),
+          );
+        } else {
+          await invoke("confirm_huddle_active");
+        }
+        if (tokenRef.current !== myToken) throw new Error("superseded");
 
         return { worklet, stream };
       } catch (err) {
@@ -627,6 +758,7 @@ export function HuddleProvider({
       parentChannelId: string,
       memberPubkeys: string[],
       channelName?: string,
+      scope?: HuddleStartScope,
     ) => {
       if (busyRef.current) return;
       busyRef.current = true;
@@ -646,10 +778,22 @@ export function HuddleProvider({
           parentChannelId,
           memberPubkeys,
           channelName,
+          ...huddleScopeArgs(scope),
         });
         rustActiveRef.current = true;
         try {
-          await connectAndSetupMedia(joinInfo, myToken);
+          await connectAndSetupMedia(
+            joinInfo,
+            myToken,
+            scope
+              ? {
+                  scope,
+                  parentChannelId,
+                  ephemeralChannelId: joinInfo.ephemeral_channel_id,
+                  requiredAgentPubkeys: memberPubkeys,
+                }
+              : undefined,
+          );
         } catch (e) {
           if (e instanceof Error && e.message === "superseded") {
             cleanupSupersededStart(workletRef.current);
@@ -707,6 +851,7 @@ export function HuddleProvider({
       parentChannelId: string,
       ephemeralChannelId: string,
       huddleThreadEventId?: string,
+      scope?: HuddleStartScope,
     ) => {
       if (busyRef.current) return;
       busyRef.current = true;
@@ -723,11 +868,22 @@ export function HuddleProvider({
           parentChannelId,
           ephemeralChannelId,
           huddleThreadEventId,
+          ...huddleScopeArgs(scope),
         });
         rustActiveRef.current = true;
 
         try {
-          await connectAndSetupMedia(joinInfo, myToken);
+          await connectAndSetupMedia(
+            joinInfo,
+            myToken,
+            scope
+              ? {
+                  scope,
+                  parentChannelId,
+                  ephemeralChannelId: joinInfo.ephemeral_channel_id,
+                }
+              : undefined,
+          );
         } catch (e) {
           if (e instanceof Error && e.message === "superseded") {
             cleanupSupersededStart(workletRef.current);
@@ -912,6 +1068,7 @@ export function HuddleProvider({
       selectedOutputDevice,
       setSelectedOutputDevice,
       activeEphemeralChannelId: ephemeralChannelId,
+      activeHuddleBinding,
       showHuddleInMainApp,
       viewHuddleChannel,
       startHuddle,
@@ -920,6 +1077,7 @@ export function HuddleProvider({
     }),
     [
       audioDevices,
+      activeHuddleBinding,
       clearHuddleError,
       effectiveIsMuted,
       effectiveMicConnected,

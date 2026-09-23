@@ -5,11 +5,11 @@ use std::sync::{atomic::Ordering, Arc};
 use tauri::State;
 use uuid::Uuid;
 
-use crate::{app_state::AppState, events, relay::submit_event};
+use crate::{app_state::AppState, events};
 
 use super::pipeline::start_auto_enabled_transcription;
 use super::relay_api::MAX_HUDDLE_AGENTS;
-use super::{agents, relay_api::validate_pubkey_hex, HuddlePhase};
+use super::{agents, relay_api::validate_pubkey_hex, submit_huddle_event, HuddlePhase};
 
 /// Update the clickable microphone control independently from the PTT shortcut.
 #[tauri::command]
@@ -82,7 +82,7 @@ pub async fn remove_agent_from_huddle(
 
     let ephemeral_channel_uuid =
         Uuid::parse_str(&ephemeral_channel_id).map_err(|error| error.to_string())?;
-    submit_event(
+    submit_huddle_event(
         events::build_remove_member(ephemeral_channel_uuid, &agent_pubkey)?,
         &state,
     )

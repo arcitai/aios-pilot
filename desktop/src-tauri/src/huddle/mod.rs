@@ -41,6 +41,7 @@ pub mod pocket;
 pub mod preprocessing;
 pub mod reconnect;
 pub mod relay_api;
+mod scope;
 pub mod state;
 pub mod stt;
 pub mod transcription;
@@ -105,7 +106,32 @@ use relay_api::{
     count_human_members, fetch_channel_members, parse_channel_uuid, validate_pubkey_hex,
     MAX_HUDDLE_AGENTS,
 };
+use scope::HuddleWorkspaceScope;
 use window::close_huddle_window;
+
+pub(crate) async fn submit_huddle_event(
+    builder: nostr::EventBuilder,
+    state: &AppState,
+) -> Result<crate::relay::SubmitEventResponse, String> {
+    match HuddleWorkspaceScope::from_huddle_state(state)? {
+        Some(scope) => scope.submit_event(builder, state, true).await,
+        None => submit_event(builder, state).await,
+    }
+}
+
+async fn submit_huddle_cleanup_event(
+    builder: nostr::EventBuilder,
+    state: &AppState,
+    captured_scope: Option<&HuddleWorkspaceScope>,
+) -> Result<crate::relay::SubmitEventResponse, String> {
+    match captured_scope {
+        Some(scope) => scope.submit_event(builder, state, false).await,
+        None => match HuddleWorkspaceScope::from_huddle_state(state)? {
+            Some(scope) => scope.submit_event(builder, state, false).await,
+            None => submit_event(builder, state).await,
+        },
+    }
+}
 
 fn normalize_huddle_channel_name(candidate: Option<String>, fallback: &str) -> String {
     let normalized = candidate
@@ -191,6 +217,8 @@ pub async fn start_huddle(
     parent_channel_id: String,
     member_pubkeys: Vec<String>,
     channel_name: Option<String>,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, AppState>,
 ) -> Result<HuddleJoinInfo, String> {
@@ -215,6 +243,14 @@ pub async fn start_huddle(
         deduped
     };
 
+    // Bind both tenant and signing identity synchronously, before any relay
+    // request or other await can let a community switch retarget this call.
+    let huddle_scope = HuddleWorkspaceScope::capture(
+        &state,
+        expected_relay_url.as_deref(),
+        expected_signer_pubkey.as_deref(),
+    )?;
+
     // Allocate the backing channel ID before the relay work starts. Publishing
     // it with the Creating state lets the main webview open an immediate
     // companion window while the channel and audio session are being prepared.
@@ -237,6 +273,10 @@ pub async fn start_huddle(
         hs.phase = HuddlePhase::Creating;
         hs.parent_channel_id = Some(parent_channel_id.clone());
         hs.ephemeral_channel_id = Some(ephemeral_channel_id.clone());
+        hs.workspace_relay_url = Some(huddle_scope.relay_url().to_string());
+        hs.workspace_api_base_url = Some(huddle_scope.api_base_url().to_string());
+        hs.workspace_signer_pubkey = Some(huddle_scope.signer_pubkey().to_string());
+        hs.workspace_signing_keys = Some(huddle_scope.keys().clone());
         generation
     };
     state.emit_huddle_state_changed();
@@ -255,7 +295,9 @@ pub async fn start_huddle(
             None,
             Some(3600),
         )?;
-        submit_event(create_builder, &state).await?;
+        huddle_scope
+            .submit_event(create_builder, &state, true)
+            .await?;
         channel_was_created = true;
 
         // 2. Post voice-mode guidelines as kind:48106 BEFORE adding agents.
@@ -266,7 +308,10 @@ pub async fn start_huddle(
         if let Ok(guidelines_builder) =
             events::build_huddle_guidelines(&ephemeral_channel_id, &guidelines)
         {
-            if let Err(e) = submit_event(guidelines_builder, &state).await {
+            if let Err(e) = huddle_scope
+                .submit_event(guidelines_builder, &state, true)
+                .await
+            {
                 eprintln!("buzz-desktop: huddle guidelines (kind:48106) failed: {e}");
             }
         }
@@ -275,7 +320,7 @@ pub async fn start_huddle(
         let mut successful_agents: Vec<String> = Vec::new();
         for pubkey in &member_pubkeys {
             let add_builder = events::build_add_member(ephemeral_uuid, pubkey, Some("bot"))?;
-            match submit_event(add_builder, &state).await {
+            match huddle_scope.submit_event(add_builder, &state, true).await {
                 Ok(_) => successful_agents.push(pubkey.clone()),
                 Err(e) => {
                     eprintln!("buzz-desktop: huddle add_member failed for {pubkey}: {e}");
@@ -287,11 +332,18 @@ pub async fn start_huddle(
         // 4. Emit HUDDLE_STARTED to parent channel.
         let started_builder =
             events::build_huddle_started(&parent_channel_id, &ephemeral_channel_id)?;
-        let started_event = submit_event(started_builder, &state).await?;
+        let started_event = huddle_scope
+            .submit_event(started_builder, &state, true)
+            .await?;
 
         Ok((successful_agents, started_event.event_id))
     }
     .await;
+
+    let result = match result {
+        Ok(value) => huddle_scope.assert_current(&state).map(|()| value),
+        Err(error) => Err(error),
+    };
 
     match result {
         Ok((successful_agents, huddle_thread_event_id)) => {
@@ -308,11 +360,7 @@ pub async fn start_huddle(
                     *hs.agent_pubkeys.lock().unwrap_or_else(|e| e.into_inner()) =
                         successful_agents.clone();
                     hs.maybe_auto_enable_transcription_for_agents();
-                    let own_pubkey = state
-                        .keys
-                        .lock()
-                        .map(|k| k.public_key().to_hex())
-                        .unwrap_or_default();
+                    let own_pubkey = huddle_scope.signer_pubkey().to_string();
                     let mut participants = successful_agents.clone();
                     if !own_pubkey.is_empty() && !participants.contains(&own_pubkey) {
                         participants.insert(0, own_pubkey);
@@ -322,7 +370,13 @@ pub async fn start_huddle(
                 }
             };
             if !committed {
-                emit_end_and_archive(&parent_channel_id, &ephemeral_channel_id, &state).await;
+                emit_end_and_archive(
+                    &parent_channel_id,
+                    &ephemeral_channel_id,
+                    &state,
+                    Some(&huddle_scope),
+                )
+                .await;
                 close_huddle_window(&app, &ephemeral_channel_id);
                 return Err("huddle start was superseded".to_owned());
             }
@@ -332,7 +386,14 @@ pub async fn start_huddle(
 
             // 7. Hydrate members, download models, start pipelines (incl. audio relay).
             // Audio relay failure is fatal — no point in a huddle without audio.
-            match post_connect_setup(&state, &ephemeral_channel_id, huddle_generation).await {
+            match post_connect_setup(
+                &state,
+                &ephemeral_channel_id,
+                huddle_generation,
+                &huddle_scope,
+            )
+            .await
+            {
                 Ok(PostConnectOutcome::Ready) => {}
                 Ok(PostConnectOutcome::Stale) => {
                     close_huddle_window(&app, &ephemeral_channel_id);
@@ -346,8 +407,13 @@ pub async fn start_huddle(
                         .map(|hs| hs.is_current_huddle(&ephemeral_channel_id, huddle_generation))
                         .unwrap_or(false);
                     if still_current {
-                        emit_end_and_archive(&parent_channel_id, &ephemeral_channel_id, &state)
-                            .await;
+                        emit_end_and_archive(
+                            &parent_channel_id,
+                            &ephemeral_channel_id,
+                            &state,
+                            Some(&huddle_scope),
+                        )
+                        .await;
                         if let Ok(mut hs) = state.huddle_state.lock() {
                             if hs.is_current_huddle(&ephemeral_channel_id, huddle_generation) {
                                 hs.reset_preserving_generation();
@@ -368,7 +434,10 @@ pub async fn start_huddle(
             // Rollback: archive the orphaned ephemeral channel if it was created.
             if channel_was_created {
                 if let Ok(archive_builder) = events::build_archive(ephemeral_uuid) {
-                    if let Err(ae) = submit_event(archive_builder, &state).await {
+                    if let Err(ae) = huddle_scope
+                        .submit_event(archive_builder, &state, false)
+                        .await
+                    {
                         eprintln!(
                             "buzz-desktop: rollback archive of {ephemeral_channel_id} failed: {ae}"
                         );
@@ -408,8 +477,16 @@ pub async fn join_huddle(
     parent_channel_id: String,
     ephemeral_channel_id: String,
     huddle_thread_event_id: Option<String>,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<HuddleJoinInfo, String> {
+    let huddle_scope = HuddleWorkspaceScope::capture(
+        &state,
+        expected_relay_url.as_deref(),
+        expected_signer_pubkey.as_deref(),
+    )?;
+
     // Transition to Connecting.
     let huddle_generation = {
         let mut hs = state.huddle()?;
@@ -423,16 +500,16 @@ pub async fn join_huddle(
         hs.phase = HuddlePhase::Connecting;
         hs.parent_channel_id = Some(parent_channel_id.clone());
         hs.ephemeral_channel_id = Some(ephemeral_channel_id.clone());
+        hs.workspace_relay_url = Some(huddle_scope.relay_url().to_string());
+        hs.workspace_api_base_url = Some(huddle_scope.api_base_url().to_string());
+        hs.workspace_signer_pubkey = Some(huddle_scope.signer_pubkey().to_string());
+        hs.workspace_signing_keys = Some(huddle_scope.keys().clone());
         hs.huddle_thread_event_id = huddle_thread_event_id;
         generation
     };
 
     // Seed participant list with own pubkey as a fallback until relay responds.
-    let own_pubkey = state
-        .keys
-        .lock()
-        .map(|k| k.public_key().to_hex())
-        .unwrap_or_default();
+    let own_pubkey = huddle_scope.signer_pubkey().to_string();
 
     let committed = {
         let mut hs = state.huddle()?;
@@ -455,7 +532,14 @@ pub async fn join_huddle(
 
     // Hydrate members, download models, start pipelines (incl. audio relay).
     // Audio relay failure is fatal — no point in a huddle without audio.
-    match post_connect_setup(&state, &ephemeral_channel_id, huddle_generation).await {
+    match post_connect_setup(
+        &state,
+        &ephemeral_channel_id,
+        huddle_generation,
+        &huddle_scope,
+    )
+    .await
+    {
         Ok(PostConnectOutcome::Ready) => {}
         Ok(PostConnectOutcome::Stale) => {
             return Err("huddle join was superseded".to_owned());
@@ -531,21 +615,25 @@ async fn emit_end_and_archive(
     parent_channel_id: &str,
     ephemeral_channel_id: &str,
     state: &AppState,
+    captured_scope: Option<&HuddleWorkspaceScope>,
 ) {
     if !parent_channel_id.is_empty() && !ephemeral_channel_id.is_empty() {
         if let Ok(ended_builder) =
             events::build_huddle_ended(parent_channel_id, ephemeral_channel_id)
         {
-            if let Err(e) = submit_event(ended_builder, state).await {
+            if let Err(e) = submit_huddle_cleanup_event(ended_builder, state, captured_scope).await
+            {
                 eprintln!("buzz-desktop: huddle_ended event failed: {e}");
             }
         }
     }
-    remove_huddle_agents(ephemeral_channel_id, state).await;
+    remove_huddle_agents(ephemeral_channel_id, state, captured_scope).await;
     if !ephemeral_channel_id.is_empty() {
         if let Ok(uuid) = parse_channel_uuid(ephemeral_channel_id) {
             if let Ok(archive_builder) = events::build_archive(uuid) {
-                if let Err(e) = submit_event(archive_builder, state).await {
+                if let Err(e) =
+                    submit_huddle_cleanup_event(archive_builder, state, captured_scope).await
+                {
                     eprintln!("buzz-desktop: archive ephemeral channel failed: {e}");
                 }
             }
@@ -558,7 +646,11 @@ async fn emit_end_and_archive(
 /// Archive should make the ephemeral channel unavailable on its own, but removing
 /// bot-role members first prevents an agent-only huddle from lingering if the
 /// archive publish is delayed or rejected.
-async fn remove_huddle_agents(ephemeral_channel_id: &str, state: &AppState) {
+async fn remove_huddle_agents(
+    ephemeral_channel_id: &str,
+    state: &AppState,
+    captured_scope: Option<&HuddleWorkspaceScope>,
+) {
     if ephemeral_channel_id.is_empty() {
         return;
     }
@@ -566,7 +658,25 @@ async fn remove_huddle_agents(ephemeral_channel_id: &str, state: &AppState) {
         return;
     };
 
-    let agent_pubkeys = match fetch_channel_members(ephemeral_channel_id, Some("bot"), state).await
+    let owned_cleanup_scope = if captured_scope.is_some() {
+        None
+    } else {
+        match HuddleWorkspaceScope::from_huddle_state(state) {
+            Ok(scope) => scope,
+            Err(error) => {
+                eprintln!("buzz-desktop: huddle cleanup scope unavailable: {error}");
+                return;
+            }
+        }
+    };
+    let cleanup_scope = captured_scope.or(owned_cleanup_scope.as_ref());
+    let agent_pubkeys = match relay_api::fetch_channel_members_in_scope(
+        ephemeral_channel_id,
+        Some("bot"),
+        state,
+        cleanup_scope,
+    )
+    .await
     {
         Ok(pubkeys) => pubkeys,
         Err(e) => {
@@ -579,7 +689,7 @@ async fn remove_huddle_agents(ephemeral_channel_id: &str, state: &AppState) {
         let Ok(remove_builder) = events::build_remove_member(eph_uuid, &pubkey) else {
             continue;
         };
-        if let Err(e) = submit_event(remove_builder, state).await {
+        if let Err(e) = submit_huddle_cleanup_event(remove_builder, state, cleanup_scope).await {
             eprintln!("buzz-desktop: remove huddle agent {pubkey} failed: {e}");
         }
     }
@@ -629,12 +739,12 @@ pub async fn leave_huddle(app: tauri::AppHandle, state: State<'_, AppState>) -> 
             // This avoids the "cannot remove the last owner" relay error that
             // build_leave hits when the creator is the sole remaining member.
             eprintln!("buzz-desktop: last human left huddle — auto-ending");
-            emit_end_and_archive(&parent_channel_id, &ephemeral_channel_id, &state).await;
+            emit_end_and_archive(&parent_channel_id, &ephemeral_channel_id, &state, None).await;
         } else {
             // Other humans still in the huddle — just remove self from membership.
             if let Ok(eph_uuid) = parse_channel_uuid(&ephemeral_channel_id) {
                 if let Ok(leave_builder) = events::build_leave(eph_uuid) {
-                    if let Err(e) = submit_event(leave_builder, &state).await {
+                    if let Err(e) = submit_huddle_cleanup_event(leave_builder, &state, None).await {
                         eprintln!("buzz-desktop: huddle leave ephemeral channel failed: {e}");
                     }
                 }
@@ -680,7 +790,7 @@ pub async fn end_huddle(
         )
     };
 
-    emit_end_and_archive(&parent_channel_id, &ephemeral_channel_id, &state).await;
+    emit_end_and_archive(&parent_channel_id, &ephemeral_channel_id, &state, None).await;
 
     teardown_huddle(&state)?;
     close_huddle_window(&app, &ephemeral_channel_id);
@@ -691,7 +801,18 @@ pub async fn end_huddle(
 /// Confirm that the frontend has established mic + AudioWorklet.
 /// Transitions from Connected → Active. No-op if already Active.
 #[tauri::command]
-pub async fn confirm_huddle_active(state: State<'_, AppState>) -> Result<(), String> {
+pub async fn confirm_huddle_active(
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if expected_relay_url.is_some() || expected_signer_pubkey.is_some() {
+        HuddleWorkspaceScope::assert_active_huddle_matches(
+            &state,
+            expected_relay_url.as_deref(),
+            expected_signer_pubkey.as_deref(),
+        )?;
+    }
     let transitioned = {
         let mut hs = state.huddle()?;
         match hs.phase {
@@ -711,7 +832,18 @@ pub async fn confirm_huddle_active(state: State<'_, AppState>) -> Result<(), Str
 
 /// Return the current HuddleState (serialized for the frontend).
 #[tauri::command]
-pub fn get_huddle_state(state: State<'_, AppState>) -> Result<HuddleState, String> {
+pub fn get_huddle_state(
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<HuddleState, String> {
+    if expected_relay_url.is_some() || expected_signer_pubkey.is_some() {
+        HuddleWorkspaceScope::assert_active_huddle_matches(
+            &state,
+            expected_relay_url.as_deref(),
+            expected_signer_pubkey.as_deref(),
+        )?;
+    }
     let hs = state.huddle()?;
     Ok(hs.clone())
 }
