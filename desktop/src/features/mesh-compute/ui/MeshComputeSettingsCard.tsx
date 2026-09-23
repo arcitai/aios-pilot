@@ -37,7 +37,10 @@ import {
 } from "../hooks/useMeshDownloadProgress";
 import { useMeshNodeStatus } from "../hooks/useMeshNodeStatus";
 import { useMeshServingUsage } from "../hooks/useMeshServingUsage";
-import { deriveMeshShareToggle } from "../shareToggleState";
+import {
+  deriveMeshShareToggle,
+  describeMeshClientStatus,
+} from "../shareToggleState";
 import { deriveServingIndicator } from "../servingUsage";
 
 const MODEL_DRAFT_STORAGE_KEY = "buzz.mesh-compute.share.model.v1";
@@ -228,7 +231,7 @@ export function MeshComputeSettingsCard() {
     <section className="min-w-0" data-testid="settings-mesh-share-compute">
       <SettingsSectionHeader
         title="Share compute"
-        description="Share this machine with members of this relay so they can run agents here."
+        description="Run a model on this computer for people admitted to this relay. Each serving computer checks the relay's current member list before it accepts requests."
       />
 
       {error ? (
@@ -370,7 +373,6 @@ export function MeshComputeSettingsCard() {
                   <div className="space-y-1 rounded-lg bg-muted/30 px-3 py-2">
                     <StatusLine
                       isConsuming={isConsuming}
-                      omitSharingVerb
                       pendingAction={pendingAction}
                       status={status}
                     />
@@ -581,7 +583,9 @@ function MeshModelPicker({
         {catalog
           ? `Recommended for this machine${catalog.gpuName ? ` (${catalog.gpuName}, ${catalog.vramDisplay} AI memory)` : ""}.`
           : "Choose a model or enter a model reference or local file."}{" "}
-        Buzz downloads remote models when sharing starts.
+        This model runs on this computer. “Installed” models are already here;
+        Buzz downloads catalog models here when sharing starts. Only a model
+        that answers a request is offered to relay members.
       </p>
     </div>
   );
@@ -617,18 +621,20 @@ function MeshModelOptionLabel({ entry }: { entry: MeshCatalogEntry }) {
 function StatusLine({
   displayModel,
   isConsuming,
-  omitSharingVerb = false,
   pendingAction,
   status,
 }: {
   displayModel?: string;
   isConsuming: boolean;
-  omitSharingVerb?: boolean;
   pendingAction: "start" | "stop" | null;
   status: MeshNodeStatus | null;
 }) {
   if (pendingAction === "start") {
-    return <p className="text-sm text-muted-foreground">Starting…</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        Starting shared compute on this computer…
+      </p>
+    );
   }
   if (pendingAction === "stop") {
     return <p className="text-sm text-muted-foreground">Stopping…</p>;
@@ -637,10 +643,20 @@ function StatusLine({
   // peer's compute, not sharing. The switch stays off, but remains available
   // so the member can replace the client with a serving runtime.
   if (isConsuming) {
+    const clientStatus = describeMeshClientStatus(status);
     return (
-      <p className="text-sm text-muted-foreground">
-        This machine is currently using another member's shared compute. Turn on
-        sharing to switch to the selected local model; Buzz may briefly restart.
+      <p
+        className={cn(
+          "text-sm",
+          clientStatus.tone === "error"
+            ? "text-destructive"
+            : clientStatus.tone === "warning"
+              ? "text-amber-600 dark:text-amber-400"
+              : "text-muted-foreground",
+        )}
+      >
+        {clientStatus.text} Turn on sharing to switch to the selected local
+        model; Buzz may briefly restart.
       </p>
     );
   }
@@ -671,15 +687,15 @@ function StatusLine({
     if (health.status === "degraded") {
       return (
         <p className="text-sm text-amber-600 dark:text-amber-400">
-          Active{modelLabel ? ` — ${modelLabel}` : ""}. {health.reason}
+          {modelLabel ? `Model ${modelLabel}` : "The selected model"} is ready
+          on this computer. {health.reason}
         </p>
       );
     }
     return (
       <p className="text-sm text-muted-foreground">
-        {omitSharingVerb ? "" : "Sharing"}
-        {modelLabel ? `${omitSharingVerb ? "" : " "}${modelLabel}` : ""} with
-        relay members.
+        {modelLabel ? `Model ${modelLabel}` : "The selected model"} is ready on
+        this computer. Members admitted through this relay can use it.
       </p>
     );
   }

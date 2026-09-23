@@ -26,6 +26,8 @@ fn pending_client_runtime(
         console_url: "http://127.0.0.1:2".to_string(),
         model_id: None,
         model_name: None,
+        initial_join_error: tokio::sync::RwLock::new(None),
+        startup_readiness: tokio::sync::RwLock::new(super::MeshStartupReadiness::NotApplicable),
         start_request: request,
     }
 }
@@ -49,6 +51,13 @@ async fn pending_client_status_does_not_wait_for_management_timeout() {
         .expect("pending clients must keep publishing admission identity heartbeats");
     assert_eq!(report["serveTargets"], json!([]));
     assert_eq!(report["models"], json!([]));
+    assert_eq!(
+        runtime
+            .ingress_only_client_status("management status is still starting", false)
+            .state,
+        super::MeshNodeState::Starting,
+        "a live HTTP port must not count as a completed mesh join"
+    );
 
     tokio::time::timeout(std::time::Duration::from_secs(1), runtime.stop())
         .await
@@ -62,12 +71,43 @@ async fn failed_client_startup_is_promoted_without_losing_the_runtime_slot() {
     let runtime = pending_client_runtime(task);
     tokio::task::yield_now().await;
 
-    let error = runtime
+    let status = runtime
         .status()
         .await
-        .expect_err("finished failed startup should be surfaced");
-    assert!(error.to_string().contains("controlled startup failure"));
+        .expect("finished failure should be represented in the status");
+    assert_eq!(status.state, super::MeshNodeState::Failed);
+    assert!(status
+        .health
+        .reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("controlled startup failure")));
     assert!(!runtime.is_starting().await);
+}
+
+#[tokio::test]
+async fn initial_join_capture_waits_for_and_preserves_the_production_result() {
+    let (join_tx, join_rx) = tokio::sync::oneshot::channel::<anyhow::Result<()>>();
+    let task = tokio::spawn(async move {
+        super::capture_initial_join(async move {
+            join_rx
+                .await
+                .map_err(|_| anyhow::anyhow!("join result was dropped"))?
+        })
+        .await
+    });
+    tokio::task::yield_now().await;
+    assert!(!task.is_finished(), "startup must await the join result");
+    assert!(join_tx
+        .send(Err(anyhow::anyhow!("controlled QUIC timeout")))
+        .is_ok());
+    assert!(matches!(
+        task.await.expect("join observer task"),
+        super::InitialJoinOutcome::Failed(error) if error.contains("controlled QUIC timeout")
+    ));
+    assert_eq!(
+        super::capture_initial_join(async { Ok(()) }).await,
+        super::InitialJoinOutcome::Joined
+    );
 }
 
 #[test]
@@ -167,6 +207,89 @@ fn requested_model_is_not_ready_while_sdk_is_in_standby() {
         ),
         super::MeshNodeState::Starting
     );
+}
+
+#[test]
+fn serving_model_is_not_advertised_until_the_real_inference_probe_passes() {
+    let payload = json!({
+        "hosted_models": ["demo/local-model:Q4_K_M"],
+        "runtime": {"models": [{"name": "demo/local-model:Q4_K_M", "status": "ready"}]}
+    });
+    for readiness in [
+        super::MeshStartupReadiness::Checking,
+        super::MeshStartupReadiness::Failed("test request failed".to_string()),
+    ] {
+        assert!(
+            super::models_for_status_report(
+                super::MeshNodeMode::Serve,
+                &readiness,
+                Some(&payload),
+            )
+            .is_empty(),
+            "unverified serve models must not reach relay discovery"
+        );
+    }
+    assert_eq!(
+        super::models_for_status_report(
+            super::MeshNodeMode::Serve,
+            &super::MeshStartupReadiness::Ready,
+            Some(&payload),
+        ),
+        vec![super::MeshModelOption {
+            id: "demo/local-model:Q4_K_M".to_string(),
+            name: None,
+        }]
+    );
+}
+
+#[test]
+fn share_status_stays_not_ready_until_inference_and_reports_join_failure() {
+    let mut status = super::MeshNodeStatus {
+        state: super::MeshNodeState::Running,
+        mode: Some(super::MeshNodeMode::Serve),
+        health: super::MeshHealth::ok(),
+        api_base_url: Some("http://127.0.0.1:9337/v1".to_string()),
+        console_url: Some("http://127.0.0.1:3131".to_string()),
+        model_id: Some("demo/local-model:Q4_K_M".to_string()),
+        model_name: None,
+        invite_token: None,
+        endpoint_id: None,
+        device_id: None,
+        device_name: None,
+    };
+
+    super::apply_runtime_status_overlays(&mut status, &super::MeshStartupReadiness::Checking, None);
+    assert_eq!(status.state, super::MeshNodeState::Starting);
+    assert_eq!(status.health.status, super::MeshHealthStatus::Degraded);
+
+    status.state = super::MeshNodeState::Running;
+    status.health = super::MeshHealth::ok();
+    super::apply_runtime_status_overlays(
+        &mut status,
+        &super::MeshStartupReadiness::Ready,
+        Some("controlled join timeout"),
+    );
+    assert_eq!(status.state, super::MeshNodeState::Running);
+    assert_eq!(status.health.status, super::MeshHealthStatus::Degraded);
+    assert!(status
+        .health
+        .reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("controlled join timeout")));
+
+    status.state = super::MeshNodeState::Running;
+    status.health = super::MeshHealth::ok();
+    super::apply_runtime_status_overlays(
+        &mut status,
+        &super::MeshStartupReadiness::Failed("controlled inference failure".to_string()),
+        None,
+    );
+    assert_eq!(status.state, super::MeshNodeState::Failed);
+    assert!(status
+        .health
+        .reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("controlled inference failure")));
 }
 
 #[test]

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { deriveMeshShareToggle } from "./shareToggleState.ts";
+import {
+  deriveMeshShareToggle,
+  describeMeshClientStatus,
+} from "./shareToggleState.ts";
 
 const status = (overrides = {}) => ({
   state: "off",
@@ -36,6 +39,31 @@ test("client-mode running/starting is consuming, NOT sharing (regression)", () =
     assert.equal(model.isConsuming, true);
     assert.equal(model.slotOccupied, true);
   }
+});
+
+test("client status copy waits for the explicit join before saying connected", () => {
+  const connecting = describeMeshClientStatus(
+    status({ state: "starting", mode: "client" }),
+  );
+  assert.equal(connecting.tone, "muted");
+  assert.match(connecting.text, /Connecting/);
+  assert.doesNotMatch(connecting.text, /currently using|Connected/);
+
+  const connected = describeMeshClientStatus(
+    status({ state: "running", mode: "client" }),
+  );
+  assert.match(connected.text, /^Connected to shared compute/);
+  assert.match(connected.text, /checks its selected model before it runs/);
+
+  const failed = describeMeshClientStatus(
+    status({
+      state: "failed",
+      mode: "client",
+      health: { status: "failed", reason: "join timed out" },
+    }),
+  );
+  assert.equal(failed.tone, "error");
+  assert.match(failed.text, /join timed out/);
 });
 
 test("a FAILED serve node still occupies the slot and stays turn-off-able", () => {

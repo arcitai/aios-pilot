@@ -337,6 +337,22 @@ async fn resolve_buzz_mesh_startup_at(
     }
 }
 
+async fn wait_for_share_model_readiness(
+    state: &AppState,
+    runtime_id: u64,
+    model_id: &str,
+) -> CmdResult<()> {
+    let result = wait_for_mesh_inference(model_id).await;
+    let runtime = state.mesh_llm_runtime.lock().await;
+    if let Some(runtime) = runtime
+        .as_ref()
+        .filter(|runtime| runtime.id() == runtime_id)
+    {
+        runtime.record_startup_readiness(result.clone()).await;
+    }
+    result
+}
+
 pub(crate) async fn restore_mesh_sharing(app: &AppHandle, state: &AppState) -> CmdResult<()> {
     let Some(mut config) = load_mesh_sharing_config(app)? else {
         return Ok(());
@@ -378,6 +394,7 @@ pub(crate) async fn restore_mesh_sharing(app: &AppHandle, state: &AppState) -> C
     let started = mesh_llm::DesktopMeshRuntime::start(request)
         .await
         .map_err(|error| format!("failed to restore Share Compute: {error:#}"))?;
+    let started_id = started.id();
     // Install the restored runtime immediately: it is tracked by AppState from
     // here on, so it can never be orphaned. Restoring a previously
     // inference-ready node still has to load ~tens of GB of weights and may
@@ -392,7 +409,7 @@ pub(crate) async fn restore_mesh_sharing(app: &AppHandle, state: &AppState) -> C
     config.start_on_next_launch = false;
     save_mesh_sharing_config(app, &config)?;
     drop(runtime);
-    if let Err(error) = wait_for_mesh_inference(&config.model_id).await {
+    if let Err(error) = wait_for_share_model_readiness(state, started_id, &config.model_id).await {
         eprintln!(
             "buzz-mesh: restored node is not inference-ready yet ({error}); \
              leaving it to warm up without tearing it down"
@@ -484,8 +501,9 @@ pub async fn mesh_start_node(
     let started = mesh_llm::DesktopMeshRuntime::start(request)
         .await
         .map_err(|error| format!("{error:#}"))?;
-    let status = match started.status().await {
-        Ok(status) => status,
+    let started_id = started.id();
+    match started.status().await {
+        Ok(_) => {}
         Err(error) => {
             let cleanup = started.stop().await;
             if let Err(cleanup_error) = &cleanup {
@@ -518,9 +536,13 @@ pub async fn mesh_start_node(
         // meant a slow first start served fine but came back OFF next launch.
         // Safe: neither the watchdog (evicts only a closed port) nor restore
         // (leaves a warming node alone) can loop a slow-but-alive node, and an
-        // unstartable config fails earlier in `start()`. Probe is informational.
+        // unstartable config fails earlier in `start()`. A timeout leaves the
+        // node alive, but it stays unready and is not advertised until a real
+        // inference probe succeeds.
         save_mesh_sharing_config(&app, config)?;
-        if let Err(error) = wait_for_mesh_inference(&config.model_id).await {
+        if let Err(error) =
+            wait_for_share_model_readiness(&state, started_id, &config.model_id).await
+        {
             eprintln!(
                 "buzz-mesh: node started but inference is not ready yet ({error}); \
                  leaving it to warm up (Share Compute stays armed for next launch)"
@@ -528,7 +550,14 @@ pub async fn mesh_start_node(
         }
     }
     mesh_llm::publish_current_status_once(&app, "start").await;
-    Ok(status)
+    let runtime = state.mesh_llm_runtime.lock().await;
+    match runtime
+        .as_ref()
+        .filter(|runtime| runtime.id() == started_id)
+    {
+        Some(runtime) => runtime.status().await.map_err(|error| error.to_string()),
+        None => Ok(mesh_llm::stopped_status()),
+    }
 }
 
 pub(crate) async fn ensure_client_node_for_model(

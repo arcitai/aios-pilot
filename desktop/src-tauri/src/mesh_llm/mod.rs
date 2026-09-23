@@ -187,6 +187,30 @@ pub enum MeshNodeState {
     Failed,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InitialJoinOutcome {
+    Joined,
+    Failed(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MeshStartupReadiness {
+    NotApplicable,
+    Checking,
+    Ready,
+    Failed(String),
+}
+
+async fn capture_initial_join<F>(join: F) -> InitialJoinOutcome
+where
+    F: std::future::Future<Output = anyhow::Result<()>>,
+{
+    match join.await {
+        Ok(()) => InitialJoinOutcome::Joined,
+        Err(error) => InitialJoinOutcome::Failed(format!("{error:#}")),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct StartMeshNodeRequest {
@@ -279,6 +303,12 @@ pub struct DesktopMeshRuntime {
     console_url: String,
     model_id: Option<String>,
     model_name: Option<String>,
+    /// A serve node can still serve locally when its outbound bootstrap peer
+    /// is unavailable, but the UI must surface that degraded mesh connection.
+    initial_join_error: tokio::sync::RwLock<Option<String>>,
+    /// A hosted model is not advertised to relay members until Buzz's real
+    /// inference probe succeeds. SDK "loaded" status alone is not enough.
+    startup_readiness: tokio::sync::RwLock<MeshStartupReadiness>,
     /// The request this node was started with. Kept so the coordinator can
     /// detect roster drift (membership changed → trusted owners changed) and
     /// restart the node with the fresh roster — the SDK's trust store is
@@ -339,6 +369,9 @@ async fn ensure_model_downloaded(model: &str) -> anyhow::Result<()> {
 impl DesktopMeshRuntime {
     pub async fn start(mut request: StartMeshNodeRequest) -> anyhow::Result<Self> {
         sanitize_no_leak_request(&mut request)?;
+        if request.mode == MeshNodeMode::Client && request.join_token.is_none() {
+            anyhow::bail!("a shared-compute client requires a validated member endpoint");
+        }
         initialize_mesh_native_runtime().await?;
         let model_id = request
             .model_id
@@ -355,7 +388,7 @@ impl DesktopMeshRuntime {
         }
         let api_port = mesh_api_port()?;
         let console_port = mesh_console_port()?;
-        let handle = match request.mode {
+        let (handle, initial_join_error) = match request.mode {
             MeshNodeMode::Serve => {
                 let model = model_id
                     .clone()
@@ -398,7 +431,15 @@ impl DesktopMeshRuntime {
                         .trust_policy(TrustPolicy::Allowlist)
                         .trust_owners(owners);
                 }
-                DesktopMeshHandle::Ready(serve::start(builder.build()).await?)
+                let ready = serve::start(builder.build()).await?;
+                let initial_join_error = match request.join_token.clone() {
+                    Some(token) => match capture_initial_join(ready.join_token(token)).await {
+                        InitialJoinOutcome::Joined => None,
+                        InitialJoinOutcome::Failed(error) => Some(error),
+                    },
+                    None => None,
+                };
+                (DesktopMeshHandle::Ready(ready), initial_join_error)
             }
             MeshNodeMode::Client => {
                 let mut builder = client::EmbeddedClientConfig::builder()
@@ -431,10 +472,26 @@ impl DesktopMeshRuntime {
                         .trust_owners(owners);
                 }
                 let config = builder.build();
-                DesktopMeshHandle::Starting {
-                    task: tokio::spawn(async move { client::start(config).await }),
-                    queued_join_tokens: Vec::new(),
-                }
+                let initial_join_token = request
+                    .join_token
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("client bootstrap endpoint is unavailable"))?;
+                let task = tokio::spawn(async move {
+                    let ready = client::start(config).await?;
+                    match capture_initial_join(ready.join_token(initial_join_token)).await {
+                        InitialJoinOutcome::Joined => Ok(ready),
+                        InitialJoinOutcome::Failed(error) => Err(anyhow::anyhow!(
+                            "failed to join the selected relay member: {error}"
+                        )),
+                    }
+                });
+                (
+                    DesktopMeshHandle::Starting {
+                        task,
+                        queued_join_tokens: Vec::new(),
+                    },
+                    None,
+                )
             }
         };
 
@@ -446,6 +503,12 @@ impl DesktopMeshRuntime {
             console_url: format!("http://127.0.0.1:{console_port}"),
             model_id,
             model_name,
+            initial_join_error: tokio::sync::RwLock::new(initial_join_error),
+            startup_readiness: tokio::sync::RwLock::new(if request.mode == MeshNodeMode::Serve {
+                MeshStartupReadiness::Checking
+            } else {
+                MeshStartupReadiness::NotApplicable
+            }),
             start_request: request,
         })
     }
@@ -529,15 +592,20 @@ impl DesktopMeshRuntime {
             DesktopMeshHandle::Ready(ready) => {
                 let status = ready.status().await;
                 drop(handle);
+                let startup_readiness = self.startup_readiness.read().await.clone();
+                let initial_join_error = self.initial_join_error.read().await.clone();
                 match status {
-                    Ok(status) => self.status_from_sdk(status),
+                    Ok(status) => {
+                        self.status_from_sdk(status, startup_readiness, initial_join_error)
+                    }
                     Err(error)
                         if self.mode == MeshNodeMode::Client
                             && recovery::mesh_ingress_is_live_at(&self.api_base_url).await =>
                     {
-                        Ok(self.ingress_only_client_status(&format!(
-                            "management status is unavailable: {error:#}"
-                        )))
+                        Ok(self.ingress_only_client_status(
+                            &format!("management status is unavailable: {error:#}"),
+                            true,
+                        ))
                     }
                     Err(error) => Err(error),
                 }
@@ -545,14 +613,15 @@ impl DesktopMeshRuntime {
             DesktopMeshHandle::Starting { .. } => {
                 drop(handle);
                 if recovery::mesh_ingress_is_live_at(&self.api_base_url).await {
-                    Ok(self.ingress_only_client_status("management status is still starting"))
+                    Ok(self
+                        .ingress_only_client_status("management status is still starting", false))
                 } else {
                     Ok(self.starting_client_status())
                 }
             }
             DesktopMeshHandle::Failed(error) => {
                 let error = error.clone();
-                Err(anyhow::anyhow!(error))
+                Ok(self.failed_status(&error))
             }
         }
     }
@@ -586,7 +655,8 @@ impl DesktopMeshRuntime {
         if let Ok(identity) = ensure_owner_identity() {
             payload["ownerId"] = serde_json::Value::String(identity.owner_id);
         }
-        let models = models_from_status_payload(Some(&payload));
+        let readiness = self.startup_readiness.read().await.clone();
+        let models = models_for_status_report(self.mode, &readiness, Some(&payload));
         payload["models"] = serde_json::to_value(&models)?;
         let endpoint_addr = status.invite_token.unwrap_or_default();
         let serve_targets = if self.mode == MeshNodeMode::Serve && !endpoint_addr.is_empty() {
@@ -632,7 +702,13 @@ impl DesktopMeshRuntime {
         let mut handle = self.handle.lock().await;
         Self::promote_finished_startup(&mut handle).await;
         match &mut *handle {
-            DesktopMeshHandle::Ready(ready) => ready.join_token(validated.join_token).await,
+            DesktopMeshHandle::Ready(ready) => {
+                let result = ready.join_token(validated.join_token).await;
+                let last_error = result.as_ref().err().map(|error| format!("{error:#}"));
+                drop(handle);
+                *self.initial_join_error.write().await = last_error;
+                result
+            }
             DesktopMeshHandle::Starting {
                 queued_join_tokens, ..
             } => {
@@ -660,13 +736,15 @@ impl DesktopMeshRuntime {
     fn status_from_sdk(
         &self,
         status: mesh_llm_sdk::EmbeddedNodeStatus,
+        startup_readiness: MeshStartupReadiness,
+        initial_join_error: Option<String>,
     ) -> anyhow::Result<MeshNodeStatus> {
         let health = health_from_payload(&status.payload);
         let state = node_state_from_payload(self.mode, &health, &status.payload);
         let endpoint_id = endpoint_id_from_status(&status.payload, status.invite_token.as_deref());
         let device_name = device_name_from_status(&status.payload, endpoint_id.as_deref());
         let device_id = endpoint_id.clone();
-        Ok(MeshNodeStatus {
+        let mut status = MeshNodeStatus {
             state,
             mode: Some(self.mode),
             health,
@@ -678,12 +756,25 @@ impl DesktopMeshRuntime {
             endpoint_id,
             device_id,
             device_name,
-        })
+        };
+        apply_runtime_status_overlays(
+            &mut status,
+            &startup_readiness,
+            initial_join_error.as_deref(),
+        );
+        Ok(status)
     }
 
-    fn ingress_only_client_status(&self, reason: &str) -> MeshNodeStatus {
+    fn ingress_only_client_status(&self, reason: &str, joined: bool) -> MeshNodeStatus {
         MeshNodeStatus {
-            state: MeshNodeState::Running,
+            // A live local HTTP ingress is useful for recovery, but it does
+            // not prove the startup token joined the selected relay member
+            // until the background startup task has completed its join.
+            state: if joined {
+                MeshNodeState::Running
+            } else {
+                MeshNodeState::Starting
+            },
             mode: Some(MeshNodeMode::Client),
             health: MeshHealth::degraded(format!("OpenAI ingress is live; {reason}")),
             api_base_url: Some(self.api_base_url.clone()),
@@ -701,7 +792,7 @@ impl DesktopMeshRuntime {
         MeshNodeStatus {
             state: MeshNodeState::Starting,
             mode: Some(MeshNodeMode::Client),
-            health: MeshHealth::degraded("OpenAI ingress and management status are still starting"),
+            health: MeshHealth::degraded("Connecting to a relay member's shared compute"),
             api_base_url: Some(self.api_base_url.clone()),
             console_url: Some(self.console_url.clone()),
             model_id: self.model_id.clone(),
@@ -711,6 +802,32 @@ impl DesktopMeshRuntime {
             device_id: None,
             device_name: None,
         }
+    }
+
+    fn failed_status(&self, error: &str) -> MeshNodeStatus {
+        MeshNodeStatus {
+            state: MeshNodeState::Failed,
+            mode: Some(self.mode),
+            health: MeshHealth::failed(error.to_string()),
+            api_base_url: Some(self.api_base_url.clone()),
+            console_url: Some(self.console_url.clone()),
+            model_id: self.model_id.clone(),
+            model_name: self.model_name.clone(),
+            invite_token: None,
+            endpoint_id: None,
+            device_id: None,
+            device_name: None,
+        }
+    }
+
+    pub async fn record_startup_readiness(&self, result: Result<(), String>) {
+        if self.mode != MeshNodeMode::Serve {
+            return;
+        }
+        *self.startup_readiness.write().await = match result {
+            Ok(()) => MeshStartupReadiness::Ready,
+            Err(error) => MeshStartupReadiness::Failed(error),
+        };
     }
 
     pub async fn stop(self) -> anyhow::Result<()> {
@@ -736,6 +853,66 @@ impl DesktopMeshRuntime {
             DesktopMeshHandle::Failed(_) => Ok(()),
         }
     }
+}
+
+fn apply_runtime_status_overlays(
+    status: &mut MeshNodeStatus,
+    readiness: &MeshStartupReadiness,
+    initial_join_error: Option<&str>,
+) {
+    if status.mode == Some(MeshNodeMode::Serve) {
+        match readiness {
+            MeshStartupReadiness::Checking if status.state != MeshNodeState::Failed => {
+                status.state = MeshNodeState::Starting;
+                append_health_reason(
+                    &mut status.health,
+                    "Checking that this computer's selected model can answer requests".to_string(),
+                );
+            }
+            MeshStartupReadiness::Failed(error) => {
+                status.state = MeshNodeState::Failed;
+                append_health_reason(
+                    &mut status.health,
+                    format!(
+                        "Buzz could not confirm a working response from this model, so it is not being shared yet: {error}"
+                    ),
+                );
+            }
+            MeshStartupReadiness::NotApplicable
+            | MeshStartupReadiness::Checking
+            | MeshStartupReadiness::Ready => {}
+        }
+    }
+
+    if let Some(error) = initial_join_error {
+        append_health_reason(
+            &mut status.health,
+            format!(
+                "Could not connect to another shared-compute member yet; Buzz will retry: {error}"
+            ),
+        );
+    }
+}
+
+fn append_health_reason(health: &mut MeshHealth, reason: String) {
+    health.reason = Some(match health.reason.take() {
+        Some(existing) if !existing.trim().is_empty() => format!("{existing}; {reason}"),
+        _ => reason,
+    });
+    if health.status == MeshHealthStatus::Ok {
+        health.status = MeshHealthStatus::Degraded;
+    }
+}
+
+fn models_for_status_report(
+    mode: MeshNodeMode,
+    readiness: &MeshStartupReadiness,
+    payload: Option<&serde_json::Value>,
+) -> Vec<MeshModelOption> {
+    if mode == MeshNodeMode::Serve && !matches!(readiness, MeshStartupReadiness::Ready) {
+        return Vec::new();
+    }
+    models_from_status_payload(payload)
 }
 
 fn mesh_api_port() -> anyhow::Result<u16> {

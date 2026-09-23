@@ -33,6 +33,43 @@ export type MeshShareToggleModel = {
   slotOccupied: boolean;
 };
 
+export type MeshClientStatusCopy = {
+  tone: "muted" | "warning" | "error";
+  text: string;
+};
+
+/**
+ * Describe a client runtime without treating slot occupancy as a successful
+ * join. The native status stays `starting` until its initial member join has
+ * returned; agent startup separately checks that its selected model answers.
+ */
+export function describeMeshClientStatus(
+  status: MeshNodeStatus | null,
+): MeshClientStatusCopy {
+  if (!status || status.state === "starting") {
+    return { tone: "muted", text: "Connecting to a member's shared compute…" };
+  }
+  if (status.state === "failed" || status.health.status === "failed") {
+    return {
+      tone: "error",
+      text: `Couldn't connect to shared compute: ${status.health.reason ?? "The connection failed."}`,
+    };
+  }
+  if (status.state === "stopping" || status.state === "off") {
+    return { tone: "muted", text: "Disconnecting from shared compute…" };
+  }
+  if (status.health.status === "degraded") {
+    return {
+      tone: "warning",
+      text: `Connected to shared compute, but its status is limited: ${status.health.reason}.`,
+    };
+  }
+  return {
+    tone: "muted",
+    text: "Connected to shared compute. An agent checks its selected model before it runs.",
+  };
+}
+
 /**
  * A runtime object occupies the slot once it is starting or running — and also
  * when it has `failed` (it started, then errored; the runtime is still in the

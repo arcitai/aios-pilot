@@ -46,13 +46,20 @@ test("Share compute chooses a model before sharing", async ({ page }) => {
     page.getByTestId("mesh-share-compute-sharing-status"),
   ).toBeVisible();
   await expect(model).toBeVisible();
+  await expect(card).toContainText("This model runs on this computer");
   await expect(card).toContainText(
-    "Buzz downloads remote models when sharing starts",
+    "Buzz downloads catalog models here when sharing starts",
+  );
+  await expect(card).toContainText(
+    "Only a model that answers a request is offered to relay members",
   );
   await expect(toggle).toBeChecked();
   await expect(
     page.getByTestId("mesh-share-compute-sharing-status"),
-  ).toContainText("SmolLM2 135M with relay members");
+  ).toContainText("SmolLM2 135M is ready on this computer");
+  await expect(
+    page.getByTestId("mesh-share-compute-sharing-status"),
+  ).toContainText("Members admitted through this relay can use it");
   await expect
     .poll(() =>
       page.evaluate(() => (window as E2eWindow).__BUZZ_E2E_COMMANDS__ ?? []),
@@ -119,7 +126,7 @@ test("a consuming client can switch to sharing its saved local model", async ({
   const card = page.getByTestId("settings-mesh-share-compute");
   const toggle = page.getByTestId("mesh-share-compute-toggle");
   await expect(card).toContainText(
-    "This machine is currently using another member's shared compute",
+    "Connected to shared compute. An agent checks its selected model before it runs.",
   );
   await expect(card).toContainText("Buzz may briefly restart");
   await expect(toggle).not.toBeChecked();
