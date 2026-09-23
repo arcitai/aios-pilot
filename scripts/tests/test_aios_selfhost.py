@@ -72,6 +72,10 @@ def rendered_config(project: str, values: dict[str, str]) -> dict:
         settings = AIOS_SELFHOST.sites_settings(values)
         config["services"]["sites-publisher"] = {
             "profiles": ["publisher"],
+            "build": {
+                "context": str((AIOS_SELFHOST.ROOT / "services/aios-sites").resolve()),
+                "dockerfile": "Dockerfile",
+            },
             "ports": [
                 {"host_ip": "127.0.0.1", "target": 3351, "published": str(settings["public_port"])},
                 {"host_ip": "127.0.0.1", "target": 3352, "published": str(settings["admin_port"])},
@@ -264,6 +268,12 @@ class PublisherComposeValidationTests(unittest.TestCase):
         config["services"]["sites-publisher"]["ports"][0]["host_ip"] = "0.0.0.0"
         with mock.patch.object(AIOS_SELFHOST, "run_capture", return_value=(0, json.dumps(config))):
             with self.assertRaisesRegex(AIOS_SELFHOST.OperationError, "loopback"):
+                AIOS_SELFHOST.config_json(project, AIOS_SELFHOST.DEFAULT_ENV, values)
+
+        config["services"]["sites-publisher"]["ports"][0]["host_ip"] = "127.0.0.1"
+        config["services"]["sites-publisher"]["build"]["context"] = str(AIOS_SELFHOST.ROOT)
+        with mock.patch.object(AIOS_SELFHOST, "run_capture", return_value=(0, json.dumps(config))):
+            with self.assertRaisesRegex(AIOS_SELFHOST.OperationError, "build from services/aios-sites"):
                 AIOS_SELFHOST.config_json(project, AIOS_SELFHOST.DEFAULT_ENV, values)
 
     def test_preflight_requires_profile_to_stay_disabled_by_default(self) -> None:

@@ -16,8 +16,8 @@ services:
   sites-publisher:
     profiles: [publisher]
     build:
-      context: ../../
-      dockerfile: services/aios-sites/Dockerfile
+      context: ../../services/aios-sites
+      dockerfile: Dockerfile
     environment:
       AIOS_SITES_ADMIN_TOKEN: ${AIOS_SITES_ADMIN_TOKEN:-}
       AIOS_SITES_DATA_DIR: /data

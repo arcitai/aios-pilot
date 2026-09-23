@@ -361,6 +361,14 @@ def config_json(project: str, env_file: Path, values: dict[str, str]) -> dict:
         if not isinstance(publisher, dict):
             fail("Sites Publisher is enabled but its Compose profile is not active.")
         settings = sites_settings(values)
+        build = publisher.get("build", {})
+        expected_build_context = str((ROOT / "services/aios-sites").resolve())
+        if (
+            not isinstance(build, dict)
+            or str(Path(str(build.get("context", ""))).resolve()) != expected_build_context
+            or build.get("dockerfile") != "Dockerfile"
+        ):
+            fail("Sites Publisher must build from services/aios-sites and use its local Dockerfile.")
         ports = publisher.get("ports", [])
         expected_ports = {
             (3351, int(settings["public_port"])),
