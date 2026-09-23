@@ -22,6 +22,7 @@
 //! Hardware-gated, not CI — loads a real model. Run with:
 //!   cargo run -p buzz-relay --example mesh_admission_smoke
 use std::io::BufRead;
+use std::net::{IpAddr, Ipv4Addr};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
@@ -79,9 +80,14 @@ async fn role_serve() -> anyhow::Result<()> {
         .model(&model)
         .api_port(SERVE_API_PORT)
         .console_port(SERVE_CONSOLE_PORT)
-        .publish(true)
+        // Keep this smoke local: QUIC uses the matching UDP test port and
+        // the API uses TCP on the same number. No mDNS advertisement or relay.
+        .bind_ip(IpAddr::V4(Ipv4Addr::LOCALHOST))
+        .bind_port(SERVE_API_PORT)
+        .disable_iroh_relays(true)
+        .publish(false)
         .auto_join(false)
-        .discovery_mode(MeshDiscoveryMode::Mdns)
+        .discovery_mode(MeshDiscoveryMode::Nostr)
         .console_ui(true)
         .startup_timeout(Duration::from_secs(600))
         .owner_key(owner_key)
@@ -121,16 +127,20 @@ async fn role_client() -> anyhow::Result<()> {
     let api_port: u16 = env("MESH_API_PORT")?.parse()?;
     let console_port: u16 = env("MESH_CONSOLE_PORT")?.parse()?;
     let window_secs: u64 = env("MESH_WINDOW_SECS")?.parse()?;
+    let join_required: bool = env("MESH_JOIN_REQUIRED")?.parse()?;
 
     let cfg = client::EmbeddedClientConfig::builder()
         .api_port(api_port)
         .console_port(console_port)
+        .bind_ip(IpAddr::V4(Ipv4Addr::LOCALHOST))
+        .bind_port(api_port)
+        .disable_iroh_relays(true)
         .publish(false)
         .auto_join(false)
-        .discovery_mode(MeshDiscoveryMode::Mdns)
-        .join_token(&join_token)
+        .discovery_mode(MeshDiscoveryMode::Nostr)
         .startup_timeout(Duration::from_secs(180))
         .console_ui(true)
+        .join_token(&join_token)
         // Present the owner attestation; owner_required makes a key-load
         // failure abort loudly instead of silently starting unattested
         // (which the allowlist serve would then reject as NoAttestation).
@@ -138,6 +148,28 @@ async fn role_client() -> anyhow::Result<()> {
         .owner_required(true)
         .build();
     let node = client::start(cfg).await?;
+
+    // Keep the signed token in the builder so the runtime installs the signed
+    // mesh identity before creating any local mesh identity. The startup join
+    // path logs transport failures as warnings; this explicit call gives the
+    // smoke a result it can assert before checking visibility or inference.
+    let join_error = match node.join_token(&join_token).await {
+        Ok(()) => {
+            println!("JOIN_OK");
+            None
+        }
+        Err(error) => {
+            println!("JOIN_FAIL:{error:#}");
+            Some(error)
+        }
+    };
+    if join_required {
+        if let Some(error) = join_error {
+            let _ = node.stop().await;
+            anyhow::bail!("trusted client's invite-token join failed: {error:#}");
+        }
+    }
+
     let http = reqwest::Client::new();
     let base = node.api_base_url().to_string();
     let seen = wait_for_model(&http, &base, Duration::from_secs(window_secs)).await?;
@@ -165,6 +197,7 @@ fn orchestrate() -> anyhow::Result<()> {
 
     let scratch = std::env::temp_dir().join(format!("buzz-mesh-admission-{}", std::process::id()));
     std::fs::create_dir_all(&scratch)?;
+    let _scratch_guard = RemoveDirOnDrop(scratch.clone());
     let make_owner = |name: &str| -> anyhow::Result<(String, String)> {
         let keypair = OwnerKeypair::generate();
         let path = scratch.join(format!("{name}.keystore.json"));
@@ -233,6 +266,7 @@ fn orchestrate() -> anyhow::Result<()> {
             home: &trusted_home,
             cache_dir: &real_cache,
             invite: &invite,
+            join_required: true,
             api_port: TRUSTED_API_PORT,
             console_port: TRUSTED_CONSOLE_PORT,
             window_secs: TRUSTED_WINDOW_SECS,
@@ -262,6 +296,7 @@ fn orchestrate() -> anyhow::Result<()> {
             home: &stranger_home,
             cache_dir: &real_cache,
             invite: &invite,
+            join_required: false,
             api_port: STRANGER_API_PORT,
             console_port: STRANGER_CONSOLE_PORT,
             window_secs: STRANGER_WINDOW_SECS,
@@ -272,9 +307,16 @@ fn orchestrate() -> anyhow::Result<()> {
         stranger_out.infer_ok.as_deref(),
         stranger_out.infer_fail.as_deref(),
     ) {
-        (None, None, _) => eprintln!(
-            "[admission] PASS 3/3: non-member saw no model ({STRANGER_WINDOW_SECS}s window)"
-        ),
+        (None, None, _) => match stranger_out.joined {
+            Some(false) => eprintln!(
+                "[admission] PASS 3/3: non-member saw no model and invite join failed: {}",
+                stranger_out.join_error.as_deref().unwrap_or("no diagnostic")
+            ),
+            Some(true) => eprintln!(
+                "[admission] PASS 3/3: non-member saw no model after invite join returned success ({STRANGER_WINDOW_SECS}s window)"
+            ),
+            None => anyhow::bail!("ADMISSION INCONCLUSIVE: non-member produced no join verdict"),
+        },
         (Some(model), None, Some(error)) => eprintln!(
             "[admission] PASS 3/3: non-member saw gossip for {model} but inference was rejected: {error}"
         ),
@@ -290,9 +332,7 @@ fn orchestrate() -> anyhow::Result<()> {
     }
     eprintln!("[admission] PASS: owner allowlist gates mesh membership and inference");
 
-    drop(serve_guard); // kills the serve child
-    let _ = serve_child.wait();
-    let _ = std::fs::remove_dir_all(&scratch);
+    drop(serve_guard); // kills and reaps the serve child
     Ok(())
 }
 
@@ -345,6 +385,7 @@ struct ClientRun<'a> {
     home: &'a str,
     cache_dir: &'a std::path::Path,
     invite: &'a str,
+    join_required: bool,
     api_port: u16,
     console_port: u16,
     window_secs: u64,
@@ -358,6 +399,7 @@ fn run_client(exe: &std::path::Path, run: ClientRun<'_>) -> anyhow::Result<Clien
         .env("HOME", run.home)
         .env("MESH_LLM_NATIVE_RUNTIME_CACHE_DIR", run.cache_dir)
         .env("MESH_JOIN_TOKEN", run.invite)
+        .env("MESH_JOIN_REQUIRED", run.join_required.to_string())
         .env("MESH_API_PORT", run.api_port.to_string())
         .env("MESH_CONSOLE_PORT", run.console_port.to_string())
         .env("MESH_WINDOW_SECS", run.window_secs.to_string())
@@ -367,7 +409,14 @@ fn run_client(exe: &std::path::Path, run: ClientRun<'_>) -> anyhow::Result<Clien
     let mut verdict = ClientVerdict::default();
     let mut saw_any = false;
     for line in stdout.lines() {
-        if let Some(model) = line.strip_prefix("SEEN:") {
+        if line == "JOIN_OK" {
+            verdict.joined = Some(true);
+            saw_any = true;
+        } else if let Some(error) = line.strip_prefix("JOIN_FAIL:") {
+            verdict.joined = Some(false);
+            verdict.join_error = Some(error.to_string());
+            saw_any = true;
+        } else if let Some(model) = line.strip_prefix("SEEN:") {
             verdict.seen = Some(model.to_string());
             saw_any = true;
         } else if line == "NONE" {
@@ -381,12 +430,25 @@ fn run_client(exe: &std::path::Path, run: ClientRun<'_>) -> anyhow::Result<Clien
     if !saw_any {
         anyhow::bail!("client child produced no verdict; stdout: {stdout}");
     }
+    if run.join_required && verdict.joined != Some(true) {
+        anyhow::bail!("trusted client did not join; stdout: {stdout}");
+    }
+    if verdict.joined.is_none() {
+        anyhow::bail!("client child produced no explicit join verdict; stdout: {stdout}");
+    }
+    if !output.status.success() {
+        anyhow::bail!("client child failed ({}); stdout: {stdout}", output.status);
+    }
     Ok(verdict)
 }
 
 /// What a client-role child reported on stdout.
 #[derive(Debug, Default)]
 struct ClientVerdict {
+    /// Whether the explicit invite-token join returned success.
+    joined: Option<bool>,
+    /// Diagnostic returned by an unsuccessful explicit join.
+    join_error: Option<String>,
     /// Model id if the routed model became visible in the window.
     seen: Option<String>,
     /// Completion content if an inference actually routed over the mesh.
@@ -421,6 +483,15 @@ struct KillOnDrop<'a>(&'a mut Child);
 impl Drop for KillOnDrop<'_> {
     fn drop(&mut self) {
         let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+/// Remove generated owner keystores and isolated homes on success or failure.
+struct RemoveDirOnDrop(std::path::PathBuf);
+impl Drop for RemoveDirOnDrop {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
