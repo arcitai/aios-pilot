@@ -234,7 +234,7 @@ inspected. This does not prove live relay persistence or model execution.
   application/keyring namespace. `scripts/aios-desktop doctor` passed; the
   actual macOS bundle still needs building after integration.
 
-## Notion integration — 23:47 local
+## Notion integration — 23 September
 
 - Notion provider commit `63af27d` integrated as `080b9ac`; five native
   commands are registered in the main desktop handler. Connection docs stay
@@ -250,3 +250,16 @@ inspected. This does not prove live relay persistence or model execution.
 - Connections task continues with an explicit read-only Slack source adapter,
   bounded user-selected imports and clearer setup copy. No external accounts
   are connected by the development tasks.
+
+## Main-agent configuration in place — 23:44 local
+
+- Main-agent controls now reuse Buzz's existing per-agent editor from the
+  business conversation. AI defaults remain reachable for missing-agent
+  recovery and visibly explain their effect on all agents. No second model
+  configuration system was introduced.
+- TypeScript/build passed and all nine targeted business/onboarding browser
+  tests passed, including opening/canceling both configuration surfaces while
+  retaining the business room. A stopped agent is labeled stopped; no response
+  or model-readiness claim is inferred from merely having an agent record.
+- Fresh missing-Fizz provisioning still uses the upstream Agents/onboarding
+  path; the new settings shortcut alone does not create a main agent.

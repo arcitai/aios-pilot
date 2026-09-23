@@ -18,7 +18,7 @@ import { cn } from "@/shared/lib/cn";
 import { CompanyEditor } from "./CompanyEditor";
 import { SourceEditor } from "./SourceEditor";
 import { businessProgress } from "./document";
-import { startBusinessConversation } from "./mainAgent";
+import { BusinessAgentControls } from "./BusinessAgentControls";
 import { useBusinessWorkspace } from "./useBusinessWorkspace";
 import { useDraftGuard } from "./useDraftGuard";
 import { ContextHistory } from "./ContextHistory";
@@ -48,8 +48,6 @@ export function BusinessWorkspace({
   const drafts = useDraftGuard();
   const [pane, setPane] = React.useState<Pane>("conversation");
   const [name, setName] = React.useState("");
-  const [agentPending, setAgentPending] = React.useState(false);
-  const [agentError, setAgentError] = React.useState<string | null>(null);
   const [startedChannel, setStartedChannel] = React.useState<string | null>(
     null,
   );
@@ -353,57 +351,16 @@ export function BusinessWorkspace({
                   </button>
                 ))}
               </div>
-              <Button
-                className="w-full"
-                disabled={
-                  started ||
-                  agentPending ||
-                  !workspace.relayUrl ||
-                  !workspace.pubkey
-                }
-                onClick={async () => {
-                  if (
-                    !workspace.channel ||
-                    !workspace.relayUrl ||
-                    !workspace.pubkey
-                  )
-                    return;
-                  setAgentPending(true);
-                  setAgentError(null);
-                  try {
-                    await startBusinessConversation(
-                      workspace.channel.id,
-                      workspace.relayUrl,
-                      workspace.pubkey,
-                    );
-                    setStartedChannel(workspace.channel.id);
-                  } catch (cause) {
-                    setAgentError(
-                      cause instanceof Error ? cause.message : String(cause),
-                    );
-                  } finally {
-                    setAgentPending(false);
+              {workspace.channel ? (
+                <BusinessAgentControls
+                  key={workspace.channel.id}
+                  channelId={workspace.channel.id}
+                  scope={workspace.canvasScope}
+                  started={started}
+                  onStarted={() =>
+                    setStartedChannel(workspace.channel?.id ?? null)
                   }
-                }}
-                size="sm"
-              >
-                <Sparkles />
-                {agentPending
-                  ? "Inviting your agent…"
-                  : started
-                    ? "Ready — continue in the conversation"
-                    : "Begin with my agent"}
-              </Button>
-              {agentError ? (
-                <p className="text-xs text-destructive" role="alert">
-                  {agentError}
-                </p>
-              ) : null}
-              {started ? (
-                <p className="text-xs text-muted-foreground" role="status">
-                  Your request is in the conversation. Your agent needs a
-                  working model connection to respond.
-                </p>
+                />
               ) : null}
               <div className="border-t border-border/40 pt-4">
                 <p className="text-xs font-medium">Your company context</p>
