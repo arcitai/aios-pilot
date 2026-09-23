@@ -284,7 +284,11 @@ export function SitesWorkspace({
                   onRunPreview={runPreview}
                   onSelectHistory={workspace.selectHistoryVersion}
                   onUpdateFile={workspace.updateFile}
-                  previewConfigured={publisher.connected}
+                  previewConfigured={
+                    publisher.connected &&
+                    !publisher.isConnecting &&
+                    !publisher.isDisconnecting
+                  }
                   previewError={publisher.error}
                   previewLoading={publisher.isPreviewing}
                   previewUrl={publisher.previewUrl}

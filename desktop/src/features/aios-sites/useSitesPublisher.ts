@@ -112,6 +112,9 @@ export function useSitesPublisher({
   const connectionStatusGeneration = React.useRef(0);
   const siteStatusGeneration = React.useRef(0);
   const publishedHashGeneration = React.useRef(0);
+  const connectionTransition = React.useRef<"idle" | "connect" | "disconnect">(
+    "idle",
+  );
   const mounted = React.useRef(false);
 
   const scope = React.useMemo(
@@ -212,7 +215,13 @@ export function useSitesPublisher({
       setConfirmationTarget(null);
       return;
     }
-    if (!siteId || !siteStatus?.published) return;
+    if (
+      !connected ||
+      connectionTransition.current !== "idle" ||
+      !siteId ||
+      !siteStatus?.published
+    )
+      return;
     setConfirmationTarget({
       scopeKey,
       scopeGeneration: activeScope.current.generation,
@@ -225,10 +234,31 @@ export function useSitesPublisher({
   const previewIsCurrent = preview !== null && preview.draftKey === draftKey;
   const [publishedCurrent, setPublishedCurrent] = React.useState(false);
 
+  function invalidateSiteOperations(clearStatus: boolean) {
+    for (const operation of [
+      "siteStatus",
+      "preview",
+      "publish",
+      "revoke",
+    ] as const) {
+      operationGenerations.current[operation] += 1;
+    }
+    siteStatusGeneration.current += 1;
+    publishedHashGeneration.current += 1;
+    setPreview(null);
+    setPublishedCurrent(false);
+    setIsPreviewing(false);
+    setIsPublishing(false);
+    setIsRevoking(false);
+    setConfirmationTarget(null);
+    if (clearStatus) setSiteStatus(null);
+  }
+
   React.useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      connectionTransition.current = "idle";
       for (const operation of Object.keys(
         operationGenerations.current,
       ) as OperationName[]) {
@@ -247,6 +277,7 @@ export function useSitesPublisher({
     previousSiteContextKey.current = siteContextKey;
 
     if (scopeChanged) {
+      connectionTransition.current = "idle";
       setConnected(false);
       setPublisherVersion(null);
       setTokenDraft("");
@@ -405,12 +436,16 @@ export function useSitesPublisher({
   }
 
   async function connect() {
+    if (connectionTransition.current !== "idle") return;
     const ticket = captureOperation("connection", false);
+    connectionTransition.current = "connect";
     const submittedToken = tokenDraft;
     connectionStatusGeneration.current += 1;
+    invalidateSiteOperations(true);
     setError(null);
     setMessage(null);
     setIsChecking(false);
+    setIsDisconnecting(false);
     setIsConnecting(true);
     try {
       const status = await connectPublisher(scope, submittedToken);
@@ -426,15 +461,21 @@ export function useSitesPublisher({
       if (isOperationCurrent(ticket)) {
         setTokenDraft("");
         setIsConnecting(false);
+        connectionTransition.current = "idle";
       }
     }
   }
 
   async function disconnect() {
+    if (!connected || connectionTransition.current !== "idle") return;
     const ticket = captureOperation("connection", false);
+    connectionTransition.current = "disconnect";
     connectionStatusGeneration.current += 1;
+    invalidateSiteOperations(false);
     setError(null);
     setMessage(null);
+    setIsChecking(false);
+    setIsConnecting(false);
     setIsDisconnecting(true);
     try {
       await disconnectPublisher(scope);
@@ -449,12 +490,21 @@ export function useSitesPublisher({
     } catch (cause) {
       if (isOperationCurrent(ticket)) setError(errorMessage(cause));
     } finally {
-      if (isOperationCurrent(ticket)) setIsDisconnecting(false);
+      if (isOperationCurrent(ticket)) {
+        setIsDisconnecting(false);
+        connectionTransition.current = "idle";
+      }
     }
   }
 
   async function runPreview() {
-    if (!document || !siteId) return;
+    if (
+      !connected ||
+      connectionTransition.current !== "idle" ||
+      !document ||
+      !siteId
+    )
+      return;
     const ticket = captureOperation("preview", true);
     const capturedDraftKey = draftKey;
     const title = document.title;
@@ -483,7 +533,14 @@ export function useSitesPublisher({
   }
 
   async function publish() {
-    if (!document || !siteId || !canPublish) return;
+    if (
+      !connected ||
+      connectionTransition.current !== "idle" ||
+      !document ||
+      !siteId ||
+      !canPublish
+    )
+      return;
     const ticket = captureOperation("publish", true);
     const capturedDraftKey = draftKey;
     const snapshot = {
@@ -544,7 +601,13 @@ export function useSitesPublisher({
   }
 
   async function revoke() {
-    if (!siteId || !revokeConfirmationOpen) return;
+    if (
+      !connected ||
+      connectionTransition.current !== "idle" ||
+      !siteId ||
+      !revokeConfirmationOpen
+    )
+      return;
     const ticket = captureOperation("revoke", true);
     const confirmedForCurrentContext =
       confirmationTarget?.siteContextKey === ticket.siteContextKey &&

@@ -383,6 +383,114 @@ test("publish completion does not mark a changed draft as the current published 
   assert.equal(result.current.isPublishedCurrent, false);
 });
 
+test("a delayed preview cannot update the panel after disconnect", async () => {
+  resetNative({
+    connected: true,
+    siteStatus: (args) => status(args.siteId, true, "a".repeat(64)),
+  });
+  const { result } = await mountPublisher();
+  await act(async () => result.current.setRevokeConfirmationOpen(true));
+  assert.equal(result.current.revokeConfirmationOpen, true);
+  const pendingPreview = deferred();
+  handlers.set("sites_publisher_preview", () => pendingPreview.promise);
+
+  let previewPromise;
+  act(() => {
+    previewPromise = result.current.runPreview();
+  });
+  await waitFor(() => assert.equal(result.current.isPreviewing, true));
+
+  const pendingDisconnect = deferred();
+  handlers.set("disconnect_sites_publisher", () => pendingDisconnect.promise);
+  let disconnectPromise;
+  act(() => {
+    disconnectPromise = result.current.disconnect();
+  });
+  await waitFor(() => assert.equal(result.current.isDisconnecting, true));
+  assert.equal(result.current.isPreviewing, false);
+  assert.equal(result.current.revokeConfirmationOpen, false);
+
+  await act(async () => {
+    pendingDisconnect.resolve(undefined);
+    await disconnectPromise;
+  });
+  assert.equal(result.current.connected, false);
+  assert.equal(result.current.siteStatus, null);
+
+  await act(async () => {
+    pendingPreview.resolve({
+      previewUrl:
+        "http://127.0.0.1:3351/previews/dddddddddddddddddddddddddddddddd",
+      expiresInSeconds: 1800,
+    });
+    await previewPromise;
+  });
+  assert.equal(result.current.previewUrl, null);
+  assert.equal(result.current.isPreviewing, false);
+  assert.equal(
+    result.current.message,
+    "Removed this publisher token from the OS keyring.",
+  );
+});
+
+test("a delayed publish cannot read publisher status after disconnect", async () => {
+  resetNative({ connected: true });
+  const { result, props } = await mountPublisher();
+  const pendingPublish = deferred();
+  handlers.set("publish_sites_site", () => pendingPublish.promise);
+  const expectedHash = await (
+    await import("./publisherApi.ts")
+  ).siteContentHash("site_a", props.document.title, props.document.files);
+
+  let publishPromise;
+  act(() => {
+    publishPromise = result.current.publish();
+  });
+  await waitFor(() =>
+    assert.ok(calls.some((call) => call.command === "publish_sites_site")),
+  );
+
+  const pendingDisconnect = deferred();
+  handlers.set("disconnect_sites_publisher", () => pendingDisconnect.promise);
+  let disconnectPromise;
+  act(() => {
+    disconnectPromise = result.current.disconnect();
+  });
+  await waitFor(() => assert.equal(result.current.isDisconnecting, true));
+  assert.equal(result.current.isPublishing, false);
+  await act(async () => {
+    pendingDisconnect.resolve(undefined);
+    await disconnectPromise;
+  });
+  const statusReadsAfterDisconnect = calls.filter(
+    (call) => call.command === "sites_publisher_site_status",
+  ).length;
+
+  await act(async () => {
+    pendingPublish.resolve({
+      siteId: "site_a",
+      contentHash: expectedHash,
+      publicUrl: "https://public.example/sites/site_a",
+      alreadyPublished: false,
+    });
+    await publishPromise;
+  });
+
+  assert.equal(result.current.connected, false);
+  assert.equal(result.current.siteStatus, null);
+  assert.equal(result.current.isPublishing, false);
+  assert.equal(
+    result.current.message,
+    "Removed this publisher token from the OS keyring.",
+  );
+  assert.equal(
+    calls.filter((call) => call.command === "sites_publisher_site_status")
+      .length,
+    statusReadsAfterDisconnect,
+    "late publish must not issue readback after the operator token was removed",
+  );
+});
+
 test("revoke confirmation closes on site change and cannot revoke the newly selected site", async () => {
   resetNative({
     connected: true,

@@ -52,7 +52,11 @@ export function SitesPublisherPanel({
             publisher.
           </p>
         </div>
-        {publisher.connected ? (
+        {publisher.isDisconnecting ? (
+          <span className="text-2xs text-muted-foreground" role="status">
+            Disconnecting…
+          </span>
+        ) : publisher.connected ? (
           <span
             className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-2xs font-medium text-primary"
             role="status"
@@ -122,6 +126,7 @@ export function SitesPublisherPanel({
                 disabled={
                   !publisher.tokenDraft ||
                   publisher.isConnecting ||
+                  publisher.isDisconnecting ||
                   publisher.isChecking
                 }
                 size="sm"
@@ -214,6 +219,8 @@ export function SitesPublisherPanel({
           <Button
             disabled={
               !publisher.canPublish ||
+              publisher.isConnecting ||
+              publisher.isDisconnecting ||
               publisher.isPublishing ||
               publisher.isRevoking
             }
@@ -230,7 +237,13 @@ export function SitesPublisherPanel({
         ) : null}
         {published ? (
           <Button
-            disabled={publisher.isRevoking || publisher.isPublishing}
+            disabled={
+              !publisher.connected ||
+              publisher.isConnecting ||
+              publisher.isDisconnecting ||
+              publisher.isRevoking ||
+              publisher.isPublishing
+            }
             onClick={() => publisher.setRevokeConfirmationOpen(true)}
             size="sm"
             variant="destructive"
