@@ -176,7 +176,7 @@ export function BusinessVoiceAction({
         )}
         {actionState === "active" && (
           <p className="text-sm" role="status">
-            Microphone connected. Voice is active with your main agent.
+            Your microphone is connected to the private huddle.
           </p>
         )}
         {actionState === "audio-unavailable" && (
@@ -209,6 +209,10 @@ export function BusinessVoiceAction({
             {visibleError}
           </p>
         )}
+        <p className="text-xs text-muted-foreground">
+          Current speech transcription is English-only. Danish transcription
+          isn’t available yet.
+        </p>
         {actionState === "active" ||
         actionState === "audio-unavailable" ||
         actionState === "leave-failed" ? (

@@ -77,6 +77,10 @@ test("microphone flow starts only after the explicit click with captured scope",
     document.body.textContent,
     /microphone is requested only after/i,
   );
+  assert.match(
+    document.body.textContent,
+    /Danish transcription isn’t available/i,
+  );
 
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "Start voice" }));
@@ -157,7 +161,7 @@ test("only the matching active binding is reported as connected and endable", as
   await renderAction({ huddle: port });
   assert.match(
     document.body.textContent,
-    /microphone connected\. voice is active/i,
+    /your microphone is connected to the private huddle/i,
   );
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "End voice session" }));
