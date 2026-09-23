@@ -63,7 +63,8 @@ test("a connection descriptor alone does not complete the connection step", () =
     id: "github",
     provider: "github",
     label: "GitHub",
-    status: "not_configured",
+    status: "connected",
   });
   assert.equal(businessProgress(doc)[3].done, false);
+  assert.equal(businessProgress(doc, true)[3].done, true);
 });

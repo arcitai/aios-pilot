@@ -64,6 +64,7 @@ export function CompanyEditor({
           </label>
           {field === "name" || field === "website" ? (
             <Input
+              disabled={busy}
               id={`company-${field}`}
               maxLength={field === "name" ? 300 : 2000}
               onChange={(event) => {
@@ -75,6 +76,7 @@ export function CompanyEditor({
             />
           ) : (
             <Textarea
+              disabled={busy}
               className="min-h-24 resize-y"
               id={`company-${field}`}
               maxLength={12_000}

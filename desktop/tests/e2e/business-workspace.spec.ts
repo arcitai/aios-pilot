@@ -46,7 +46,7 @@ test("private company context, source and main-agent recovery stay inside Buzz",
   await expect(page.getByRole("alert")).toContainText("Set up your main agent");
   await page.getByRole("button", { name: "Connections", exact: true }).click();
   await expect(
-    page.getByText("No verified connections yet.", { exact: false }),
+    page.getByText("Connection status could not be verified.", { exact: true }),
   ).toBeVisible();
   await page.setViewportSize({ width: 760, height: 900 });
   await waitForAnimations(page);
@@ -56,6 +56,67 @@ test("private company context, source and main-agent recovery stay inside Buzz",
       () => document.documentElement.scrollWidth <= window.innerWidth,
     ),
   ).toBe(true);
+});
+
+test("sources can be corrected, removed and recovered without discarding another draft", async ({
+  page,
+}) => {
+  await installMockBridge(page);
+  await page.goto("/");
+  await page.getByTestId("open-business-view").click();
+  await page.getByLabel("What is your business called?").fill("Source Studio");
+  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Sources", exact: true }).click();
+  await page.getByLabel("Source title", { exact: true }).fill("Our offer");
+  await page
+    .getByLabel("Source text", { exact: true })
+    .fill("We build websites.");
+  await page.getByRole("button", { name: "Add source", exact: true }).click();
+  const record = page.locator("details").filter({ hasText: "Our offer" });
+  await record.locator("summary").click();
+  await record.getByRole("button", { name: "Edit source" }).click();
+  await page
+    .getByLabel("Source text", { exact: true })
+    .fill("We design and maintain websites.");
+  await page.getByRole("button", { name: "Save source" }).click();
+  await expect(
+    record.getByText("We design and maintain websites.", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByLabel("Source title", { exact: true })
+    .fill("An unfinished note");
+  await expect(
+    record.getByRole("button", { name: "Edit source" }),
+  ).toBeDisabled();
+  await expect(page.getByLabel("Import a text document")).toBeDisabled();
+  await page.getByRole("button", { name: "Clear draft" }).click();
+  await record.getByRole("button", { name: "Remove source" }).click();
+  const dialog = page.getByRole("alertdialog");
+  await expect(dialog).toContainText(
+    "Previous saved versions still contain it",
+  );
+  await dialog.getByRole("button", { name: "Keep source" }).click();
+  await expect(record).toBeVisible();
+  await record.getByRole("button", { name: "Remove source" }).click();
+  await dialog
+    .getByRole("button", { name: "Remove source", exact: true })
+    .click();
+  await expect(record).not.toBeVisible();
+  await page
+    .getByRole("button", { name: "Saved versions", exact: true })
+    .click();
+  const history = page.getByRole("dialog", { name: "Saved company context" });
+  await history
+    .getByRole("button", { name: /Source Studio/ })
+    .nth(1)
+    .click();
+  await expect(history.getByText(/1 sources/)).toBeVisible();
+  await history
+    .getByRole("button", { name: "Restore selected version" })
+    .click();
+  const restored = page.locator("details").filter({ hasText: "Our offer" });
+  await restored.locator("summary").click();
+  await expect(restored).toContainText("We design and maintain websites.");
 });
 
 test("a competing context edit cannot silently overwrite saved business data", async ({
@@ -262,4 +323,123 @@ test("a supported saved version can recover a damaged company canvas", async ({
   await expect(page.getByLabel("What you do", { exact: true })).toHaveValue(
     "Our original company context",
   );
+});
+
+test("verified connection imports one attributed source and disconnect keeps the saved source", async ({
+  page,
+}) => {
+  await installMockBridge(page);
+  await page.goto("/");
+  await expect(page.getByTestId("open-business-view")).toBeVisible();
+  await page.evaluate(() => {
+    const native = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke: (
+            command: string,
+            args?: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const original = native.invoke;
+    let connected = false;
+    native.invoke = async (command, args) => {
+      if (
+        ![
+          "get_github_connection_status",
+          "connect_github_connection",
+          "list_github_repositories",
+          "import_github_readme",
+          "revoke_github_connection",
+        ].includes(command)
+      )
+        return original(command, args);
+      if (
+        !args?.expectedRelayUrl ||
+        args.expectedSignerPubkey !== "deadbeef".repeat(8)
+      )
+        throw new Error("The integration must retain the workspace scope.");
+      if (command === "get_github_connection_status")
+        return { connected, login: connected ? "fixture-team" : null };
+      if (command === "connect_github_connection") {
+        if (args.token !== "fixture-read-only-token")
+          throw new Error("GitHub rejected this token.");
+        connected = true;
+        return { login: "fixture-team" };
+      }
+      if (command === "revoke_github_connection") {
+        connected = false;
+        return null;
+      }
+      if (!connected) throw new Error("Not connected");
+      if (command === "list_github_repositories")
+        return [
+          {
+            id: 12,
+            name: "company",
+            fullName: "fixture-team/company",
+            private: true,
+            url: "https://github.com/fixture-team/company",
+          },
+        ];
+      return {
+        title: "company README",
+        content: "Our company creates accessible websites.",
+        kind: "url",
+        url: "https://github.com/fixture-team/company",
+      };
+    };
+  });
+  await page.getByTestId("open-business-view").click();
+  await page
+    .getByLabel("What is your business called?")
+    .fill("Connected Studio");
+  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await expect(page.getByText("Not connected.", { exact: true })).toBeVisible();
+  await page
+    .getByLabel("Fine-grained personal access token")
+    .fill("invalid-fixture");
+  await page
+    .getByRole("button", { name: "Connect GitHub", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText("rejected");
+  await expect(page.getByText("Not connected.", { exact: true })).toBeVisible();
+  await page
+    .getByLabel("Fine-grained personal access token")
+    .fill("fixture-read-only-token");
+  await page
+    .getByRole("button", { name: "Connect GitHub", exact: true })
+    .click();
+  await expect(
+    page.getByText("Connected as @fixture-team.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Browse repositories" }).click();
+  await page
+    .getByRole("button", { name: "Import README", exact: true })
+    .click();
+  await expect(
+    page.getByText("Imported the README from fixture-team/company.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Import README", exact: true })
+    .click();
+  await expect(page.getByRole("alert")).toContainText(
+    "already in your workspace",
+  );
+  await page.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(page.getByText("Not connected.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Sources", exact: true }).click();
+  const source = page.locator("details").filter({ hasText: "company README" });
+  await source.locator("summary").click();
+  await expect(
+    source.getByText("Our company creates accessible websites.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(source).toContainText("https://github.com/fixture-team/company");
+  await expect(page.locator("details")).toHaveCount(1);
 });

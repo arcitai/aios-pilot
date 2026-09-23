@@ -22,6 +22,7 @@ import { startBusinessConversation } from "./mainAgent";
 import { useBusinessWorkspace } from "./useBusinessWorkspace";
 import { useDraftGuard } from "./useDraftGuard";
 import { ContextHistory } from "./ContextHistory";
+import { BusinessConnectionsPanel } from "@/features/business-connections";
 
 type Pane = "conversation" | "company" | "sources" | "connections" | "apps";
 const panes = [
@@ -53,6 +54,9 @@ export function BusinessWorkspace({
     null,
   );
   const [reloadVersion, setReloadVersion] = React.useState(0);
+  const [verifiedConnections, setVerifiedConnections] = React.useState<
+    Record<string, boolean>
+  >({});
   const document = workspace.context.data?.document;
   const started = startedChannel === workspace.channel?.id;
   const reload = () =>
@@ -173,7 +177,10 @@ export function BusinessWorkspace({
       </div>
     );
 
-  const progress = businessProgress(document);
+  const progress = businessProgress(
+    document,
+    Object.values(verifiedConnections).some(Boolean),
+  );
   return (
     <section
       className="flex h-full min-h-0 min-w-0 flex-1 flex-col"
@@ -407,47 +414,43 @@ export function BusinessWorkspace({
           </div>
         ) : null}
         {pane === "connections" ? (
-          <div className="mx-auto max-w-2xl space-y-5 p-6">
-            <div>
-              <h2 className="text-lg font-semibold">Connections</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Connections give your agents access to the tools you already
-                use. Provider access and sharing are configured separately from
-                company context.
-              </p>
-            </div>
-            {document.connections.length ? (
-              document.connections.map((connection) => (
-                <div
-                  className="rounded-xl border border-border/50 p-4"
-                  key={connection.id}
-                >
-                  <p className="text-sm font-medium">{connection.label}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {connection.provider} ·{" "}
-                    {connection.status === "not_configured"
-                      ? "Needs setup"
-                      : connection.status === "error"
-                        ? "Needs attention"
-                        : "Connected"}
-                  </p>
-                  {connection.details ? (
-                    <p className="mt-2 text-sm">{connection.details}</p>
-                  ) : null}
-                </div>
-              ))
-            ) : (
-              <div className="rounded-xl border border-dashed border-border p-6 text-sm text-muted-foreground">
-                No verified connections yet. Your agent's existing tools can be
-                configured from its profile.
-              </div>
-            )}
-            <Button asChild variant="outline">
-              <Link to="/agents">
-                Open agent tools
-                <ChevronRight />
-              </Link>
-            </Button>
+          <div className="mx-auto max-w-3xl space-y-5 p-6">
+            <p className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+              <LockKeyhole className="mt-0.5 size-4 shrink-0" />
+              Imported text becomes a source in{" "}
+              {document.company.name || "this business"}. Everyone invited to
+              this private business room can read it. Disconnecting removes the
+              local credential; imported sources can be removed in Sources.
+            </p>
+            <BusinessConnectionsPanel
+              {...workspace.canvasScope}
+              onConnectionStatus={(status) =>
+                setVerifiedConnections((current) => ({
+                  ...current,
+                  [status.providerId]: status.verified,
+                }))
+              }
+              onImportSource={async (source) => {
+                if (
+                  source.url &&
+                  document.sources.some((item) => item.url === source.url)
+                )
+                  throw new Error(
+                    "This source is already in your workspace. Review it in Sources before replacing it.",
+                  );
+                await workspace.save({
+                  ...document,
+                  sources: [
+                    ...document.sources,
+                    {
+                      ...source,
+                      id: crypto.randomUUID(),
+                      createdAt: new Date().toISOString(),
+                    },
+                  ],
+                });
+              }}
+            />
           </div>
         ) : null}
         {pane === "apps" && workspace.channel

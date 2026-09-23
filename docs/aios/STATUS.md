@@ -124,3 +124,38 @@ inspected. This does not prove live relay persistence or model execution.
   Fetched but NOT cherry-picked: review requested a correction so the provider
   API uses scope captured by the rendered UI, not a fresh active-workspace
   lookup that could silently retarget old input. Worker is implementing that.
+
+
+## Connections and editable sources — 22:50 local
+
+- Integrated GitHub commits `b89030e9` and `6e37fe85` as `eafed97` and
+  `0154e93`. Captured relay/signer props reach all five native commands.
+  Central native handlers are wired; full Tauri check and 9 adapter/scope
+  tests pass. Live GitHub with a real credential remains unverified.
+- Business Connections imports attributed README snapshots through the shared
+  context save path, rejects repeated source URLs, and discloses room access
+  before import. Onboarding progress uses verified provider callbacks, never
+  an editable JSON `connected` label. Each provider has independent progress.
+- Sources now supports edit, remove with review, draft protection, and restore
+  through saved context versions. Inputs pause during saves. Imported text can
+  be retained after disconnect; removing a source preserves historical copies.
+- TypeScript, 10 focused frontend tests, seven browser business flows, native
+  formatting, file-size gate and diff whitespace checks pass. Browser cases use
+  an explicit provider fixture; they do not authenticate a real GitHub account.
+  Logs: `/tmp/aios-connections-{unit,native-tests,native-check}.log` and
+  `/tmp/aios-ui-e2e.log`. Latest narrow connections screenshot visually reviewed.
+- Native dev session 3709 was deliberately stopped after startup proof to avoid
+  repeated watch recompiles while the Mac is locked. It is not currently a
+  running user-facing app. Native-window verification still awaits unlock.
+- CLI review found shared schema mismatches in `b5557a5` (offers/goals arrays,
+  cross-collection ID checks, null handling). Do not integrate that revision
+  alone. Worker is matching the canonical desktop parser and shared fixtures.
+- Connection worker continues with Notion, the 40,000 UTF-16 source cap and
+  serial provider actions. Other feature paths remain with their original owners.
+- Sixth Luna/max task: `01a0d001-aa57-7bc1-ba54-117aa13fe2d0`,
+  `/Users/gustavanderson/Documents/Codex/2026-09-23/aios-sites-webapps/buzz`.
+  Owns `features/aios-sites`, optional native `commands/aios_sites`, SITES.md
+  and a proposed isolated publisher; no central routing/Cargo/compose edits.
+- Upstream shared compute already includes a native MeshLLM feature, model
+  picker and signed membership admission. Started a separate native feature
+  compile; no local-model or second-machine inference proof claimed yet.

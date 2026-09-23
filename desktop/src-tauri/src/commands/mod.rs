@@ -12,6 +12,7 @@ mod agent_settings;
 mod agent_update_rollback;
 mod agents;
 mod bestie;
+mod business_connections;
 #[cfg(test)]
 mod business_live_tests;
 mod canvas;
@@ -88,6 +89,7 @@ pub use agent_providers::*;
 pub use agent_settings::*;
 pub use agents::*;
 pub use bestie::*;
+pub use business_connections::*;
 pub use canvas::*;
 pub use channel_reconnect_repair::*;
 pub use channel_templates::*;

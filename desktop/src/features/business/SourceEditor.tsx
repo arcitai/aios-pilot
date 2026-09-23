@@ -1,9 +1,19 @@
 import * as React from "react";
-import { FileText, Plus, Upload } from "lucide-react";
+import { FileText, Pencil, Plus, Trash2, Upload } from "lucide-react";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
-import type { BusinessDocument } from "./document";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog";
+import type { BusinessDocument, BusinessSource } from "./document";
 
 export function SourceEditor({
   document,
@@ -22,7 +32,21 @@ export function SourceEditor({
   const [fileName, setFileName] = React.useState<string | null>(null);
   const [fileError, setFileError] = React.useState<string | null>(null);
   const [query, setQuery] = React.useState("");
-  const changed = Boolean(title || content || url);
+  const [editing, setEditing] = React.useState<BusinessSource | null>(null);
+  const [removing, setRemoving] = React.useState<BusinessSource | null>(null);
+  const changed = editing
+    ? title !== editing.title ||
+      content !== editing.content ||
+      url !== (editing.url ?? "")
+    : Boolean(title || content || url);
+  const clearDraft = () => {
+    setTitle("");
+    setContent("");
+    setUrl("");
+    setFileName(null);
+    setFileError(null);
+    setEditing(null);
+  };
   React.useEffect(() => {
     onDirtyChange(changed);
     return () => onDirtyChange(false);
@@ -43,29 +67,31 @@ export function SourceEditor({
         onSubmit={async (event) => {
           event.preventDefault();
           try {
+            const source: BusinessSource = {
+              id: editing?.id ?? crypto.randomUUID(),
+              title: title.trim(),
+              content,
+              kind: editing?.kind ?? (fileName ? "file" : url ? "url" : "note"),
+              ...(url ? { url } : {}),
+              createdAt: editing?.createdAt ?? new Date().toISOString(),
+            };
             await onSave({
               ...document,
-              sources: [
-                ...document.sources,
-                {
-                  id: crypto.randomUUID(),
-                  title: title.trim(),
-                  content,
-                  kind: fileName ? "file" : url ? "url" : "note",
-                  ...(url ? { url } : {}),
-                  createdAt: new Date().toISOString(),
-                },
-              ],
+              sources: editing
+                ? document.sources.map((row) =>
+                    row.id === editing.id ? source : row,
+                  )
+                : [...document.sources, source],
             });
-            setTitle("");
-            setContent("");
-            setUrl("");
-            setFileName(null);
+            clearDraft();
           } catch {
             /* Keep the source draft available for correction or retry. */
           }
         }}
       >
+        {editing ? (
+          <p className="text-sm font-medium">Editing: {editing.title}</p>
+        ) : null}
         <div className="space-y-2">
           <label
             className="flex items-center gap-2 text-sm font-medium"
@@ -76,6 +102,7 @@ export function SourceEditor({
           <Input
             id="source-file"
             type="file"
+            disabled={Boolean(editing) || changed || busy}
             accept=".txt,.md,.csv,.json,text/plain,text/markdown,text/csv,application/json"
             onChange={async (event) => {
               const file = event.target.files?.[0];
@@ -108,7 +135,9 @@ export function SourceEditor({
             }}
           />
           <p className="text-xs text-muted-foreground">
-            Review the text below, then add it to your workspace.
+            {changed || editing
+              ? "Save or clear the current draft before importing another document."
+              : "Review the text below, then add it to your workspace."}
           </p>
           {fileError ? (
             <p className="text-xs text-destructive" role="alert">
@@ -121,6 +150,7 @@ export function SourceEditor({
             Source title
           </label>
           <Input
+            disabled={busy}
             id="source-title"
             maxLength={300}
             onChange={(e) => setTitle(e.target.value)}
@@ -135,7 +165,9 @@ export function SourceEditor({
             <span className="text-muted-foreground">(optional)</span>
           </label>
           <Input
+            disabled={busy}
             id="source-url"
+            maxLength={2_000}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://…"
             type="url"
@@ -147,6 +179,7 @@ export function SourceEditor({
             Source text
           </label>
           <Textarea
+            disabled={busy}
             className="min-h-36"
             id="source-content"
             maxLength={40_000}
@@ -165,16 +198,28 @@ export function SourceEditor({
             busy ||
             !title.trim() ||
             !content.trim() ||
-            document.sources.length >= 100
+            (!editing && document.sources.length >= 100)
           }
           type="submit"
         >
-          <Plus />
-          Add source
+          {editing ? <Pencil /> : <Plus />}
+          {editing ? "Save source" : "Add source"}
         </Button>
+        {editing || changed ? (
+          <Button
+            className="ml-2"
+            disabled={busy}
+            type="button"
+            variant="ghost"
+            onClick={clearDraft}
+          >
+            {editing ? "Cancel edit" : "Clear draft"}
+          </Button>
+        ) : null}
       </form>
       {document.sources.length ? (
         <Input
+          disabled={busy}
           aria-label="Find a source"
           placeholder="Find a source…"
           value={query}
@@ -208,9 +253,75 @@ export function SourceEditor({
               <p className="mt-2 text-xs text-muted-foreground">
                 Added {new Date(source.createdAt).toLocaleString()}
               </p>
+              <div className="mt-3 flex gap-2">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={busy || changed}
+                  onClick={() => {
+                    setEditing(source);
+                    setTitle(source.title);
+                    setContent(source.content);
+                    setUrl(source.url ?? "");
+                    setFileName(null);
+                    setFileError(null);
+                    window.document.getElementById("source-title")?.focus();
+                  }}
+                >
+                  <Pencil /> Edit source
+                </Button>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={busy || changed || Boolean(editing)}
+                  onClick={() => setRemoving(source)}
+                >
+                  <Trash2 /> Remove source
+                </Button>
+              </div>
             </details>
           ))}
       </div>
+      <AlertDialog
+        open={removing !== null}
+        onOpenChange={(open) => {
+          if (!open) setRemoving(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this source?</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{removing?.title}” will be removed from the current company
+              context. Previous saved versions still contain it. Existing
+              conversation messages are unchanged.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Keep source</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={async (event) => {
+                event.preventDefault();
+                if (!removing) return;
+                try {
+                  await onSave({
+                    ...document,
+                    sources: document.sources.filter(
+                      (row) => row.id !== removing.id,
+                    ),
+                  });
+                  setRemoving(null);
+                } catch {
+                  /* Preserve the selection and let the workspace show the save error. */
+                }
+              }}
+            >
+              Remove source
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

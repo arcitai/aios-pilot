@@ -107,7 +107,10 @@ export function serializeBusinessDocument(document: BusinessDocument): string {
 }
 
 /** Completeness is a navigation aid, never a claim that the agent knows the business. */
-export function businessProgress(document: BusinessDocument) {
+export function businessProgress(
+  document: BusinessDocument,
+  hasVerifiedConnection = false,
+) {
   return [
     {
       title: "Describe your business",
@@ -120,7 +123,7 @@ export function businessProgress(document: BusinessDocument) {
     },
     {
       title: "Connect a working tool",
-      done: document.connections.some((item) => item.status === "connected"),
+      done: hasVerifiedConnection,
     },
   ];
 }

@@ -7,11 +7,11 @@ observed behavior through its real interface, not only source code.
 
 | Capability | Reuse / implementation | Current evidence | Remaining work |
 | --- | --- | --- | --- |
-| Buzz visual identity and conversations | Actual Buzz desktop, tokens, components, rooms and threads | Source retained; frontend builds | Native and interaction regression checks |
-| First agent as permanent home base | Existing welcome agent and private business conversation | New business route implemented | Live model conversation, context-update skill, recovery |
-| Company context | Versioned domain document in dedicated private channel canvas | Parser tests and frontend typecheck pass | CLI round-trip, live relay persistence, conflicts and permission denial |
-| Sources and business knowledge | Attributed source records; company/source editing | Initial UI implemented | Provider import, incremental indexing, search, stale-source detection |
-| Connections | Native provider adapter with scoped secret storage | Dedicated task active | Verified connection UI, revoke/reconnect, provider adapters, agent access |
+| Buzz visual identity and conversations | Actual Buzz desktop, tokens, components, rooms and threads | Seven business browser flows pass; desktop and narrow screenshots reviewed | Native-window interaction awaits unlocked desktop |
+| First agent as permanent home base | Existing Fizz agent, private business conversation and onboarding skill | Real Luna/max ACP agent read synthetic company data and replied through the self-hosted relay | Business CLI update round-trip; full first-run native flow |
+| Company context | Versioned domain document in dedicated private channel canvas | Live native create/read/update/history and outsider denial pass; browser conflict and recovery pass | Cross-language CLI round-trip; canvas conflict checks remain advisory, not atomic CAS |
+| Sources and business knowledge | Attributed text/file/link snapshots with editing, removal, search and history | Browser add/edit/remove/recover and GitHub import-to-context flows pass | More formats, incremental indexing, provider refresh and stale-source detection |
+| Connections | Native read-only GitHub adapter with OS-keyring credentials scoped to relay and identity | Native compile and 9 adapter/scope tests pass; browser denied/connect/import/duplicate/revoke flow passes | Real PAT unavailable; Notion adapter in progress; OAuth and runtime agent access remain |
 | Agent specialization and skills | Buzz persona packs, skills and ACP | Existing source inspected | Product-level setup and a specialist consuming approved context |
 | Agent teams and delegation | Buzz team/persona runtime | Existing source | Context inheritance, visible work status and acceptance |
 | More computers / remote agents | Buzz backend providers; OpenAgents reference | Source only | Pairing flow, remote execution, disconnection/recovery proof |
@@ -19,13 +19,13 @@ observed behavior through its real interface, not only source code.
 | Browser use | Existing/runtime browser adapters; OpenAgents reference | Research only | Isolated browser session, visible control and access |
 | Built-in Design, Slides and Calendar | Modular app registry with replaceable document storage | Dedicated task active | Integrate, persist on relay, rich editing, provider sync |
 | Forms, Plans and Clips | Bounded app extensions informed by Agent Native | Research only | Implement after core app contract and two usable editors |
-| Generated sites/webapps | Generate → edit → preview → share | Research only | Runtime isolation, build output, publication/access/revoke, durable hosting |
+| Generated sites/webapps | Generate → edit → preview → share | Dedicated isolated implementation task active | Private document contract, sandboxed preview, export, publication/access/revoke, durable hosting |
 | Schedules, automations and follow-ups | Existing Buzz workflows | Source only; upstream approval executor gap noted | Trigger/retry/cancel/approval behavior, missed-run recovery |
 | Voice conversations | Buzz huddles, agent STT/TTS | Existing code including release inspected | Native interaction, Danish quality and interruption behavior |
 | Agent-initiated calls | Telephony adapter | Not implemented | Provider setup and explicit call policy; isolated call test |
 | Self-host messages, threads, media | Buzz relay + Postgres/Redis/MinIO | Dedicated task active | Isolated stack, restart, backup/restore, operator path |
 | CLI | Existing Buzz CLI plus business commands | Dedicated task active | Shared schema, JSON output, source/app operations, live tests |
-| Access and approvals | Native signed events and channel membership | Scope pinning added to canvas; runtime verification pending | ACP permission policy, source/tool grants, denial/revoke tests |
+| Access and approvals | Native signed events and channel membership | Canvas native stale-scope and outsider denial proof; connection scope/redirect-denial proof | ACP approval task active; source/tool grants and runtime permission checks pending |
 | Nontechnical installation | Packaged desktop and self-host control commands | Research and scripts underway | Native bundle, first-run flow, update/recovery and simple operator docs |
 
 ## Reference boundaries
