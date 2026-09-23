@@ -1,24 +1,28 @@
 import { ExternalLink, Eye, Play, ShieldCheck } from "lucide-react";
 
 import { Button } from "@/shared/ui/button";
+import { canEmbedLocalPreview } from "./publisherApi";
 
 export function SitePreview({
   previewUrl,
-  canEmbed,
   configured,
   loading,
   error,
+  isCurrentSnapshot,
+  previewExpiresAt,
   onRun,
   disabled,
 }: {
   previewUrl: string | null;
-  canEmbed: boolean;
   configured: boolean;
   loading: boolean;
   error: string | null;
+  isCurrentSnapshot: boolean;
+  previewExpiresAt: number | null;
   onRun: () => void;
   disabled: boolean;
 }) {
+  const canEmbed = canEmbedLocalPreview(previewUrl);
   return (
     <section
       aria-label="Site preview"
@@ -32,7 +36,9 @@ export function SitePreview({
           <div>
             <h2 className="text-sm font-semibold">Live preview</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Run the current draft in the isolated Sites origin.
+              {previewUrl && previewExpiresAt
+                ? `${isCurrentSnapshot ? "Current snapshot" : "Earlier snapshot"} · expires ${new Date(previewExpiresAt).toLocaleTimeString()}`
+                : "Run the current draft in the isolated Sites origin."}
             </p>
           </div>
         </div>
@@ -59,6 +65,15 @@ export function SitePreview({
           role="alert"
         >
           {error}
+        </p>
+      ) : null}
+      {previewUrl && !isCurrentSnapshot ? (
+        <p
+          className="border-b border-amber-500/25 bg-amber-500/5 px-4 py-2 text-xs text-amber-700"
+          role="status"
+        >
+          The draft changed after this preview was created. Run preview again to
+          inspect the latest draft.
         </p>
       ) : null}
       {previewUrl && canEmbed ? (
