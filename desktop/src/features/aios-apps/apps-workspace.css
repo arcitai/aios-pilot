@@ -12,6 +12,14 @@
   color: hsl(var(--foreground));
 }
 
+.aios-apps-workspace.is-embedded {
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
 .aios-apps-workspace,
 .aios-apps-workspace * {
   box-sizing: border-box;
@@ -25,6 +33,12 @@
   gap: 24px;
   padding: 18px 24px;
   border-bottom: 1px solid var(--aios-app-border);
+}
+
+.aios-apps-header.is-embedded {
+  min-height: 38px;
+  justify-content: flex-start;
+  padding: 0 0 10px;
 }
 
 .aios-apps-brand {
@@ -138,6 +152,10 @@
   min-height: 0;
   flex: 1;
   grid-template-columns: 226px minmax(0, 1fr);
+}
+
+.aios-apps-workspace.is-embedded .aios-apps-layout {
+  min-height: 0;
 }
 
 .aios-apps-rail {
@@ -270,12 +288,135 @@
   padding: 18px 24px 16px;
 }
 
+.aios-apps-workspace.is-embedded .aios-apps-main {
+  padding: 14px 18px 12px;
+}
+
 .aios-app-heading {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
   gap: 18px;
   margin: 0 auto 17px;
+}
+
+.aios-app-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.aios-app-access {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.aios-app-access > summary {
+  padding: 7px 10px;
+  border: 1px solid var(--aios-app-border);
+  border-radius: 8px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 560;
+  list-style: none;
+}
+
+.aios-app-access > summary::-webkit-details-marker {
+  display: none;
+}
+
+.aios-app-access > summary:focus-visible,
+.aios-app-access-panel select:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+.aios-app-access-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 7px);
+  right: 0;
+  display: grid;
+  width: min(350px, calc(100vw - 32px));
+  max-height: min(460px, 70vh);
+  gap: 10px;
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--aios-app-border);
+  border-radius: 12px;
+  background: hsl(var(--background));
+  box-shadow: 0 12px 30px hsl(var(--foreground) / 0.12);
+}
+
+.aios-app-access-panel p {
+  margin: 0;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.aios-app-access-panel ul {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.aios-app-access-panel li {
+  display: flex;
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 8px;
+  border-radius: 7px;
+  background: hsl(var(--muted) / 0.3);
+  font-size: 11px;
+}
+
+.aios-app-access-panel li span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aios-app-access-panel li span:last-child {
+  flex: 0 0 auto;
+  color: hsl(var(--muted-foreground));
+}
+
+.aios-app-access-invite {
+  display: grid;
+  gap: 8px;
+  padding-top: 3px;
+}
+
+.aios-app-access-invite label {
+  display: grid;
+  gap: 5px;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+}
+
+.aios-app-access-invite select {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--aios-app-border);
+  border-radius: 7px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font: inherit;
+}
+
+.aios-app-extension-shell {
+  min-width: 0;
+}
+
+.aios-app-extension-shell[hidden] {
+  display: none;
 }
 
 .aios-app-heading h2 {
@@ -1008,7 +1149,7 @@
   }
 
   .aios-app-nav {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   }
 
   .aios-app-nav-item {
@@ -1056,6 +1197,16 @@
     padding: 15px;
   }
 
+  .aios-apps-workspace.is-embedded {
+    padding: 0;
+  }
+
+  .aios-apps-header.is-embedded {
+    align-items: center;
+    flex-direction: row;
+    padding: 0 0 8px;
+  }
+
   .aios-apps-brand h1 {
     max-width: calc(100vw - 105px);
   }
@@ -1065,8 +1216,26 @@
     padding-left: 56px;
   }
 
+  .aios-apps-header.is-embedded .aios-storage-status {
+    padding-left: 0;
+  }
+
   .aios-apps-main {
     padding: 14px 12px;
+  }
+
+  .aios-apps-workspace.is-embedded .aios-apps-main {
+    padding: 12px 0;
+  }
+
+  .aios-app-heading-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .aios-app-access-panel {
+    right: auto;
+    left: 0;
   }
 
   .aios-editor-toolbar {

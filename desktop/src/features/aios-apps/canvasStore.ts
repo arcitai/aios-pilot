@@ -1,12 +1,19 @@
-import { createChannel, getChannels } from "@/shared/api/tauriChannels";
+import {
+  createChannel,
+  getChannelMembers,
+  getChannels,
+} from "@/shared/api/tauriChannels";
 import type {
   Channel,
+  ChannelMember,
   CreateChannelInput,
   SetCanvasInput,
   SetCanvasResult,
 } from "@/shared/api/types";
-import { getCanvas, setCanvas } from "@/shared/api/tauri";
+import { getCanvas, getRelayWsUrl, setCanvas } from "@/shared/api/tauri";
+import { getIdentity } from "@/shared/api/tauriIdentity";
 import type { CanvasResponse } from "@/shared/api/canvasTypes";
+import { canonicalRelayUrl } from "@/features/agents/managedAgentRuntimeStatus";
 
 import {
   appCanvasExpectedRevision,
@@ -42,6 +49,11 @@ type AppCanvasChannelState = {
 };
 
 type AppCanvasCache = Record<AppId, AppCanvasChannelState>;
+
+export type AppChannelAccess = {
+  channel: Channel | null;
+  members: ChannelMember[];
+};
 
 /** The relay marker is deliberately separate from the business channel Canvas. */
 export class CanvasAppDocumentStore implements AppDocumentStore {
@@ -186,6 +198,46 @@ export class CanvasAppDocumentStore implements AppDocumentStore {
     return { verified: allWritesVerified };
   }
 
+  /** Load the private app channel and its access list in the captured scope. */
+  async getAppAccess(
+    scope: AppDocumentScope,
+    appId: AppId,
+  ): Promise<AppChannelAccess> {
+    await this.assertActiveScope(scope);
+    const channels = await this.listChannels();
+    await this.assertActiveScope(scope);
+    this.assertBusinessMembership(channels, scope);
+    const channel = this.findAppChannel(channels, scope, appId);
+    if (!channel) return { channel: null, members: [] };
+
+    const members = await getChannelMembers(channel.id);
+    await this.assertActiveScope(scope);
+    this.assertPrivateMembership(channel, scope);
+    if (
+      !members.some(
+        (member) =>
+          member.pubkey.toLowerCase() ===
+          scope.expectedSignerPubkey.trim().toLowerCase(),
+      )
+    ) {
+      throw new Error(
+        "Your active identity is not listed in this private app channel.",
+      );
+    }
+    return { channel, members };
+  }
+
+  /** Create the private app channel only when the user explicitly requests it. */
+  async ensureAppChannelForAccess(
+    scope: AppDocumentScope,
+    appId: AppId,
+  ): Promise<Channel> {
+    await this.assertActiveScope(scope);
+    const channel = await this.ensureAppChannel(scope, appId);
+    await this.assertActiveScope(scope);
+    return channel;
+  }
+
   private cachedState(key: string): AppCanvasCache | undefined {
     const state = this.cache.get(key);
     if (state) {
@@ -211,6 +263,28 @@ export class CanvasAppDocumentStore implements AppDocumentStore {
       throw new Error("The relay did not return a fresh channel list.");
     }
     return result.channels;
+  }
+
+  private async assertActiveScope(scope: AppDocumentScope): Promise<void> {
+    const [relayUrl, identity] = await Promise.all([
+      getRelayWsUrl(),
+      getIdentity(),
+    ]);
+    const expectedRelay = canonicalRelayUrl(scope.expectedRelayUrl);
+    const activeRelay = canonicalRelayUrl(relayUrl);
+    const relayMatches =
+      expectedRelay !== null && activeRelay !== null
+        ? expectedRelay === activeRelay
+        : scope.expectedRelayUrl === relayUrl;
+    if (
+      !relayMatches ||
+      identity.pubkey.toLowerCase() !==
+        scope.expectedSignerPubkey.trim().toLowerCase()
+    ) {
+      throw new Error(
+        "The active relay or identity changed. Reopen app access in the current workspace.",
+      );
+    }
   }
 
   private assertBusinessMembership(
@@ -297,6 +371,7 @@ export class CanvasAppDocumentStore implements AppDocumentStore {
       channel.memberPubkeys.map((pubkey) => pubkey.toLowerCase()),
     );
     if (
+      channel.channelType !== "stream" ||
       channel.visibility !== "private" ||
       !channel.isMember ||
       !memberPubkeys.has(scope.expectedSignerPubkey.trim().toLowerCase())

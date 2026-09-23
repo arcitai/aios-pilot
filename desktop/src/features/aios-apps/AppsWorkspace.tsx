@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   Check,
+  PanelsTopLeft,
   Server,
   HardDrive,
   LoaderCircle,
@@ -14,6 +15,7 @@ import { cn } from "@/shared/lib/cn";
 import { CalendarEditor } from "./apps/CalendarEditor";
 import { DesignEditor } from "./apps/DesignEditor";
 import { SlidesEditor } from "./apps/SlidesEditor";
+import { AppAccessPanel } from "./AppAccessPanel";
 import { AIOS_APP_REGISTRY } from "./registry";
 import { canvasAppDocumentStore } from "./canvasStore";
 import {
@@ -22,7 +24,7 @@ import {
   type AppDocumentStore,
 } from "./storage";
 import { downloadTextFile } from "./htmlPreview";
-import type { AppId } from "./types";
+import type { AppsExtensionApp } from "./extensions";
 import { useAppDocumentWorkspace } from "./useAppDocumentWorkspace";
 import "./apps-workspace.css";
 
@@ -41,6 +43,10 @@ export type AppsWorkspaceProps = {
   documentStore?: AppDocumentStore;
   /** True while a document save or unfinished Calendar form draft is pending. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Use the compact chrome when the workspace is hosted inside Business. */
+  embedded?: boolean;
+  /** Optional independent apps hosted inside the existing Apps rail. */
+  extensionApps?: readonly AppsExtensionApp[];
 };
 
 /** Structural match for the CanvasScope consumed by the native API. */
@@ -99,6 +105,8 @@ export function AppsWorkspaceView({
   communityId,
   documentStore,
   onDirtyChange,
+  embedded = false,
+  extensionApps = [],
 }: AppsWorkspaceProps) {
   const scope = useMemo<AppDocumentScope | null>(() => {
     const expectedRelayUrl = nativeScope.expectedRelayUrl.trim();
@@ -118,10 +126,16 @@ export function AppsWorkspaceView({
     nativeScope.expectedRelayUrl,
     nativeScope.expectedSignerPubkey,
   ]);
-  const [selectedApp, setSelectedApp] = useState<AppId>("slides");
+  const [selectedApp, setSelectedApp] = useState<string>("slides");
+  const [visitedExtensions, setVisitedExtensions] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [storageMode, setStorageMode] = useState<StorageMode>("shared");
   const [recoveryError, setRecoveryError] = useState("");
   const [calendarDraftDirty, setCalendarDraftDirty] = useState(false);
+  const [extensionDirtyById, setExtensionDirtyById] = useState<
+    Record<string, boolean>
+  >({});
   const appDocumentStore =
     storageMode === "local-recovery"
       ? localAppDocumentStore
@@ -139,6 +153,17 @@ export function AppsWorkspaceView({
   const activeEntry = AIOS_APP_REGISTRY.find(
     (entry) => entry.id === selectedApp,
   );
+  const uniqueExtensionApps = useMemo(() => {
+    const ids = new Set<string>(AIOS_APP_REGISTRY.map((entry) => entry.id));
+    return extensionApps.filter((entry) => {
+      if (!entry.id.trim() || ids.has(entry.id)) return false;
+      ids.add(entry.id);
+      return true;
+    });
+  }, [extensionApps]);
+  const activeExtension = uniqueExtensionApps.find(
+    (entry) => entry.id === selectedApp,
+  );
   const statusText = workspace.saveVerificationUnavailable
     ? "Saved · confirmation unavailable"
     : describePhase(workspace.phase, appDocumentStore.label);
@@ -146,7 +171,48 @@ export function AppsWorkspaceView({
     workspace.phase === "unsaved" ||
     workspace.phase === "saving" ||
     (workspace.phase === "error" && workspace.errorStage === "save");
-  const dirty = documentDirty || calendarDraftDirty;
+  const extensionDirty = uniqueExtensionApps.some(
+    ({ id }) => extensionDirtyById[id],
+  );
+  const dirty = documentDirty || calendarDraftDirty || extensionDirty;
+  const updateExtensionDirty = useCallback((id: string, nextDirty: boolean) => {
+    setExtensionDirtyById((current) =>
+      current[id] === nextDirty ? current : { ...current, [id]: nextDirty },
+    );
+  }, []);
+  const extensionIdsKey = JSON.stringify(
+    uniqueExtensionApps.map((extension) => extension.id),
+  );
+  const extensionIds = useMemo(
+    () => JSON.parse(extensionIdsKey) as string[],
+    [extensionIdsKey],
+  );
+  const extensionContexts = useMemo(
+    () =>
+      new Map(
+        extensionIds.map(
+          (id) =>
+            [
+              id,
+              {
+                onDirtyChange: (nextDirty: boolean) =>
+                  updateExtensionDirty(id, nextDirty),
+              },
+            ] as const,
+        ),
+      ),
+    [extensionIds, updateExtensionDirty],
+  );
+
+  function selectExtension(id: string) {
+    setSelectedApp(id);
+    setVisitedExtensions((current) => {
+      if (current.has(id)) return current;
+      const next = new Set(current);
+      next.add(id);
+      return next;
+    });
+  }
 
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -183,24 +249,26 @@ export function AppsWorkspaceView({
 
   return (
     <section
-      className="aios-apps-workspace"
+      className={cn("aios-apps-workspace", embedded && "is-embedded")}
       aria-label="Business apps"
       data-testid="aios-apps-workspace"
     >
-      <header className="aios-apps-header">
-        <div className="aios-apps-brand">
-          <span className="aios-apps-mark" aria-hidden="true">
-            A
-          </span>
-          <div>
-            <p className="aios-eyebrow">Business workspace</p>
-            <h1>{companyName?.trim() || "Apps"}</h1>
-            {companySummary?.trim() ? (
-              <p className="aios-apps-summary">{companySummary}</p>
-            ) : null}
+      <header className={cn("aios-apps-header", embedded && "is-embedded")}>
+        {!embedded ? (
+          <div className="aios-apps-brand">
+            <span className="aios-apps-mark" aria-hidden="true">
+              A
+            </span>
+            <div>
+              <p className="aios-eyebrow">Business workspace</p>
+              <h1>{companyName?.trim() || "Apps"}</h1>
+              {companySummary?.trim() ? (
+                <p className="aios-apps-summary">{companySummary}</p>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <div className="aios-storage-status-wrap">
+        ) : null}
+        {embedded ? (
           <div
             className={cn(
               "aios-storage-status",
@@ -209,16 +277,50 @@ export function AppsWorkspaceView({
             )}
             role="status"
             aria-live="polite"
+            data-testid="aios-apps-embedded-save-status"
           >
             <StatusIcon phase={workspace.phase} isLocal={isLocalStore} />
-            <span>{statusText}</span>
+            <span>
+              {workspace.phase === "saved"
+                ? isLocalStore
+                  ? "Saved on this computer"
+                  : "Saved privately"
+                : workspace.phase === "loading"
+                  ? "Loading apps…"
+                  : workspace.phase === "saving"
+                    ? "Saving…"
+                    : workspace.phase === "unsaved"
+                      ? "Unsaved changes"
+                      : workspace.phase === "error"
+                        ? "Save needs attention"
+                        : isLocalStore
+                          ? "Ready to save on this computer"
+                          : "Ready to save privately"}
+            </span>
           </div>
-          {storageMode === "local-recovery" ? (
-            <span className="aios-storage-label">This device only</span>
-          ) : (
-            <span className="aios-storage-label">{appDocumentStore.label}</span>
-          )}
-        </div>
+        ) : (
+          <div className="aios-storage-status-wrap">
+            <div
+              className={cn(
+                "aios-storage-status",
+                workspace.phase === "error" && "is-error",
+                isLocalStore && "is-local",
+              )}
+              role="status"
+              aria-live="polite"
+            >
+              <StatusIcon phase={workspace.phase} isLocal={isLocalStore} />
+              <span>{statusText}</span>
+            </div>
+            {storageMode === "local-recovery" ? (
+              <span className="aios-storage-label">This device only</span>
+            ) : (
+              <span className="aios-storage-label">
+                {appDocumentStore.label}
+              </span>
+            )}
+          </div>
+        )}
       </header>
 
       <div className="aios-apps-layout">
@@ -246,6 +348,31 @@ export function AppsWorkspaceView({
                 </span>
               </button>
             ))}
+            {uniqueExtensionApps.map(({ id, title, description, Icon }) => (
+              <button
+                className={cn(
+                  "aios-app-nav-item",
+                  selectedApp === id && "is-active",
+                )}
+                data-testid={`aios-app-nav-${id}`}
+                key={id}
+                type="button"
+                aria-current={selectedApp === id ? "page" : undefined}
+                onClick={() => selectExtension(id)}
+              >
+                <span className="aios-app-nav-icon">
+                  {Icon ? (
+                    <Icon aria-hidden="true" />
+                  ) : (
+                    <PanelsTopLeft aria-hidden="true" />
+                  )}
+                </span>
+                <span className="aios-app-nav-copy">
+                  <strong>{title}</strong>
+                  <span>{description}</span>
+                </span>
+              </button>
+            ))}
           </nav>
           <div className="aios-apps-rail-note">
             <span className="aios-rail-note-dot" aria-hidden="true" />
@@ -257,25 +384,52 @@ export function AppsWorkspaceView({
           {activeEntry ? (
             <div className="aios-app-heading">
               <div>
-                <p className="aios-eyebrow">Workspace app</p>
+                {!embedded ? (
+                  <p className="aios-eyebrow">Workspace app</p>
+                ) : null}
                 <h2>{activeEntry.title}</h2>
               </div>
-              <div className="aios-capabilities">
-                {activeEntry.capabilities.map((capability) => (
-                  <span key={capability}>{capability}</span>
-                ))}
+              <div className="aios-app-heading-actions">
+                {!embedded ? (
+                  <div className="aios-capabilities">
+                    {activeEntry.capabilities.map((capability) => (
+                      <span key={capability}>{capability}</span>
+                    ))}
+                  </div>
+                ) : null}
+                <AppAccessPanel
+                  key={JSON.stringify([
+                    activeEntry.id,
+                    scope?.communityId ?? null,
+                    scope?.channelId ?? null,
+                    scope?.expectedRelayUrl ?? null,
+                    scope?.expectedSignerPubkey ?? null,
+                    appDocumentStore === canvasAppDocumentStore,
+                  ])}
+                  appId={activeEntry.id}
+                  scope={scope}
+                  enabled={appDocumentStore === canvasAppDocumentStore}
+                />
               </div>
             </div>
           ) : null}
 
-          {workspace.phase === "loading" ? (
+          {activeExtension ? (
+            <div className="aios-app-heading">
+              <div>
+                <h2>{activeExtension.title}</h2>
+              </div>
+            </div>
+          ) : null}
+
+          {activeEntry && workspace.phase === "loading" ? (
             <div className="aios-apps-state" role="status">
               <LoaderCircle className="aios-status-spin" aria-hidden="true" />
               <p>Loading your app documents…</p>
             </div>
           ) : null}
 
-          {workspace.phase === "blocked" ? (
+          {activeEntry && workspace.phase === "blocked" ? (
             <Card className="aios-apps-state-card">
               <AlertCircle aria-hidden="true" />
               <h3>Workspace access is needed</h3>
@@ -283,7 +437,8 @@ export function AppsWorkspaceView({
             </Card>
           ) : null}
 
-          {workspace.phase === "error" &&
+          {activeEntry &&
+          workspace.phase === "error" &&
           workspace.errorStage === "load" &&
           !workspace.document ? (
             <Card className="aios-apps-state-card is-error" role="alert">
@@ -314,7 +469,7 @@ export function AppsWorkspaceView({
             </Card>
           ) : null}
 
-          {workspace.phase === "error" && workspace.document ? (
+          {activeEntry && workspace.phase === "error" && workspace.document ? (
             <div className="aios-apps-save-error" role="alert">
               <AlertCircle aria-hidden="true" />
               <div>
@@ -373,7 +528,7 @@ export function AppsWorkspaceView({
             </div>
           ) : null}
 
-          {workspace.saveVerificationUnavailable ? (
+          {activeEntry && workspace.saveVerificationUnavailable ? (
             <div
               className="aios-apps-verification-note"
               role="status"
@@ -397,44 +552,43 @@ export function AppsWorkspaceView({
           {workspace.document &&
           workspace.phase !== "loading" &&
           workspace.phase !== "blocked" ? (
-            <>
-              <div className="aios-app-editor-shell">
-                <div hidden={selectedApp !== "slides"}>
-                  <SlidesEditor
-                    document={workspace.document.documents.slides}
-                    companyName={companyName}
-                    onChange={(next) =>
-                      workspace.updateDocument("slides", next)
-                    }
-                  />
-                </div>
-                <div hidden={selectedApp !== "calendar"}>
-                  <CalendarEditor
-                    document={workspace.document.documents.calendar}
-                    onChange={(next) =>
-                      workspace.updateDocument("calendar", next)
-                    }
-                    onDraftDirtyChange={setCalendarDraftDirty}
-                  />
-                </div>
-                <div hidden={selectedApp !== "design"}>
-                  <DesignEditor
-                    document={workspace.document.documents.design}
-                    onChange={(next) =>
-                      workspace.updateDocument("design", next)
-                    }
-                  />
-                </div>
+            <div className="aios-app-editor-shell" hidden={!activeEntry}>
+              <div hidden={selectedApp !== "slides"}>
+                <SlidesEditor
+                  document={workspace.document.documents.slides}
+                  companyName={companyName}
+                  onChange={(next) => workspace.updateDocument("slides", next)}
+                />
               </div>
-              {appDocumentStore === canvasAppDocumentStore ? (
-                <p className="aios-private-access-note">
-                  App documents live in separate private channels. Their access
-                  list is independent from this business channel; no members are
-                  added automatically.
-                </p>
-              ) : null}
-            </>
+              <div hidden={selectedApp !== "calendar"}>
+                <CalendarEditor
+                  document={workspace.document.documents.calendar}
+                  onChange={(next) =>
+                    workspace.updateDocument("calendar", next)
+                  }
+                  onDraftDirtyChange={setCalendarDraftDirty}
+                />
+              </div>
+              <div hidden={selectedApp !== "design"}>
+                <DesignEditor
+                  document={workspace.document.documents.design}
+                  onChange={(next) => workspace.updateDocument("design", next)}
+                />
+              </div>
+            </div>
           ) : null}
+          {uniqueExtensionApps
+            .filter(({ id }) => visitedExtensions.has(id))
+            .map(({ id, render }) => (
+              <div
+                className="aios-app-extension-shell"
+                hidden={selectedApp !== id}
+                key={id}
+                data-testid={`aios-app-extension-${id}`}
+              >
+                {render(extensionContexts.get(id) ?? {})}
+              </div>
+            ))}
         </div>
       </div>
     </section>

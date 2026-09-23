@@ -1,5 +1,11 @@
 export { AppsWorkspace } from "./AppsWorkspace";
 export type { AppsWorkspaceProps, NativeCanvasScope } from "./AppsWorkspace";
+export type {
+  AppsExtensionApp,
+  AppsExtensionRenderContext,
+} from "./extensions";
+export { AppAccessPanel } from "./AppAccessPanel";
+export type { AppChannelAccess } from "./canvasStore";
 export { AIOS_APP_REGISTRY, getAppRegistryEntry } from "./registry";
 export {
   CanvasAppDocumentStore,

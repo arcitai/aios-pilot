@@ -26,6 +26,7 @@ export default defineConfig({
         "**/business-apps.spec.ts",
         "**/business-voice.spec.ts",
         "**/agent-permissions.spec.ts",
+        "**/aios-apps-access.spec.ts",
         "**/smoke.spec.ts",
         "**/mock-subscription-readiness.spec.ts",
         "**/owned-agent-discovery.spec.ts",
