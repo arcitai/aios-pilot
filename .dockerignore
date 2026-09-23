@@ -29,6 +29,12 @@ web/dist/
 *.key
 secrets/
 
+# AIOS self-hosting runtime files include credentials and relay records.
+deploy/aios/.env
+deploy/aios/*.env
+deploy/aios/backups/
+deploy/aios/restores/
+
 # OS junk
 .DS_Store
 Thumbs.db

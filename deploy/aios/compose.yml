@@ -1,0 +1,14 @@
+name: aios-buzz-local
+
+services:
+  relay:
+    build:
+      context: ../../
+      dockerfile: Dockerfile
+    env_file: !override
+      - ${AIOS_ENV_FILE:?Set AIOS_ENV_FILE to the private AIOS environment file}
+    ports: !override
+      - target: 3000
+        published: "${BUZZ_HTTP_PORT:-3341}"
+        host_ip: 127.0.0.1
+        protocol: tcp

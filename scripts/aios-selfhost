@@ -1,0 +1,1010 @@
+#!/usr/bin/env python3
+"""Operate an isolated, local AIOS Buzz relay using the upstream Compose stack."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import hashlib
+import json
+import os
+import re
+import shutil
+import socket
+import stat
+import subprocess
+import sys
+import tarfile
+import tempfile
+import threading
+from collections import deque
+from pathlib import Path, PurePosixPath
+
+
+ROOT = Path(__file__).resolve().parent.parent
+BASE_COMPOSE = ROOT / "deploy/compose/compose.yml"
+LOCAL_COMPOSE = ROOT / "deploy/aios/compose.yml"
+DEFAULT_ENV = ROOT / "deploy/aios/.env"
+DEFAULT_IDENTITY = ROOT / "deploy/aios/test-identity.env"
+BACKUP_ROOT = ROOT / "deploy/aios/backups"
+RESTORE_ROOT = ROOT / "deploy/aios/restores"
+DEFAULT_PROJECT = "aios-buzz-local"
+MIN_COMPOSE = (2, 24, 4)
+ARCHIVE_IMAGE = "alpine:3.22"
+VOLUMES = {
+    "postgres": "buzz-postgres-data",
+    "redis": "buzz-redis-data",
+    "minio": "buzz-minio-data",
+    "git": "buzz-git-data",
+}
+SECRET_KEYS = (
+    "BUZZ_RELAY_PRIVATE_KEY",
+    "BUZZ_GIT_HOOK_HMAC_SECRET",
+    "POSTGRES_PASSWORD",
+    "REDIS_PASSWORD",
+    "BUZZ_S3_ACCESS_KEY",
+    "BUZZ_S3_SECRET_KEY",
+)
+REDACTED_OUTPUT_LIMIT = 24_000
+MAX_ARCHIVE_ENTRIES = 5_000_000
+MAX_ARCHIVE_BYTES = 2 * 1024**4
+MAX_MANIFEST_BYTES = 64 * 1024
+MAX_ENV_FILE_BYTES = 64 * 1024
+
+
+class OperationError(Exception):
+    pass
+
+
+def fail(message: str) -> None:
+    raise OperationError(message)
+
+
+def redact(text: str, values: dict[str, str]) -> str:
+    for key in SECRET_KEYS:
+        value = values.get(key, "")
+        if value:
+            text = text.replace(value, "[redacted]")
+    return text
+
+
+def parse_env(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        fail(f"Cannot read environment file {path}: {exc}")
+    for number, line in enumerate(content.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        key, sep, value = line.partition("=")
+        if not sep or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key.strip()):
+            fail(f"Invalid environment-file entry on line {number}.")
+        values[key.strip()] = value.strip()
+    return values
+
+
+def private_env_file(path: Path) -> dict[str, str]:
+    if not path.is_file() or path.is_symlink():
+        fail(f"Environment file not found or is a symlink: {path}; run setup first.")
+    file_stat = path.stat()
+    if file_stat.st_size > MAX_ENV_FILE_BYTES:
+        fail(f"Environment file exceeds the {MAX_ENV_FILE_BYTES}-byte size limit: {path}")
+    mode = stat.S_IMODE(file_stat.st_mode)
+    if mode & 0o077:
+        fail(f"Environment file permissions are {mode:04o}; restrict it with chmod 600 {path}.")
+    values = parse_env(path)
+    missing = [key for key in SECRET_KEYS if not values.get(key)]
+    if missing:
+        fail("Environment file is missing required generated secrets; run setup with a new file.")
+    for key in SECRET_KEYS:
+        if "CHANGE_ME" in values[key]:
+            fail("Environment file still contains a secret placeholder; generate fresh local secrets.")
+    private_key = values["BUZZ_RELAY_PRIVATE_KEY"]
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", private_key):
+        fail("BUZZ_RELAY_PRIVATE_KEY must be a 32-byte hexadecimal Nostr secret.")
+    try:
+        port = int(values.get("BUZZ_HTTP_PORT", ""))
+    except ValueError:
+        fail("BUZZ_HTTP_PORT must be a TCP port number.")
+    if not 1024 <= port <= 65535:
+        fail("BUZZ_HTTP_PORT must be between 1024 and 65535.")
+    return values
+
+
+def project_name(value: str) -> str:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,62}", value):
+        fail("Compose project name must be 1–63 lowercase letters, digits, hyphens, or underscores.")
+    return value
+
+
+def project_name_argument(value: str) -> str:
+    try:
+        return project_name(value)
+    except OperationError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def compose_env(env_file: Path, values: dict[str, str] | None = None) -> dict[str, str]:
+    result = os.environ.copy()
+    parsed = values if values is not None else parse_env(env_file)
+    # The generated local file is authoritative. Ambient Buzz variables from a
+    # shell must not redirect the relay to a different community or port.
+    for key in parsed:
+        result.pop(key, None)
+    result["AIOS_ENV_FILE"] = str(env_file.resolve())
+    return result
+
+
+def run_capture(
+    args: list[str],
+    *,
+    env: dict[str, str] | None = None,
+    values: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> tuple[int, str]:
+    try:
+        result = subprocess.run(
+            args,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError:
+        return 127, f"Executable not found: {args[0]}"
+    except subprocess.TimeoutExpired:
+        return 124, f"Command timed out: {args[0]}"
+    return result.returncode, redact(result.stdout or "", values or {})
+
+
+def run_stream(
+    args: list[str],
+    *,
+    env: dict[str, str],
+    values: dict[str, str],
+    timeout: int | None = None,
+) -> None:
+    try:
+        process = subprocess.Popen(
+            args,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+    except FileNotFoundError:
+        fail(f"Executable not found: {args[0]}")
+    tail: deque[str] = deque(maxlen=40)
+    assert process.stdout is not None
+    timed_out = threading.Event()
+
+    def stop_on_timeout() -> None:
+        if process.poll() is None:
+            timed_out.set()
+            process.kill()
+
+    timer = threading.Timer(timeout, stop_on_timeout) if timeout is not None else None
+    if timer is not None:
+        timer.daemon = True
+        timer.start()
+    try:
+        for line in process.stdout:
+            safe_line = redact(line, values)
+            tail.append(safe_line[-3000:])
+            sys.stdout.write(safe_line)
+            sys.stdout.flush()
+        code = process.wait()
+    except KeyboardInterrupt:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+        raise
+    finally:
+        if timer is not None:
+            timer.cancel()
+    if timed_out.is_set():
+        fail(f"Command timed out: {' '.join(args[:4])}")
+    if code:
+        detail = "".join(tail)[-REDACTED_OUTPUT_LIMIT:]
+        fail(f"Command failed ({code}): {' '.join(args[:4])}\n{detail}")
+
+
+def compose_args(project: str, env_file: Path, *command: str) -> list[str]:
+    return [
+        "docker",
+        "compose",
+        "--project-name",
+        project,
+        "--env-file",
+        str(env_file.resolve()),
+        "-f",
+        str(BASE_COMPOSE),
+        "-f",
+        str(LOCAL_COMPOSE),
+        *command,
+    ]
+
+
+def config_json(project: str, env_file: Path, values: dict[str, str]) -> dict:
+    if not BASE_COMPOSE.is_file() or not LOCAL_COMPOSE.is_file():
+        fail("Upstream or local Compose file is missing from this checkout.")
+    result, output = run_capture(
+        compose_args(project, env_file, "config", "--format", "json"),
+        env=compose_env(env_file, values),
+        timeout=45,
+    )
+    if result:
+        detail = redact(output, values)[-REDACTED_OUTPUT_LIMIT:]
+        fail(f"Compose config validation failed ({result}).\n{detail}")
+    try:
+        config = json.loads(output)
+    except json.JSONDecodeError:
+        fail("Docker Compose returned invalid JSON for its rendered configuration.")
+    if config.get("name") != project:
+        fail("Rendered Compose project name does not match the isolated project name.")
+    relay_ports = config.get("services", {}).get("relay", {}).get("ports", [])
+    if len(relay_ports) != 1 or relay_ports[0].get("host_ip") != "127.0.0.1":
+        fail("Relay host port is not restricted to the loopback interface.")
+    for service in ("postgres", "redis", "minio"):
+        if config.get("services", {}).get(service, {}).get("ports"):
+            fail(f"{service} must not publish a host port in the local stack.")
+    for resource in VOLUMES.values():
+        actual = config.get("volumes", {}).get(resource, {}).get("name", "")
+        if not actual.startswith(f"{project}_"):
+            fail(f"Compose volume {resource} is not isolated under project {project}.")
+    return config
+
+
+def compose_version() -> tuple[tuple[int, int, int], str]:
+    code, output = run_capture(["docker", "compose", "version", "--short"])
+    if code:
+        fail("Docker Compose v2 is unavailable. Install Docker Compose v2.24.4 or newer.")
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", output)
+    if not match:
+        fail("Could not read the Docker Compose version.")
+    version = tuple(int(part) for part in match.groups())
+    if version < MIN_COMPOSE:
+        fail("Docker Compose 2.24.4 or newer is required for the upstream !reset/!override tags.")
+    return version, output.strip()
+
+
+def engine_version() -> str:
+    code, output = run_capture(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=10)
+    if code:
+        detail = output.strip().splitlines()[-1] if output.strip() else "no daemon response"
+        fail(f"Docker CLI is installed, but the Docker Engine is unreachable ({detail}). Start Docker Desktop or the configured daemon, then rerun doctor.")
+    return output.strip()
+
+
+def validate_stack(project: str, env_file: Path, *, require_engine: bool) -> dict[str, str]:
+    values = private_env_file(env_file)
+    _, version_text = compose_version()
+    config_json(project, env_file, values)
+    if require_engine:
+        server = engine_version()
+        print(f"PASS Docker Engine {server}")
+    print(f"PASS {version_text}; Compose resolves the local stack.")
+    print("PASS host publishing is loopback-only; Postgres, Redis, and MinIO stay internal.")
+    print(f"PASS private environment file has mode {stat.S_IMODE(env_file.stat().st_mode):04o}.")
+    return values
+
+
+def openssl_random_hex(byte_count: int) -> str:
+    code, output = run_capture(["openssl", "rand", "-hex", str(byte_count)], timeout=10)
+    if code:
+        fail("OpenSSL could not generate a local secret.")
+    value = output.strip()
+    if not re.fullmatch(rf"[0-9a-f]{{{byte_count * 2}}}", value):
+        fail("OpenSSL returned a malformed random value.")
+    return value
+
+
+def read_tlv(data: bytes, offset: int) -> tuple[int, bytes, int]:
+    if offset + 2 > len(data):
+        fail("OpenSSL returned a truncated elliptic-curve key.")
+    tag = data[offset]
+    first_length = data[offset + 1]
+    pos = offset + 2
+    if first_length & 0x80:
+        octets = first_length & 0x7F
+        if octets == 0 or octets > 4 or pos + octets > len(data):
+            fail("OpenSSL returned an invalid elliptic-curve key encoding.")
+        length = int.from_bytes(data[pos : pos + octets], "big")
+        pos += octets
+    else:
+        length = first_length
+    end = pos + length
+    if end > len(data):
+        fail("OpenSSL returned a truncated elliptic-curve key.")
+    return tag, data[pos:end], end
+
+
+def generate_relay_identity() -> tuple[str, str]:
+    openssl = shutil.which("openssl")
+    if not openssl:
+        fail("OpenSSL is required for setup; install it and retry.")
+    with tempfile.TemporaryDirectory(prefix="aios-buzz-key-") as temp_dir:
+        private_pem = Path(temp_dir) / "relay.pem"
+        private_der = Path(temp_dir) / "relay.der"
+        public_der = Path(temp_dir) / "relay.pub.der"
+        commands = (
+            [openssl, "ecparam", "-name", "secp256k1", "-genkey", "-noout", "-out", str(private_pem)],
+            [openssl, "ec", "-in", str(private_pem), "-outform", "DER", "-out", str(private_der)],
+            [openssl, "ec", "-in", str(private_pem), "-pubout", "-conv_form", "compressed", "-outform", "DER", "-out", str(public_der)],
+        )
+        for command in commands:
+            try:
+                result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            except OSError:
+                fail("OpenSSL could not generate the local Nostr relay identity.")
+            if result.returncode:
+                fail("OpenSSL could not generate the local Nostr relay identity.")
+        private_bytes = private_der.read_bytes()
+        tag, sequence, _ = read_tlv(private_bytes, 0)
+        if tag != 0x30:
+            fail("OpenSSL returned an invalid private-key sequence.")
+        tag, _, offset = read_tlv(sequence, 0)
+        if tag != 0x02:
+            fail("OpenSSL returned an invalid private-key version.")
+        tag, secret_bytes, _ = read_tlv(sequence, offset)
+        if tag != 0x04 or len(secret_bytes) != 32:
+            fail("OpenSSL returned an invalid secp256k1 private scalar.")
+        scalar = int.from_bytes(secret_bytes, "big")
+        curve_order = int("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141", 16)
+        if scalar == 0 or scalar >= curve_order:
+            fail("OpenSSL returned an invalid secp256k1 private scalar.")
+
+        public_bytes = public_der.read_bytes()
+        tag, sequence, _ = read_tlv(public_bytes, 0)
+        if tag != 0x30:
+            fail("OpenSSL returned an invalid public-key sequence.")
+        tag, _, offset = read_tlv(sequence, 0)
+        if tag != 0x30:
+            fail("OpenSSL returned an invalid public-key algorithm identifier.")
+        tag, bit_string, _ = read_tlv(sequence, offset)
+        if tag != 0x03 or len(bit_string) != 34 or bit_string[0] != 0:
+            fail("OpenSSL returned an invalid compressed public key.")
+        point = bit_string[1:]
+        if point[0] not in (2, 3):
+            fail("OpenSSL returned an invalid compressed secp256k1 point.")
+        return secret_bytes.hex(), point[1:].hex()
+
+
+def source_revision() -> str:
+    code, output = run_capture(["git", "-C", str(ROOT), "rev-parse", "--short", "HEAD"])
+    if code or not re.fullmatch(r"[0-9a-f]{7,40}", output.strip()):
+        return "local"
+    return output.strip()
+
+
+def create_environment(path: Path, port: int) -> None:
+    if path.exists() or path.is_symlink():
+        fail(f"Refusing to overwrite existing environment file: {path}")
+    if not 1024 <= port <= 65535:
+        fail("Relay port must be between 1024 and 65535.")
+    relay_secret, relay_pubkey = generate_relay_identity()
+    secrets = {
+        "BUZZ_RELAY_PRIVATE_KEY": relay_secret,
+        "BUZZ_GIT_HOOK_HMAC_SECRET": openssl_random_hex(32),
+        "POSTGRES_PASSWORD": openssl_random_hex(32),
+        "REDIS_PASSWORD": openssl_random_hex(32),
+        "BUZZ_S3_ACCESS_KEY": openssl_random_hex(16),
+        "BUZZ_S3_SECRET_KEY": openssl_random_hex(32),
+    }
+    host = "127.0.0.1"
+    settings = {
+        "BUZZ_IMAGE": "aios-buzz:local",
+        "BUZZ_DOMAIN": host,
+        "RELAY_URL": f"ws://{host}:{port}",
+        "BUZZ_MEDIA_BASE_URL": f"http://{host}:{port}/media",
+        "BUZZ_MEDIA_SERVER_DOMAIN": host,
+        "BUZZ_CORS_ORIGINS": f"http://{host}:{port},http://localhost:{port}",
+        "BUZZ_REQUIRE_AUTH_TOKEN": "false",
+        "BUZZ_REQUIRE_RELAY_MEMBERSHIP": "false",
+        "BUZZ_ALLOW_NIP_OA_AUTH": "false",
+        "BUZZ_AUTO_MIGRATE": "true",
+        "BUZZ_GIT_CONFORMANCE_PROBE": "true",
+        "BUZZ_PUSH_ENABLED": "false",
+        "BUZZ_S3_ADDRESSING_STYLE": "path",
+        "BUZZ_S3_BUCKET": "buzz-media",
+        "BUZZ_HTTP_PORT": str(port),
+        "RUST_LOG": "buzz_relay=info,buzz_db=info,buzz_auth=info,buzz_pubsub=info,tower_http=info",
+    }
+    content = [
+        "# Generated locally by scripts/aios-selfhost setup. Keep this file private.",
+        f"# Source checkout: {source_revision()}",
+        "# The relay key is a Nostr protocol identity, not a cryptocurrency wallet.",
+        f"# Relay public key: {relay_pubkey}",
+    ]
+    content.extend(f"{key}={value}" for key, value in settings.items())
+    content.extend(f"{key}={value}" for key, value in secrets.items())
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        fail(f"Refusing to overwrite existing environment file: {path}")
+    except OSError as exc:
+        fail(f"Could not create private environment file {path}: {exc}")
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write("\n".join(content) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(path, 0o600)
+
+
+def create_test_identity(path: Path) -> str:
+    if path.exists() or path.is_symlink():
+        fail(f"Refusing to overwrite existing identity file: {path}")
+    secret, pubkey = generate_relay_identity()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        fail(f"Refusing to overwrite existing identity file: {path}")
+    except OSError as exc:
+        fail(f"Could not create private test identity {path}: {exc}")
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write("# Local Nostr test identity. Keep private; not a wallet.\n")
+        stream.write(f"BUZZ_PRIVATE_KEY={secret}\nBUZZ_TEST_PUBKEY={pubkey}\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(path, 0o600)
+    return pubkey
+
+
+def volume_names(config: dict) -> dict[str, str]:
+    configured = config.get("volumes", {})
+    names: dict[str, str] = {}
+    for service, resource in VOLUMES.items():
+        name = configured.get(resource, {}).get("name")
+        if not name:
+            fail(f"Compose did not resolve the {service} data volume.")
+        names[service] = name
+    return names
+
+
+def service_running(project: str, env_file: Path, values: dict[str, str]) -> list[str]:
+    code, output = run_capture(
+        compose_args(project, env_file, "ps", "--services", "--status", "running"),
+        env=compose_env(env_file, values),
+        values=values,
+        timeout=30,
+    )
+    if code:
+        fail(f"Could not inspect the isolated Compose project.\n{output[-4000:]}")
+    return [line.strip() for line in output.splitlines() if line.strip()]
+
+
+def volume_exists(name: str) -> bool:
+    code, _ = run_capture(["docker", "volume", "inspect", name], timeout=10)
+    return code == 0
+
+
+def helper_container(volume: str, archive_dir: Path, archive_name: str, *, restore: bool) -> None:
+    archive_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    volumes = ["--volume", f"{volume}:/target:{'rw' if restore else 'ro'}"]
+    command = ["docker", "run", "--rm", "--pull=missing", "--network", "none"]
+    if restore:
+        command.extend(["--volume", f"{archive_dir.resolve()}:/backup:ro"])
+        command.extend(volumes)
+        command.extend([ARCHIVE_IMAGE, "sh", "-eu", "-c", "tar -xzf \"/backup/$1\" -C /target", "sh", archive_name])
+    else:
+        command.extend(volumes)
+        command.extend(["--volume", f"{archive_dir.resolve()}:/backup:rw"])
+        command.extend([ARCHIVE_IMAGE, "sh", "-eu", "-c", "tar -czf \"/backup/$1\" -C /target .", "sh", archive_name])
+    code, output = run_capture(command, timeout=900)
+    if code:
+        fail(f"Could not {'restore' if restore else 'archive'} volume {volume} ({code}).\n{output[-4000:]}")
+
+
+def sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def safe_archive(path: Path) -> None:
+    entries = 0
+    total_size = 0
+    try:
+        with tarfile.open(path, mode="r|gz") as archive:
+            for member in archive:
+                entries += 1
+                total_size += max(member.size, 0)
+                if entries > MAX_ARCHIVE_ENTRIES or total_size > MAX_ARCHIVE_BYTES:
+                    fail(f"Backup archive exceeds the safety limits: {path.name}")
+                name = member.name
+                normalized = str(PurePosixPath(name))
+                if name.startswith("/") or normalized == ".." or normalized.startswith("../"):
+                    fail(f"Backup archive contains an unsafe path: {path.name}")
+                if not (member.isdir() or member.isfile() or member.issym() or member.islnk()):
+                    fail(f"Backup archive contains an unsupported file type: {path.name}")
+                if member.issym() or member.islnk():
+                    link = member.linkname
+                    resolved = os.path.normpath(os.path.join(os.path.dirname(normalized), link))
+                    if link.startswith("/") or resolved == ".." or resolved.startswith("../"):
+                        fail(f"Backup archive contains an unsafe link: {path.name}")
+    except (OSError, tarfile.TarError) as exc:
+        fail(f"Could not validate backup archive {path.name}: {exc}")
+
+
+def backup(project: str, env_file: Path) -> None:
+    values = validate_stack(project, env_file, require_engine=True)
+    config = config_json(project, env_file, values)
+    names = volume_names(config)
+    for name in names.values():
+        if not volume_exists(name):
+            fail(f"Persistent volume is missing ({name}); start this project before backing it up.")
+
+    if BACKUP_ROOT.is_symlink():
+        fail(f"Refusing to use a symlink as the backup directory: {BACKUP_ROOT}")
+    BACKUP_ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
+    os.chmod(BACKUP_ROOT, 0o700)
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    destination = BACKUP_ROOT / f"{project}-{stamp}"
+    destination.mkdir(mode=0o700)
+    os.chmod(destination, 0o700)
+    archive_dir = destination / "data"
+    archive_dir.mkdir(mode=0o700)
+    os.chmod(archive_dir, 0o700)
+    env_copy = destination / "environment.env"
+    running = service_running(project, env_file, values)
+    stopped = False
+    try:
+        shutil.copyfile(env_file, env_copy)
+        os.chmod(env_copy, 0o600)
+        stopped = True
+        run_stream(
+            compose_args(project, env_file, "stop"),
+            env=compose_env(env_file, values),
+            values=values,
+            timeout=120,
+        )
+        for service, volume in names.items():
+            helper_container(volume, archive_dir, f"{service}.tar.gz", restore=False)
+            os.chmod(archive_dir / f"{service}.tar.gz", 0o600)
+        files = {"environment.env": sha256(env_copy)}
+        files.update({f"data/{service}.tar.gz": sha256(archive_dir / f"{service}.tar.gz") for service in VOLUMES})
+        manifest = {
+            "format": "aios-buzz-selfhost-backup",
+            "version": 1,
+            "createdAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "sourceProject": project,
+            "sourceCommit": source_revision(),
+            "volumes": names,
+            "sha256": files,
+        }
+        manifest_path = destination / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        os.chmod(manifest_path, 0o600)
+    except BaseException:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
+    finally:
+        if stopped and running:
+            code, output = run_capture(
+                compose_args(project, env_file, "start", *running),
+                env=compose_env(env_file, values),
+                values=values,
+                timeout=180,
+            )
+            if code:
+                print("ERROR backup completed, but the previously running services did not restart.", file=sys.stderr)
+                if output.strip():
+                    print(output[-4000:], file=sys.stderr)
+                if destination.exists():
+                    print(f"Backup remains at {destination}", file=sys.stderr)
+                raise OperationError("Restart the isolated project with scripts/aios-selfhost start.")
+    print(f"Backup created: {destination}")
+    print("Contains private environment values and relay data; keep it local and restrict access.")
+
+
+def verify_backup(directory: Path) -> tuple[dict, Path, dict[str, str]]:
+    if not directory.is_dir() or directory.is_symlink():
+        fail(f"Backup directory not found or is a symlink: {directory}")
+    if stat.S_IMODE(directory.stat().st_mode) & 0o077:
+        fail(f"Backup directory permissions are too open; restrict it with chmod 700 {directory}.")
+    manifest_path = directory / "manifest.json"
+    env_copy = directory / "environment.env"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        fail("Backup manifest is missing or is a symlink.")
+    if manifest_path.stat().st_size > MAX_MANIFEST_BYTES:
+        fail(f"Backup manifest exceeds the {MAX_MANIFEST_BYTES}-byte size limit.")
+    if stat.S_IMODE(manifest_path.stat().st_mode) & 0o077:
+        fail("Backup manifest permissions are too open; restrict the file with chmod 600.")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"Backup manifest is missing or invalid: {exc}")
+    if not isinstance(manifest, dict):
+        fail("Backup manifest must be a JSON object.")
+    if manifest.get("format") != "aios-buzz-selfhost-backup" or type(manifest.get("version")) is not int or manifest["version"] != 1:
+        fail("Unsupported AIOS Buzz backup format.")
+
+    source_project = manifest.get("sourceProject")
+    try:
+        source_project = project_name(source_project)
+    except (OperationError, TypeError):
+        fail("Backup source project metadata is missing or invalid.")
+    source_commit = manifest.get("sourceCommit")
+    if not isinstance(source_commit, str) or not (source_commit == "local" or re.fullmatch(r"[0-9a-f]{7,40}", source_commit)):
+        fail("Backup source commit metadata is missing or invalid.")
+    created_at = manifest.get("createdAt")
+    if not isinstance(created_at, str) or len(created_at) > 64:
+        fail("Backup creation-time metadata is missing or exceeds the 64-character limit.")
+    try:
+        created = dt.datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        fail("Backup creation-time metadata is not a valid ISO 8601 timestamp.")
+    if created.tzinfo is None or created.utcoffset() is None:
+        fail("Backup creation-time metadata must include a timezone.")
+    if created > dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=5):
+        fail("Backup creation-time metadata is more than five minutes in the future.")
+
+    expected_volumes = {service: f"{source_project}_{resource}" for service, resource in VOLUMES.items()}
+    if manifest.get("volumes") != expected_volumes:
+        fail("Backup source volume metadata does not match its Compose project and expected data services.")
+    data_dir = directory / "data"
+    if data_dir.is_symlink() or not data_dir.is_dir() or stat.S_IMODE(data_dir.stat().st_mode) & 0o077:
+        fail("Backup data directory is missing, is a symlink, or has open permissions; restrict it with chmod 700.")
+
+    expected = {"environment.env"} | {f"data/{service}.tar.gz" for service in VOLUMES}
+    checksums = manifest.get("sha256", {})
+    if not isinstance(checksums, dict) or set(checksums) != expected:
+        fail("Backup manifest does not contain the expected environment and four data archives.")
+    for relative in sorted(expected):
+        path = directory / relative
+        if path.is_symlink() or not path.is_file():
+            fail(f"Backup file is missing or is a symlink: {relative}")
+        if stat.S_IMODE(path.stat().st_mode) & 0o077:
+            fail(f"Backup file permissions are too open; restrict it with chmod 600: {relative}")
+        if path.stat().st_size > MAX_ARCHIVE_BYTES:
+            fail(f"Backup file exceeds the {MAX_ARCHIVE_BYTES}-byte size limit: {relative}")
+        if not isinstance(checksums[relative], str) or not re.fullmatch(r"[0-9a-f]{64}", checksums[relative]):
+            fail(f"Backup contains an invalid SHA-256 checksum: {relative}")
+        if sha256(path) != checksums[relative]:
+            fail(f"Backup checksum mismatch: {relative}")
+        if relative.startswith("data/"):
+            safe_archive(path)
+    values = private_env_file(env_copy)
+    return manifest, env_copy, values
+
+
+def free_local_port(start: int) -> int:
+    for port in list(range(max(1024, start), 65536)) + list(range(3341, max(1024, start))):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    fail("Could not find an unused loopback TCP port for the restored stack.")
+
+
+def write_restored_env(source: Path, destination: Path, old_port: int, new_port: int, values: dict[str, str]) -> None:
+    content = source.read_text(encoding="utf-8")
+    local_host = values.get("BUZZ_DOMAIN") in ("127.0.0.1", "localhost", "[::1]")
+    if local_host:
+        replacements = {
+            "BUZZ_HTTP_PORT": str(new_port),
+            "RELAY_URL": f"ws://127.0.0.1:{new_port}",
+            "BUZZ_MEDIA_BASE_URL": f"http://127.0.0.1:{new_port}/media",
+            "BUZZ_CORS_ORIGINS": f"http://127.0.0.1:{new_port},http://localhost:{new_port}",
+        }
+        lines: list[str] = []
+        seen: set[str] = set()
+        for line in content.splitlines():
+            key, sep, _ = line.partition("=")
+            if sep and key in replacements:
+                lines.append(f"{key}={replacements[key]}")
+                seen.add(key)
+            else:
+                lines.append(line)
+        if set(replacements) != seen:
+            fail("The backup environment is missing local endpoint settings; refusing to edit it for restore.")
+        content = "\n".join(lines) + "\n"
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    destination.parent.chmod(0o700)
+    fd = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as stream:
+        stream.write(content)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.chmod(destination, 0o600)
+
+
+def rebind_local_community(project: str, env_file: Path, values: dict[str, str], old_port: int, new_port: int) -> None:
+    domain = values.get("BUZZ_DOMAIN", "")
+    if domain not in ("127.0.0.1", "localhost", "[::1]"):
+        fail("Local community rebinding requires a loopback BUZZ_DOMAIN.")
+    old_host = f"{domain}:{old_port}"
+    new_host = f"{domain}:{new_port}"
+    old_host_sql = "'" + old_host.replace("'", "''") + "'"
+    new_host_sql = "'" + new_host.replace("'", "''") + "'"
+    environment = compose_env(env_file, values)
+
+    # Host-bound communities include the port in their key. A local restore
+    # needs a new host port while the source stack may still be running, so
+    # move the restored community mapping before the relay can seed a second
+    # community on first boot.
+    run_stream(
+        compose_args(project, env_file, "up", "-d", "--wait", "postgres"),
+        env=environment,
+        values=values,
+        timeout=180,
+    )
+    psql = compose_args(
+        project,
+        env_file,
+        "exec",
+        "-T",
+        "postgres",
+        "psql",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-U",
+        values.get("POSTGRES_USER", "buzz"),
+        "-d",
+        values.get("POSTGRES_DB", "buzz"),
+        "-qAtc",
+    )
+    code, output = run_capture(
+        psql + [
+            f"SELECT count(*) FILTER (WHERE host = {old_host_sql}), "
+            f"count(*) FILTER (WHERE host = {new_host_sql}) FROM communities;"
+        ],
+        env=environment,
+        values=values,
+        timeout=60,
+    )
+    if code:
+        fail(f"Could not inspect the restored community host mapping.\n{output[-3000:]}")
+    if output.strip() != "1|0":
+        fail("The restored database must contain exactly one source loopback community and no target-port community.")
+
+    code, output = run_capture(
+        psql
+        + [
+            f"UPDATE communities SET host = {new_host_sql} WHERE host = {old_host_sql}; "
+            f"SELECT count(*) FILTER (WHERE host = {old_host_sql}), "
+            f"count(*) FILTER (WHERE host = {new_host_sql}) FROM communities;"
+        ],
+        env=environment,
+        values=values,
+        timeout=60,
+    )
+    if code:
+        fail(f"Could not rebind the restored community to its new loopback port.\n{output[-3000:]}")
+    if output.strip().splitlines()[-1:] != ["0|1"]:
+        fail("The restored community host mapping did not move to the new loopback port.")
+    print(f"Restored community host is bound to {new_host}.")
+
+
+def restore(directory: Path, requested_project: str | None, should_start: bool) -> None:
+    manifest, env_copy, values = verify_backup(directory)
+    compose_version()
+    engine_version()
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d-%H%M%S")
+    project = project_name(requested_project or f"aios-buzz-restore-{stamp}")
+    restored_env = RESTORE_ROOT / project / ".env"
+    if restored_env.exists() or restored_env.is_symlink():
+        fail(f"Refusing to overwrite an existing restored environment: {restored_env}")
+    if RESTORE_ROOT.is_symlink() or (RESTORE_ROOT / project).exists() or (RESTORE_ROOT / project).is_symlink():
+        fail(f"Refusing to reuse an existing restore directory: {RESTORE_ROOT / project}")
+    original_port = int(values["BUZZ_HTTP_PORT"])
+    local_host = values.get("BUZZ_DOMAIN") in ("127.0.0.1", "localhost", "[::1]")
+    port = free_local_port(original_port + 1) if local_host else original_port
+    write_restored_env(env_copy, restored_env, original_port, port, values)
+    restored_values = private_env_file(restored_env)
+    config = config_json(project, restored_env, restored_values)
+    names = volume_names(config)
+    existing = [name for name in names.values() if volume_exists(name)]
+    if existing:
+        restored_env.unlink()
+        fail("Restore target project already has persistent volumes; choose a new --project-name. No existing volume was changed.")
+
+    backup_id = hashlib.sha256((str(directory.resolve()) + manifest["createdAt"]).encode()).hexdigest()[:16]
+    created: list[str] = []
+    try:
+        for service, resource in VOLUMES.items():
+            volume = names[service]
+            code, output = run_capture(
+                [
+                    "docker",
+                    "volume",
+                    "create",
+                    "--label",
+                    f"com.docker.compose.project={project}",
+                    "--label",
+                    f"com.docker.compose.volume={resource}",
+                    "--label",
+                    f"com.buzz.aios.restore={backup_id}",
+                    volume,
+                ],
+                timeout=30,
+            )
+            if code:
+                fail(f"Could not create isolated restore volume for {service}.\n{output[-3000:]}")
+            created.append(volume)
+            helper_container(volume, directory / "data", f"{service}.tar.gz", restore=True)
+    except Exception:
+        if created:
+            print("Restore stopped with partial data in newly created volumes; no pre-existing volume was changed.", file=sys.stderr)
+            print(f"Partial restore project: {project} ({', '.join(created)})", file=sys.stderr)
+        raise
+
+    print(f"Restored data into new Compose project: {project}")
+    print(f"Private environment copy: {restored_env}")
+    if local_host:
+        print(f"Loopback relay URL: ws://127.0.0.1:{port}")
+    try:
+        if local_host:
+            rebind_local_community(project, restored_env, restored_values, original_port, port)
+        if should_start:
+            values_after = validate_stack(project, restored_env, require_engine=True)
+            run_stream(
+                compose_args(project, restored_env, "up", "-d", "--build", "--wait"),
+                env=compose_env(restored_env, values_after),
+                values=values_after,
+                timeout=1800,
+            )
+            print("Restored stack is running.")
+        elif local_host:
+            # Local restores briefly start only PostgreSQL to update the
+            # persisted host binding, then leave no containers running.
+            run_stream(
+                compose_args(project, restored_env, "down"),
+                env=compose_env(restored_env, restored_values),
+                values=restored_values,
+                timeout=180,
+            )
+            print("Temporary restore database stopped; restored volumes were retained.")
+    except Exception:
+        code, output = run_capture(
+            compose_args(project, restored_env, "down"),
+            env=compose_env(restored_env, restored_values),
+            values=restored_values,
+            timeout=180,
+        )
+        if code:
+            print(f"Could not stop the partial restore project cleanly:\n{output[-3000:]}", file=sys.stderr)
+        print(f"Restored volumes remain isolated under project {project}.", file=sys.stderr)
+        raise
+    if not should_start:
+        print(f"Start it with: scripts/aios-selfhost start --project-name {project} --env-file {restored_env}")
+
+
+def command_setup(args: argparse.Namespace) -> None:
+    create_environment(args.env_file, args.port)
+    values = private_env_file(args.env_file)
+    config_json(args.project_name, args.env_file, values)
+    print(f"Private local environment created with mode 0600: {args.env_file}")
+    print(f"Source relay image will be built from this checkout. Project: {args.project_name}")
+    print(f"Run scripts/aios-selfhost doctor, then scripts/aios-selfhost start. Relay: ws://127.0.0.1:{args.port}")
+
+
+def command_identity(args: argparse.Namespace) -> None:
+    pubkey = create_test_identity(args.output)
+    print(f"Local Nostr test identity created: {args.output} (mode 0600)")
+    print(f"Public key: {pubkey}")
+
+
+def command_doctor(args: argparse.Namespace) -> None:
+    validate_stack(args.project_name, args.env_file, require_engine=True)
+
+
+def command_start(args: argparse.Namespace) -> None:
+    values = validate_stack(args.project_name, args.env_file, require_engine=True)
+    run_stream(
+        compose_args(args.project_name, args.env_file, "up", "-d", "--build", "--wait"),
+        env=compose_env(args.env_file, values),
+        values=values,
+        timeout=1800,
+    )
+    print(f"AIOS Buzz is ready at ws://127.0.0.1:{values['BUZZ_HTTP_PORT']}.")
+
+
+def command_stop(args: argparse.Namespace) -> None:
+    values = private_env_file(args.env_file)
+    compose_version()
+    engine_version()
+    run_stream(
+        compose_args(args.project_name, args.env_file, "down"),
+        env=compose_env(args.env_file, values),
+        values=values,
+        timeout=180,
+    )
+    print("Containers and network stopped; named data volumes were retained.")
+
+
+def command_status(args: argparse.Namespace) -> None:
+    values = private_env_file(args.env_file)
+    compose_version()
+    engine_version()
+    run_stream(
+        compose_args(args.project_name, args.env_file, "ps"),
+        env=compose_env(args.env_file, values),
+        values=values,
+        timeout=30,
+    )
+    print(f"Relay: ws://127.0.0.1:{values['BUZZ_HTTP_PORT']}")
+
+
+def command_backup(args: argparse.Namespace) -> None:
+    backup(args.project_name, args.env_file)
+
+
+def command_restore(args: argparse.Namespace) -> None:
+    restore(args.backup_dir, args.project_name, not args.no_start)
+
+
+def add_stack_options(parser: argparse.ArgumentParser, *, setup: bool = False) -> None:
+    parser.add_argument("--project-name", default=DEFAULT_PROJECT, type=project_name_argument)
+    parser.add_argument("--env-file", type=Path, default=DEFAULT_ENV)
+    if setup:
+        parser.add_argument("--port", type=int, default=3341, help="Private loopback relay port (default: 3341).")
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Set up and operate an isolated, loopback-only AIOS Buzz relay.",
+        epilog="Commands never remove named volumes. Restore always targets a new project.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    setup_parser = subparsers.add_parser("setup", help="Generate private local secrets and validate Compose.")
+    add_stack_options(setup_parser, setup=True)
+    setup_parser.set_defaults(handler=command_setup)
+    identity_parser = subparsers.add_parser("identity", help="Create a local, mode-0600 CLI test identity.")
+    identity_parser.add_argument("--output", type=Path, default=DEFAULT_IDENTITY)
+    identity_parser.set_defaults(handler=command_identity)
+    doctor_parser = subparsers.add_parser("doctor", help="Check secrets, Compose isolation, and Docker Engine.")
+    add_stack_options(doctor_parser)
+    doctor_parser.set_defaults(handler=command_doctor)
+    start_parser = subparsers.add_parser("start", help="Build from this checkout and start the private relay.")
+    add_stack_options(start_parser)
+    start_parser.set_defaults(handler=command_start)
+    stop_parser = subparsers.add_parser("stop", help="Stop this project while retaining all named volumes.")
+    add_stack_options(stop_parser)
+    stop_parser.set_defaults(handler=command_stop)
+    status_parser = subparsers.add_parser("status", help="Show containers for this isolated project.")
+    add_stack_options(status_parser)
+    status_parser.set_defaults(handler=command_status)
+    backup_parser = subparsers.add_parser("backup", help="Stop briefly, archive all data volumes, then resume.")
+    add_stack_options(backup_parser)
+    backup_parser.set_defaults(handler=command_backup)
+    restore_parser = subparsers.add_parser("restore", help="Restore into fresh volumes and optionally start them.")
+    restore_parser.add_argument("backup_dir", type=Path)
+    restore_parser.add_argument("--project-name", type=project_name_argument)
+    restore_parser.add_argument("--no-start", action="store_true", help="Restore volumes without starting containers.")
+    restore_parser.set_defaults(handler=command_restore)
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        args.handler(args)
+    except OperationError as exc:
+        print(f"ERROR {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("Interrupted.", file=sys.stderr)
+        return 130
+    except Exception as exc:
+        print(f"ERROR {type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
