@@ -15,7 +15,8 @@ case "$AIOS_ACTION" in
     echo "Usage: scripts/aios-desktop {build|dev|open|doctor}"
     echo "Local macOS pilot: isolated app identity, self-host relay on port 3341."
     echo "build: package a debug app with current agent tools; dev: run with Vite."
-    echo "open: open the packaged app; doctor: check prerequisites and server."
+    echo "open: start the configured local server if needed and open the app."
+    echo "doctor: check prerequisites and server."
     exit 0
     ;;
   build|dev|open|doctor) ;;
@@ -98,7 +99,11 @@ if [[ ! -d "$AIOS_APP" ]]; then
   exit 1
 fi
 if ! curl --fail --silent --max-time 3 "$BUZZ_RELAY_HTTP/health" >/dev/null; then
-  echo "The local relay is unavailable. Start it with: scripts/aios-selfhost start" >&2
-  exit 1
+  echo "Starting your local AIOS server. Your saved workspace will be kept."
+  "$AIOS_ROOT/scripts/aios-selfhost" start
+  if ! curl --fail --silent --show-error --max-time 5 "$BUZZ_RELAY_HTTP/health" >/dev/null; then
+    echo "The server started but is not ready at the pilot address. Run scripts/aios-desktop doctor." >&2
+    exit 1
+  fi
 fi
 exec open "$AIOS_APP"

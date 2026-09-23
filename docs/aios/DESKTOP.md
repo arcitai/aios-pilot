@@ -11,8 +11,10 @@ scripts/aios-desktop open
 ```
 
 After packaging, double-click `deploy/aios/Open AIOS.command` to open the app.
-The relay must be running; `scripts/aios-selfhost start` starts it with the
-existing data. The launcher never resets accounts, model credentials or data.
+If the configured local server is stopped, the launcher starts it with the
+existing data, waits for health, and then opens the app. Docker must be running;
+first-time server setup is still required. The launcher never resets accounts,
+model credentials or data.
 See [self-hosting](SELF_HOSTING.md) for first-time setup, stop and restore.
 
 `build` packages a local debug `.app` and refreshes all six bundled agent/CLI
