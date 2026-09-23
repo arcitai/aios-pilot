@@ -23,6 +23,7 @@ struct TestRelayData {
     writes: Vec<Value>,
     deny_queries: bool,
     conflict_canvas_writes: bool,
+    fail_canvas_history_after_write: bool,
 }
 
 async fn start_test_relay() -> (BuzzClient, TestRelay, String, tokio::task::JoinHandle<()>) {
@@ -60,6 +61,16 @@ async fn test_query(State(relay): State<TestRelay>, Json(filters): Json<Vec<Valu
         .and_then(|kinds| kinds.first())
         .and_then(Value::as_u64)
         .unwrap_or_default();
+    if kind == 40100
+        && data.fail_canvas_history_after_write
+        && data.writes.iter().any(|event| event["kind"] == 40100)
+    {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"error": "canvas history unavailable"})),
+        )
+            .into_response();
+    }
     let events = match kind {
         39000 => data.metadata.clone(),
         39002 => data.memberships.clone(),
@@ -520,6 +531,44 @@ async fn source_update_uses_expected_revision_and_reports_concurrent_conflict() 
             .any(|tag| tag == &json!(["expected-revision", "a".repeat(64)]))
     }));
     drop(data);
+    task.abort();
+}
+
+#[tokio::test]
+async fn source_write_reports_delivery_unknown_when_post_write_history_fails() {
+    let (client, relay, pubkey, task) = start_test_relay().await;
+    let document = sample_document().to_json().expect("serialize fixture");
+    let channel_id = "123e4567-e89b-12d3-a456-426614174000";
+    add_managed_workspace(&relay, channel_id, &pubkey, Some(&document));
+    relay
+        .data
+        .lock()
+        .expect("test relay lock")
+        .fail_canvas_history_after_write = true;
+
+    let result = cmd_source_add(
+        &client,
+        channel_id,
+        "Interview".into(),
+        BusinessSourceKind::Note,
+        "customer feedback",
+        None,
+        Some(&"a".repeat(64)),
+    )
+    .await;
+
+    assert!(matches!(
+        result,
+        Err(CliError::DeliveryUnknown(message))
+            if message.contains("persistence could not be verified")
+    ));
+    assert!(relay
+        .data
+        .lock()
+        .expect("test relay lock")
+        .writes
+        .iter()
+        .any(|event| event["kind"] == 40100));
     task.abort();
 }
 

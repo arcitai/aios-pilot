@@ -603,10 +603,9 @@ async fn write_document(
                         "relay accepted business canvas write {event_id}, but its persistence could not be verified; inspect `buzz business show` before retrying"
                     ))),
                 },
-                Err(_) => {
-                    eprintln!("warning: business canvas write {event_id} was accepted, but post-write verification failed; inspect `buzz business show` if another edit may have landed");
-                    Ok(response)
-                }
+                Err(_) => Err(CliError::DeliveryUnknown(format!(
+                    "relay accepted business canvas write {event_id}, but its persistence could not be verified; inspect `buzz business show` before retrying"
+                ))),
             }
         }
         Err(error) if is_canvas_revision_conflict(&error) => {

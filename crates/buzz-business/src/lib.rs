@@ -347,14 +347,6 @@ fn validate_text(
             "{field} exceeds the {max_utf16_units}-UTF-16-code-unit limit"
         )));
     }
-    if value
-        .chars()
-        .any(|character| character.is_control() && !matches!(character, '\n' | '\r' | '\t'))
-    {
-        return Err(BusinessDocumentError::Invalid(format!(
-            "{field} contains a disallowed control character"
-        )));
-    }
     Ok(())
 }
 
@@ -695,8 +687,19 @@ mod tests {
             include_str!("../tests/fixtures/valid-minute-precision-timestamp.json"),
             include_str!("../tests/fixtures/valid-long-fraction-timestamp.json"),
             include_str!("../tests/fixtures/valid-schema-version-decimal-one.json"),
+            include_str!("../tests/fixtures/valid-control-characters.json"),
         ] {
             parse_document(valid_fixture).expect("desktop-compatible fixture parses");
         }
+
+        let control_characters = include_str!("../tests/fixtures/valid-control-characters.json");
+        let parsed = parse_document(control_characters)
+            .expect("desktop schema accepts escaped C0 and C1 characters");
+        assert_eq!(parsed.company.summary, "\u{0}\u{1}\u{1f}\u{85}");
+        assert_eq!(parsed.sources[0].content, "\u{2}\u{86}");
+        assert_eq!(
+            parsed.connections[0].details.as_deref(),
+            Some("\u{1f}\u{85}")
+        );
     }
 }

@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "kind": "aios.business-workspace",
+  "company": {
+    "name": "Example",
+    "website": "",
+    "summary": "\u0000\u0001\u001f\u0085",
+    "audience": "",
+    "offers": "",
+    "goals": ""
+  },
+  "sources": [
+    {
+      "id": "source-1",
+      "title": "Control characters",
+      "kind": "note",
+      "content": "\u0002\u0086",
+      "createdAt": "2026-09-23T12:00:00Z"
+    }
+  ],
+  "connections": [
+    {
+      "id": "connection-1",
+      "provider": "drive",
+      "label": "Research",
+      "status": "not_configured",
+      "details": "\u001f\u0085"
+    }
+  ]
+}
