@@ -892,6 +892,7 @@ dependencies = [
  "buzz-core",
  "buzz-persona",
  "buzz-sdk",
+ "buzz-test-client",
  "chrono",
  "clap",
  "evalexpr",

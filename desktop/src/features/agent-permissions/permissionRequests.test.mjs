@@ -26,6 +26,10 @@ function event(seq, kind, payload, timestamp = NOW) {
   };
 }
 
+function sessionEvent(seq, kind, payload, sessionId, timestamp = NOW) {
+  return { ...event(seq, kind, payload, timestamp), sessionId };
+}
+
 function requestPayload(overrides = {}) {
   return {
     requestId: REQUEST_ID,
@@ -120,7 +124,157 @@ test("stale, completed, and non-ready-runtime requests stay hidden", () => {
   assert.equal(derive(notReady).requests.length, 0);
 });
 
-test("surfaces explicitly configured bypass mode", () => {
+test("does not treat the harness mode request as the provider's actual mode", () => {
   const snapshot = derive(baseEvents({ permissionMode: "bypassPermissions" }));
-  assert.equal(snapshot.autonomous, true);
+
+  assert.equal(snapshot.autonomous, false);
+  assert.equal(snapshot.permissionMode, null);
+  assert.equal(snapshot.modeStatus.requestedMode, "bypassPermissions");
+  assert.equal(snapshot.modeStatus.status, "unverified");
+});
+
+test("tracks config option mode changes independently for each ACP session", () => {
+  const events = baseEvents({ permissionMode: "bypassPermissions" });
+  events.push(
+    sessionEvent(
+      4,
+      "session_config_captured",
+      {
+        configOptions: [
+          {
+            category: "mode",
+            configId: "mode",
+            currentValue: "bypassPermissions",
+          },
+        ],
+      },
+      "session-a",
+    ),
+    sessionEvent(
+      5,
+      "session_config_captured",
+      {
+        configOptions: [
+          { category: "mode", configId: "mode", currentValue: "default" },
+        ],
+      },
+      "session-b",
+    ),
+    sessionEvent(
+      6,
+      "acp_read",
+      {
+        method: "session/update",
+        params: {
+          sessionId: "session-a",
+          update: {
+            sessionUpdate: "config_option_update",
+            configOptions: [
+              { category: "mode", configId: "mode", currentValue: "default" },
+            ],
+          },
+        },
+      },
+      "session-a",
+    ),
+  );
+
+  const afterFirstUpdate = derive(events);
+  assert.equal(afterFirstUpdate.autonomous, false);
+  assert.deepEqual(
+    afterFirstUpdate.modeStatus.sessions.map(({ sessionId, mode }) => [
+      sessionId,
+      mode,
+    ]),
+    [
+      ["session-a", "default"],
+      ["session-b", "default"],
+    ],
+  );
+
+  events.push(
+    sessionEvent(
+      7,
+      "acp_read",
+      {
+        method: "session/update",
+        params: {
+          sessionId: "session-b",
+          update: {
+            sessionUpdate: "config_option_update",
+            configOptions: [
+              {
+                category: "mode",
+                configId: "mode",
+                currentValue: "bypassPermissions",
+              },
+            ],
+          },
+        },
+      },
+      "session-b",
+    ),
+  );
+
+  const afterSecondUpdate = derive(events);
+  assert.equal(afterSecondUpdate.autonomous, true);
+  assert.equal(afterSecondUpdate.permissionMode, "bypassPermissions");
+  assert.equal(afterSecondUpdate.modeStatus.sessionId, "session-b");
+});
+
+test("tracks legacy current_mode_update notifications", () => {
+  const events = baseEvents();
+  events.push(
+    sessionEvent(
+      4,
+      "session_config_captured",
+      {
+        modes: {
+          currentModeId: "bypassPermissions",
+          availableModes: [{ id: "default" }, { id: "bypassPermissions" }],
+        },
+      },
+      "session-a",
+    ),
+    sessionEvent(
+      5,
+      "acp_read",
+      {
+        method: "session/update",
+        params: {
+          sessionId: "session-a",
+          update: {
+            sessionUpdate: "current_mode_update",
+            currentModeId: "default",
+          },
+        },
+      },
+      "session-a",
+    ),
+  );
+
+  const snapshot = derive(events);
+  assert.equal(snapshot.autonomous, false);
+  assert.equal(snapshot.permissionMode, "default");
+  assert.equal(snapshot.modeStatus.sessions[0].mechanism, "legacy_mode");
+  assert.equal(snapshot.modeStatus.sessions[0].status, "reported");
+});
+
+test("keeps config option mode selection distinct from legacy modes", () => {
+  const events = baseEvents();
+  events.push(
+    sessionEvent(
+      4,
+      "session_config_captured",
+      {
+        configOptions: [{ category: "mode", currentValue: null }],
+        modes: { currentModeId: "bypassPermissions" },
+      },
+      "session-a",
+    ),
+  );
+
+  const snapshot = derive(events);
+  assert.equal(snapshot.permissionMode, null);
+  assert.equal(snapshot.modeStatus.sessions[0].mechanism, "config_option");
 });

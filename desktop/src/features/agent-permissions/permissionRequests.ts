@@ -12,8 +12,29 @@ export type ActivePermissionRequest = {
   toolName: string;
 };
 
+export type AgentPermissionModeSession = {
+  sessionId: string;
+  mode: string | null;
+  requestedMode: string | null;
+  status: string;
+  mechanism: string | null;
+};
+
+export type AgentPermissionModeStatus = {
+  requestedMode: string | null;
+  status: string;
+  mechanism: string | null;
+  sessionId: string | null;
+  sessions: AgentPermissionModeSession[];
+};
+
 export type AgentPermissionSnapshot = {
+  /** True only when at least one ACP session currently reports bypass mode. */
   autonomous: boolean;
+  /** Actual mode reported by the most recently updated session, if known. */
+  permissionMode: string | null;
+  /** Per-session actual mode plus the provider's apply/verification status. */
+  modeStatus: AgentPermissionModeStatus;
   requests: ActivePermissionRequest[];
 };
 
@@ -30,6 +51,7 @@ type RuntimeStart = {
   relayUrl: string;
   runtimeStartNonce: string;
   permissionMode: string | null;
+  event: ObserverEvent;
 };
 
 type RuntimeLifecycle = {
@@ -40,6 +62,14 @@ type RuntimeLifecycle = {
 
 const EMPTY_SNAPSHOT: AgentPermissionSnapshot = {
   autonomous: false,
+  permissionMode: null,
+  modeStatus: {
+    requestedMode: null,
+    status: "unverified",
+    mechanism: null,
+    sessionId: null,
+    sessions: [],
+  },
   requests: [],
 };
 
@@ -112,10 +142,169 @@ function latestRuntimeStart(
           typeof payload.permissionMode === "string"
             ? payload.permissionMode
             : null,
+        event,
       };
     }
   }
   return null;
+}
+
+function modeConfigOption(value: unknown): Record<string, unknown> | null {
+  if (!Array.isArray(value)) return null;
+  return record(value.find((option) => record(option)?.category === "mode"));
+}
+
+function currentModeFromConfigOptions(value: unknown): string | null {
+  const modeOption = modeConfigOption(value);
+  const currentValue = record(modeOption)?.currentValue;
+  return typeof currentValue === "string" ? currentValue : null;
+}
+
+function currentModeFromSessionConfig(payload: Record<string, unknown>) {
+  const configOptions = payload.configOptions;
+  const modeOption = Array.isArray(configOptions)
+    ? configOptions.find((option) => record(option)?.category === "mode")
+    : undefined;
+  if (modeOption !== undefined) {
+    const currentValue = record(modeOption)?.currentValue;
+    return typeof currentValue === "string" ? currentValue : null;
+  }
+  const legacyMode = record(payload.modes)?.currentModeId;
+  return typeof legacyMode === "string" ? legacyMode : null;
+}
+
+function eventSessionId(
+  event: ObserverEvent,
+  params?: Record<string, unknown>,
+) {
+  const fromParams = params?.sessionId;
+  if (typeof fromParams === "string" && fromParams.length > 0) {
+    return fromParams;
+  }
+  return typeof event.sessionId === "string" && event.sessionId.length > 0
+    ? event.sessionId
+    : null;
+}
+
+function derivePermissionModeStatus(
+  events: readonly ObserverEvent[],
+  start: RuntimeStart,
+): {
+  autonomous: boolean;
+  permissionMode: string | null;
+  modeStatus: AgentPermissionModeStatus;
+} {
+  const startIndex = events.indexOf(start.event);
+  const runtimeEvents = startIndex < 0 ? [] : events.slice(startIndex + 1);
+  const sessions = new Map<string, AgentPermissionModeSession>();
+  let latestSessionId: string | null = null;
+
+  for (const event of runtimeEvents) {
+    if (event.kind === "session_config_captured") {
+      const payload = record(event.payload);
+      const sessionId = eventSessionId(event);
+      if (!payload || !sessionId) continue;
+      const mode = currentModeFromSessionConfig(payload);
+      sessions.set(sessionId, {
+        sessionId,
+        mode,
+        requestedMode: start.permissionMode,
+        status: mode === null ? "unverified" : "reported",
+        mechanism: modeConfigOption(payload.configOptions)
+          ? "config_option"
+          : record(payload.modes)
+            ? "legacy_mode"
+            : null,
+      });
+      latestSessionId = sessionId;
+      continue;
+    }
+
+    if (event.kind === "permission_mode_status") {
+      const payload = record(event.payload);
+      const sessionId = eventSessionId(event);
+      if (!payload || !sessionId) continue;
+      const current = sessions.get(sessionId) ?? {
+        sessionId,
+        mode: null,
+        requestedMode: start.permissionMode,
+        status: "unverified",
+        mechanism: null,
+      };
+      const requestedMode = payload.requestedMode;
+      const currentModeId = payload.currentModeId;
+      const mechanism = payload.mechanism;
+      sessions.set(sessionId, {
+        ...current,
+        mode: Object.hasOwn(payload, "currentModeId")
+          ? typeof currentModeId === "string"
+            ? currentModeId
+            : null
+          : current.mode,
+        requestedMode:
+          typeof requestedMode === "string"
+            ? requestedMode
+            : current.requestedMode,
+        status:
+          typeof payload.status === "string" ? payload.status : current.status,
+        mechanism:
+          typeof mechanism === "string" ? mechanism : current.mechanism,
+      });
+      latestSessionId = sessionId;
+      continue;
+    }
+
+    if (event.kind !== "acp_read") continue;
+    const payload = record(event.payload);
+    if (payload?.method !== "session/update") continue;
+    const params = record(payload.params);
+    const update = record(params?.update);
+    const sessionId = eventSessionId(event, params ?? undefined);
+    if (!update || !sessionId) continue;
+
+    const current = sessions.get(sessionId) ?? {
+      sessionId,
+      mode: null,
+      requestedMode: start.permissionMode,
+      status: "unverified",
+      mechanism: null,
+    };
+    if (update.sessionUpdate === "config_option_update") {
+      const mode = currentModeFromConfigOptions(update.configOptions);
+      sessions.set(sessionId, {
+        ...current,
+        mode,
+        status: mode === null ? "unverified" : "reported",
+        mechanism: "config_option",
+      });
+      latestSessionId = sessionId;
+    } else if (update.sessionUpdate === "current_mode_update") {
+      const currentModeId = update.currentModeId;
+      sessions.set(sessionId, {
+        ...current,
+        mode: typeof currentModeId === "string" ? currentModeId : null,
+        status: typeof currentModeId === "string" ? "reported" : "unverified",
+        mechanism: "legacy_mode",
+      });
+      latestSessionId = sessionId;
+    }
+  }
+
+  const sessionStatuses = [...sessions.values()];
+  const latest = latestSessionId ? sessions.get(latestSessionId) : undefined;
+  return {
+    autonomous: sessionStatuses.some(
+      (session) => session.mode === "bypassPermissions",
+    ),
+    permissionMode: latest?.mode ?? null,
+    modeStatus: {
+      requestedMode: latest?.requestedMode ?? start.permissionMode,
+      status: latest?.status ?? "unverified",
+      mechanism: latest?.mechanism ?? null,
+      sessionId: latest?.sessionId ?? null,
+      sessions: sessionStatuses,
+    },
+  };
 }
 
 function latestRuntimeLifecycle(
@@ -179,7 +368,7 @@ export function deriveAgentPermissionSnapshot({
     return EMPTY_SNAPSHOT;
   }
 
-  const autonomous = start.permissionMode === "bypassPermissions";
+  const modeStatus = derivePermissionModeStatus(sorted, start);
   const results = new Set<string>();
   for (const event of sorted) {
     if (event.kind !== "permission_result") continue;
@@ -234,5 +423,5 @@ export function deriveAgentPermissionSnapshot({
     });
   }
 
-  return { autonomous, requests };
+  return { ...modeStatus, requests };
 }

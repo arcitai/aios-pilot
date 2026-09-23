@@ -33,6 +33,18 @@ env -u BUZZ_ACP_ALLOWED_RESPOND_TO \
   cargo test -p buzz-acp -- --test-threads=1
 ```
 
+The ignored permission relay fixture exercises an encrypted ACP permission
+request through the local relay, an owner decision back to the agent, and one
+temporary marker-file effect. It generates fresh test keys and does not reset
+relay state. Run it only against an isolated test relay (the default is
+`ws://127.0.0.1:3341`); set `BUZZ_PERMISSION_TEST_RELAY_URL` to override it:
+
+```sh
+BUZZ_PERMISSION_TEST_RELAY_URL=ws://127.0.0.1:3341 \
+  cargo test -p buzz-acp encrypted_relay_permission_decision_runs_exactly_one_fixture_effect \
+  -- --ignored --nocapture --test-threads=1
+```
+
 Run the ignored real-adapter test with a built fork checkout:
 
 ```sh

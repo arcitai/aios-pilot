@@ -624,6 +624,12 @@ impl AcpClient {
         self.observer_context = context;
     }
 
+    /// Associate subsequent observer events with a newly created ACP session.
+    /// Keeps the current channel and turn metadata intact.
+    pub fn set_observer_session_id(&mut self, session_id: &str) {
+        self.observer_context.session_id = Some(session_id.to_owned());
+    }
+
     /// Return a clone of the observer handle, if attached.
     pub(crate) fn observer_handle(&self) -> Option<ObserverHandle> {
         self.observer.clone()
@@ -785,6 +791,19 @@ impl AcpClient {
             "value": value,
         });
         self.send_request("session/set_config_option", params).await
+    }
+
+    /// Send the legacy ACP `session/set_mode` request.
+    pub async fn session_set_mode(
+        &mut self,
+        session_id: &str,
+        mode_id: &str,
+    ) -> Result<serde_json::Value, AcpError> {
+        let params = serde_json::json!({
+            "sessionId": session_id,
+            "modeId": mode_id,
+        });
+        self.send_request("session/set_mode", params).await
     }
 
     /// Send `session/set_model` (unstable ACP path).

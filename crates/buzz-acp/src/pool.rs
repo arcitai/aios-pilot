@@ -839,7 +839,8 @@ pub struct PromptContext {
     pub context_message_limit: u32,
     /// Max turns per session before proactive rotation. 0 = disabled.
     pub max_turns_per_session: u32,
-    /// Permission mode to apply after session creation. `Default` = skip.
+    /// Permission mode to apply after session creation. `Default` requests the
+    /// adapter's explicit safe default when that mode is advertised.
     pub permission_mode: PermissionMode,
     /// Owner-bound broker shared by the relay loop and live ACP workers.
     pub permission_broker: Option<PermissionBroker>,
@@ -1549,6 +1550,7 @@ async fn create_session_and_apply_model(
             session_title.as_deref(),
         )
         .await?;
+    agent.acp.set_observer_session_id(&resp.session_id);
 
     if is_goose && agent.goose_system_prompt_supported != Some(false) {
         if let Some(prompt) = combined_system_prompt.as_deref() {
@@ -1702,6 +1704,19 @@ async fn create_session_and_apply_model(
     let effort_snapshot = post_switch_snapshot.as_ref().unwrap_or(&resp.raw);
     let effort_outcome = apply_startup_effort(agent, effort_snapshot, &resp.session_id).await?;
 
+    // Apply the configured permission mode on every new session. In
+    // particular, `default` must be sent when advertised so a provider's
+    // persisted bypass mode cannot survive a managed runtime restart. The
+    // outcome distinguishes provider-confirmed state from unsupported,
+    // rejected, and unverified requests.
+    let permission_mode_outcome = apply_permission_mode(
+        &mut agent.acp,
+        effort_snapshot,
+        &resp.session_id,
+        &ctx.permission_mode,
+    )
+    .await?;
+
     // Emit session config for desktop consumption (config bridge tier 1b).
     // Emitted AFTER desired_model resolution so the desktop caches the
     // post-switch state. modelOverridden reflects whether the switch actually
@@ -1715,20 +1730,44 @@ async fn create_session_and_apply_model(
     // value the session is actually running. A rejected effort or a model with
     // no `thought_level` option leaves the snapshot untouched.
     let config_options_for_cache = {
-        let mut opts = effort_snapshot
-            .get("configOptions")
-            .cloned()
-            .unwrap_or(serde_json::Value::Null);
+        let mut opts = permission_mode_outcome
+            .config_options
+            .clone()
+            .unwrap_or_else(|| {
+                effort_snapshot
+                    .get("configOptions")
+                    .cloned()
+                    .unwrap_or(serde_json::Value::Null)
+            });
+        if let (Some(config_id), Some(current_mode_id)) = (
+            permission_mode_outcome.config_option_id.as_deref(),
+            permission_mode_outcome.current_mode_id.as_deref(),
+        ) {
+            patch_config_option_current_value(&mut opts, config_id, current_mode_id);
+        } else if permission_mode_outcome.invalidate_current_state {
+            clear_mode_config_option_current_value(&mut opts);
+        }
         if let Some(StartupEffortOutcome::Applied { config_id, value }) = &effort_outcome {
             patch_config_option_current_value(&mut opts, config_id, value);
         }
         opts
     };
+    let mut modes_for_cache = permission_mode_outcome.modes.clone().unwrap_or_else(|| {
+        effort_snapshot
+            .get("modes")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null)
+    });
+    if let Some(current_mode_id) = permission_mode_outcome.current_mode_id.as_deref() {
+        patch_legacy_current_mode(&mut modes_for_cache, Some(current_mode_id));
+    } else if permission_mode_outcome.invalidate_current_state {
+        patch_legacy_current_mode(&mut modes_for_cache, None);
+    }
     agent.acp.observe(
         "session_config_captured",
         serde_json::json!({
             "configOptions": config_options_for_cache,
-            "modes": resp.raw.get("modes").cloned().unwrap_or(serde_json::Value::Null),
+            "modes": modes_for_cache,
             // `models` must come from the SAME snapshot as configOptions — the
             // post-switch snapshot on a successful switch, session/new otherwise.
             // Taking it from `resp.raw` here would emit the target model's option
@@ -1743,16 +1782,15 @@ async fn create_session_and_apply_model(
             "relayUrl": ctx.relay_url,
         }),
     );
-
-    // Apply permission mode if not the agent's built-in default AND the agent
-    // advertises the requested mode in session/new. Agents that don't support
-    // the mode (e.g., goose crashes on unrecognized set_config_option values)
-    // are safely skipped — the harness auto-approves via handle_permission_request.
-    if !ctx.permission_mode.is_default()
-        && agent_supports_mode(&resp.raw, ctx.permission_mode.as_wire_str())
-    {
-        apply_permission_mode(&mut agent.acp, &resp.session_id, &ctx.permission_mode).await?;
-    }
+    agent.acp.observe(
+        "permission_mode_status",
+        serde_json::json!({
+            "requestedMode": permission_mode_outcome.requested_mode,
+            "currentModeId": permission_mode_outcome.current_mode_id,
+            "status": permission_mode_outcome.status.as_str(),
+            "mechanism": permission_mode_outcome.mechanism,
+        }),
+    );
 
     Ok(resp.session_id)
 }
@@ -1998,48 +2036,291 @@ fn patch_config_option_current_value(
     }
 }
 
-/// Set the session permission mode via `session/set_config_option`.
-///
-/// Non-fatal for most errors: logs and proceeds. The agent falls back
-/// to its default permission mode (`"default"`), which still works via
-/// Check if the agent's `session/new` response advertises a given mode ID
-/// in `result.modes.availableModes[].id`. Returns `false` if the modes
-/// field is absent or the mode isn't listed.
-fn agent_supports_mode(session_new_result: &serde_json::Value, mode_wire: &str) -> bool {
-    session_new_result
-        .get("modes")
-        .and_then(|m| m.get("availableModes"))
-        .and_then(|a| a.as_array())
-        .map(|modes| {
-            modes
-                .iter()
-                .any(|m| m.get("id").and_then(|v| v.as_str()) == Some(mode_wire))
-        })
-        .unwrap_or(false)
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PermissionModeStatus {
+    Verified,
+    Unsupported,
+    Unverified,
+    Rejected,
 }
 
-/// per-tool auto-approval in `handle_permission_request`.
-///
-/// **Fatal exception:** if the agent process exits (e.g., goose crashes on
-/// unrecognized methods), returns `Err(AgentExited)` so the caller can respawn.
+impl PermissionModeStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Verified => "verified",
+            Self::Unsupported => "unsupported",
+            Self::Unverified => "unverified",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+enum PermissionModeSetter {
+    ConfigOption(String),
+    LegacyMode,
+}
+
+#[derive(Clone, Debug)]
+struct PermissionModeResolution {
+    current_mode_id: Option<String>,
+    setter: Option<PermissionModeSetter>,
+    status: PermissionModeStatus,
+}
+
+#[derive(Debug)]
+struct PermissionModeOutcome {
+    requested_mode: String,
+    current_mode_id: Option<String>,
+    status: PermissionModeStatus,
+    mechanism: Option<&'static str>,
+    config_option_id: Option<String>,
+    config_options: Option<serde_json::Value>,
+    modes: Option<serde_json::Value>,
+    invalidate_current_state: bool,
+}
+
+fn resolve_permission_mode(
+    session_state: &serde_json::Value,
+    requested_mode: &str,
+) -> PermissionModeResolution {
+    let config_options = session_state
+        .get("configOptions")
+        .and_then(serde_json::Value::as_array);
+    let mode_option = config_options.and_then(|options| {
+        options
+            .iter()
+            .find(|option| option.get("category").and_then(|v| v.as_str()) == Some("mode"))
+    });
+
+    if let Some(mode_option) = mode_option {
+        let current_mode_id = mode_option
+            .get("currentValue")
+            .and_then(|value| value.as_str())
+            .map(str::to_owned);
+        if current_mode_id.as_deref() == Some(requested_mode) {
+            return PermissionModeResolution {
+                current_mode_id,
+                setter: None,
+                status: PermissionModeStatus::Verified,
+            };
+        }
+
+        let advertised_values = mode_option
+            .get("options")
+            .and_then(serde_json::Value::as_array);
+        let supports_requested = advertised_values.is_some_and(|values| {
+            values.iter().any(|option| {
+                option.get("value").and_then(|value| value.as_str()) == Some(requested_mode)
+            })
+        });
+        let config_id = mode_option
+            .get("configId")
+            .or_else(|| mode_option.get("id"))
+            .and_then(|value| value.as_str())
+            .map(str::to_owned);
+
+        if supports_requested {
+            if let Some(config_id) = config_id {
+                return PermissionModeResolution {
+                    current_mode_id,
+                    setter: Some(PermissionModeSetter::ConfigOption(config_id)),
+                    status: PermissionModeStatus::Unverified,
+                };
+            }
+        } else if advertised_values.is_some() {
+            return PermissionModeResolution {
+                current_mode_id,
+                setter: None,
+                status: PermissionModeStatus::Unsupported,
+            };
+        }
+
+        return PermissionModeResolution {
+            current_mode_id,
+            setter: None,
+            status: PermissionModeStatus::Unverified,
+        };
+    }
+
+    if let Some(modes) = session_state.get("modes") {
+        let current_mode_id = modes
+            .get("currentModeId")
+            .and_then(|value| value.as_str())
+            .map(str::to_owned);
+        if current_mode_id.as_deref() == Some(requested_mode) {
+            return PermissionModeResolution {
+                current_mode_id,
+                setter: None,
+                status: PermissionModeStatus::Verified,
+            };
+        }
+
+        let available_modes = modes
+            .get("availableModes")
+            .and_then(serde_json::Value::as_array);
+        if let Some(available_modes) = available_modes {
+            if available_modes.iter().any(|available| {
+                available.get("id").and_then(|value| value.as_str()) == Some(requested_mode)
+            }) {
+                return PermissionModeResolution {
+                    current_mode_id,
+                    setter: Some(PermissionModeSetter::LegacyMode),
+                    status: PermissionModeStatus::Unverified,
+                };
+            }
+            return PermissionModeResolution {
+                current_mode_id,
+                setter: None,
+                status: PermissionModeStatus::Unsupported,
+            };
+        }
+
+        return PermissionModeResolution {
+            current_mode_id,
+            setter: None,
+            status: PermissionModeStatus::Unverified,
+        };
+    }
+
+    let advertised_config_options = session_state
+        .get("configOptions")
+        .and_then(serde_json::Value::as_array)
+        .is_some();
+    PermissionModeResolution {
+        current_mode_id: None,
+        setter: None,
+        status: if advertised_config_options {
+            PermissionModeStatus::Unsupported
+        } else {
+            PermissionModeStatus::Unverified
+        },
+    }
+}
+
+/// Apply the advertised ACP mode selector and only report the requested mode
+/// as effective when the provider returns a current mode that confirms it.
 async fn apply_permission_mode(
     acp: &mut AcpClient,
+    session_state: &serde_json::Value,
     session_id: &str,
     mode: &PermissionMode,
-) -> Result<(), AcpError> {
+) -> Result<PermissionModeOutcome, AcpError> {
     let wire = mode.as_wire_str();
+    let resolution = resolve_permission_mode(session_state, wire);
+    if resolution.setter.is_none() && resolution.status != PermissionModeStatus::Verified {
+        tracing::warn!(
+            target: "pool::permission",
+            requested_mode = wire,
+            requested_default = mode.is_default(),
+            current_mode = ?resolution.current_mode_id,
+            status = resolution.status.as_str(),
+            "provider did not advertise a verifiable permission-mode setter"
+        );
+    }
+    let (mechanism, config_option_id) = match &resolution.setter {
+        Some(PermissionModeSetter::ConfigOption(config_id)) => {
+            (Some("config_option"), Some(config_id.clone()))
+        }
+        Some(PermissionModeSetter::LegacyMode) => (Some("legacy_mode"), None),
+        None if session_state
+            .get("configOptions")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|options| {
+                options
+                    .iter()
+                    .find(|option| option.get("category").and_then(|v| v.as_str()) == Some("mode"))
+            })
+            .is_some() =>
+        {
+            (Some("config_option"), None)
+        }
+        None if session_state.get("modes").is_some() => (Some("legacy_mode"), None),
+        None => (None, None),
+    };
+
+    let outcome = |current_mode_id, status, config_options, modes, invalidate_current_state| {
+        PermissionModeOutcome {
+            requested_mode: wire.to_owned(),
+            current_mode_id,
+            status,
+            mechanism,
+            config_option_id: config_option_id.clone(),
+            config_options,
+            modes,
+            invalidate_current_state,
+        }
+    };
+
+    if resolution.status == PermissionModeStatus::Verified {
+        return Ok(outcome(
+            resolution.current_mode_id,
+            PermissionModeStatus::Verified,
+            None,
+            None,
+            false,
+        ));
+    }
+    let Some(setter) = resolution.setter else {
+        return Ok(outcome(
+            resolution.current_mode_id,
+            resolution.status,
+            None,
+            None,
+            false,
+        ));
+    };
+
     let result = tokio::time::timeout(PERMISSION_MODE_TIMEOUT, async {
-        acp.session_set_config_option(session_id, "mode", wire)
-            .await
+        match setter {
+            PermissionModeSetter::ConfigOption(config_id) => {
+                acp.session_set_config_option(session_id, &config_id, wire)
+                    .await
+            }
+            PermissionModeSetter::LegacyMode => acp.session_set_mode(session_id, wire).await,
+        }
     })
     .await;
 
     match result {
-        Ok(Ok(_)) => {
-            tracing::info!(
-                target: "pool::permission",
-                "applied permission mode {wire:?} on session {session_id}"
-            );
+        Ok(Ok(response)) => {
+            let confirmed = resolve_permission_mode(&response, wire);
+            let is_verified = confirmed.current_mode_id.as_deref() == Some(wire);
+            if is_verified {
+                tracing::info!(
+                    target: "pool::permission",
+                    "provider confirmed permission mode {wire:?} on session {session_id}"
+                );
+            } else {
+                tracing::warn!(
+                    target: "pool::permission",
+                    "provider accepted permission mode {wire:?} but did not confirm the current mode on session {session_id}"
+                );
+            }
+            let config_options = response
+                .get("configOptions")
+                .and_then(serde_json::Value::as_array)
+                .map(|_| response["configOptions"].clone());
+            let modes = response
+                .get("modes")
+                .and_then(serde_json::Value::as_object)
+                .map(|_| response["modes"].clone());
+            let current_mode_id = if is_verified {
+                Some(wire.to_owned())
+            } else {
+                confirmed.current_mode_id
+            };
+            Ok(outcome(
+                current_mode_id.clone(),
+                if is_verified {
+                    PermissionModeStatus::Verified
+                } else {
+                    PermissionModeStatus::Unverified
+                },
+                config_options,
+                modes,
+                current_mode_id.is_none(),
+            ))
         }
         // Transport-class errors may have corrupted the stdio stream — propagate
         // so the caller can respawn the agent.
@@ -2054,12 +2335,19 @@ async fn apply_permission_mode(
             );
             return Err(e);
         }
-        // Application-level errors — agent is fine, just uses default permission mode.
+        // Application-level errors mean the provider rejected the request.
         Ok(Err(e)) => {
             tracing::warn!(
                 target: "pool::permission",
-                "failed to set permission mode {wire:?}: {e} — falling back to per-tool auto-approval"
+                "provider rejected permission mode {wire:?} on session {session_id}: {e}"
             );
+            Ok(outcome(
+                resolution.current_mode_id,
+                PermissionModeStatus::Rejected,
+                None,
+                None,
+                false,
+            ))
         }
         Err(_) => {
             // Outer timeout fired — stream may be in unknown state.
@@ -2070,7 +2358,34 @@ async fn apply_permission_mode(
             return Err(AcpError::Timeout(PERMISSION_MODE_TIMEOUT));
         }
     }
-    Ok(())
+}
+
+fn clear_mode_config_option_current_value(options: &mut serde_json::Value) {
+    let Some(options) = options.as_array_mut() else {
+        return;
+    };
+    if let Some(mode_option) = options
+        .iter_mut()
+        .find(|option| option.get("category").and_then(|v| v.as_str()) == Some("mode"))
+    {
+        if let Some(mode_option) = mode_option.as_object_mut() {
+            mode_option.remove("currentValue");
+        }
+    }
+}
+
+fn patch_legacy_current_mode(modes: &mut serde_json::Value, mode_id: Option<&str>) {
+    let Some(modes) = modes.as_object_mut() else {
+        return;
+    };
+    if let Some(mode_id) = mode_id {
+        modes.insert(
+            "currentModeId".to_owned(),
+            serde_json::Value::String(mode_id.to_owned()),
+        );
+    } else {
+        modes.remove("currentModeId");
+    }
 }
 
 /// Prepend a legacy agent's standing context to a user-message body.
@@ -5525,38 +5840,53 @@ mod tests {
         );
     }
 
-    // MINOR (#2884): the permission-mode RPC is gated on agent_supports_mode.
-    // An advertised mode issues set_config_option; an absent one is skipped so
-    // the harness falls back to per-tool auto-approval. Pin both edges directly.
     #[test]
-    fn agent_supports_mode_advertised_auto_is_true() {
-        let session_new = json!({
-            "modes": { "availableModes": [{ "id": "default" }, { "id": "auto" }] }
+    fn permission_mode_resolves_config_options_before_legacy_modes() {
+        let session = json!({
+            "configOptions": [{
+                "configId": "mode",
+                "category": "mode",
+                "currentValue": "bypassPermissions",
+                "options": [{ "value": "default" }, { "value": "bypassPermissions" }]
+            }],
+            "modes": {
+                "currentModeId": "bypassPermissions",
+                "availableModes": [{ "id": "default" }, { "id": "bypassPermissions" }]
+            }
         });
-        assert!(agent_supports_mode(
-            &session_new,
-            PermissionMode::Auto.as_wire_str()
+
+        let resolved = resolve_permission_mode(&session, PermissionMode::Default.as_wire_str());
+
+        assert_eq!(
+            resolved.current_mode_id.as_deref(),
+            Some("bypassPermissions")
+        );
+        assert!(matches!(
+            resolved.setter,
+            Some(PermissionModeSetter::ConfigOption(ref id)) if id == "mode"
         ));
     }
 
     #[test]
-    fn agent_supports_mode_absent_auto_is_false() {
-        let session_new = json!({
-            "modes": { "availableModes": [{ "id": "default" }] }
+    fn permission_mode_reports_unsupported_and_unverified_separately() {
+        let unsupported = json!({
+            "configOptions": [{
+                "configId": "mode",
+                "category": "mode",
+                "currentValue": "bypassPermissions",
+                "options": [{ "value": "bypassPermissions" }]
+            }]
         });
-        assert!(!agent_supports_mode(
-            &session_new,
-            PermissionMode::Auto.as_wire_str()
-        ));
-    }
+        let unverified = json!({ "sessionId": "sess-1" });
 
-    #[test]
-    fn agent_supports_mode_missing_modes_field_is_false() {
-        let session_new = json!({ "sessionId": "sess-1" });
-        assert!(!agent_supports_mode(
-            &session_new,
-            PermissionMode::Auto.as_wire_str()
-        ));
+        assert_eq!(
+            resolve_permission_mode(&unsupported, "default").status,
+            PermissionModeStatus::Unsupported
+        );
+        assert_eq!(
+            resolve_permission_mode(&unverified, "default").status,
+            PermissionModeStatus::Unverified
+        );
     }
 
     #[test]
@@ -11922,6 +12252,201 @@ done"#
             cap["configOptions"].is_null(),
             "an optionless switch caches the target's (empty) options, never the pre-switch model-a options with a patched effort"
         );
+    }
+}
+
+#[cfg(test)]
+mod permission_mode_tests {
+    use super::*;
+    use crate::acp::AcpClient;
+    use tests::make_prompt_context_no_owner;
+
+    const NO_CHANNEL: NewSessionChannelContext<'static> = NewSessionChannelContext {
+        huddle_instructions: None,
+        canvas: None,
+        name: None,
+        scope: None,
+        channel_type: None,
+    };
+
+    fn permission_mode_agent(acp: AcpClient) -> OwnedAgent {
+        OwnedAgent {
+            index: 0,
+            acp,
+            state: SessionState::default(),
+            model_capabilities: None,
+            desired_model: None,
+            model_overridden: false,
+            desired_model_request_id: None,
+            desired_model_pending_ack: false,
+            startup_effort: None,
+            agent_name: "permission-mode-fixture".into(),
+            goose_system_prompt_supported: None,
+            protocol_version: 2,
+        }
+    }
+
+    async fn spawn_permission_mode_fixture(
+        session_new_result: &str,
+        request_pattern: &str,
+        set_response: &str,
+    ) -> AcpClient {
+        let script = format!(
+            r#"count=0
+while IFS= read -r line; do
+  count=$((count + 1))
+  id=$((count - 1))
+  if [ "$count" -eq 1 ]; then
+    printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{session_new_result}}}'
+  elif [ "$count" -eq 2 ]; then
+    case "$line" in
+      {request_pattern})
+        printf '%s\n' '{{"jsonrpc":"2.0","id":'"$id"',{set_response}}}'
+        ;;
+      *)
+        printf '%s\n' '{{"jsonrpc":"2.0","id":'"$id"',"error":{{"code":-32601,"message":"Unexpected mode request"}}}}'
+        ;;
+    esac
+  else
+    printf '%s\n' '{{"jsonrpc":"2.0","id":'"$id"',"result":{{"ok":true}}}}'
+  fi
+done"#
+        );
+        AcpClient::spawn("bash", &["-c".to_string(), script], &[], false)
+            .await
+            .expect("spawn permission-mode fixture")
+    }
+
+    async fn create_session_with_fixture(
+        session_new_result: &str,
+        request_pattern: &str,
+        set_response: &str,
+    ) -> (Vec<observer::ObserverEvent>, OwnedAgent) {
+        let acp =
+            spawn_permission_mode_fixture(session_new_result, request_pattern, set_response).await;
+        let mut agent = permission_mode_agent(acp);
+        let observer = observer::ObserverHandle::in_process();
+        agent.acp.set_observer(Some(observer.clone()), 0);
+        create_session_and_apply_model(
+            &mut agent,
+            &make_prompt_context_no_owner(),
+            None,
+            NO_CHANNEL,
+        )
+        .await
+        .expect("session creation with a permission-mode fixture succeeds");
+        (observer.snapshot(), agent)
+    }
+
+    fn permission_mode_status(events: &[observer::ObserverEvent]) -> serde_json::Value {
+        events
+            .iter()
+            .find(|event| event.kind == "permission_mode_status")
+            .expect("permission mode status is emitted")
+            .payload
+            .clone()
+    }
+
+    fn captured_session_config(events: &[observer::ObserverEvent]) -> serde_json::Value {
+        events
+            .iter()
+            .find(|event| event.kind == "session_config_captured")
+            .expect("session config is emitted")
+            .payload
+            .clone()
+    }
+
+    fn has_mode_set_response(events: &[observer::ObserverEvent]) -> bool {
+        events.iter().any(|event| {
+            event.kind == "acp_read" && event.payload.get("id") == Some(&serde_json::json!(1))
+        })
+    }
+
+    const CLAUDE_MODE_OPTION_BYPASS: &str = r#"{"sessionId":"sess-mode-1","configOptions":[{"configId":"mode","category":"mode","currentValue":"bypassPermissions","options":[{"value":"default"},{"value":"acceptEdits"},{"value":"bypassPermissions"}]}]}"#;
+    const EXPECT_CONFIG_DEFAULT: &str =
+        r#"*'"method":"session/set_config_option"'*'"configId":"mode"'*'"value":"default"'*"#;
+
+    #[tokio::test]
+    async fn advertised_default_resets_bypass_and_confirms_complete_provider_state() {
+        let response = r#""result":{"configOptions":[{"configId":"mode","category":"mode","currentValue":"default","options":[{"value":"default"},{"value":"acceptEdits"},{"value":"bypassPermissions"}]}]}"#;
+        let (events, _agent) =
+            create_session_with_fixture(CLAUDE_MODE_OPTION_BYPASS, EXPECT_CONFIG_DEFAULT, response)
+                .await;
+
+        let status = permission_mode_status(&events);
+        assert_eq!(status["requestedMode"], "default");
+        assert_eq!(status["currentModeId"], "default");
+        assert_eq!(status["status"], "verified");
+        assert_eq!(status["mechanism"], "config_option");
+        let capture = captured_session_config(&events);
+        assert_eq!(capture["configOptions"][0]["currentValue"], "default");
+        let captured_event = events
+            .iter()
+            .find(|event| event.kind == "session_config_captured")
+            .expect("session config event exists");
+        assert_eq!(captured_event.session_id.as_deref(), Some("sess-mode-1"));
+    }
+
+    #[tokio::test]
+    async fn unadvertised_default_reports_unsupported_and_keeps_actual_bypass() {
+        let session_new = r#"{"sessionId":"sess-mode-1","configOptions":[{"configId":"mode","category":"mode","currentValue":"bypassPermissions","options":[{"value":"bypassPermissions"}]}]}"#;
+        let (events, _agent) = create_session_with_fixture(
+            session_new,
+            EXPECT_CONFIG_DEFAULT,
+            r#""result":{"configOptions":[]}"#,
+        )
+        .await;
+
+        let status = permission_mode_status(&events);
+        assert_eq!(status["status"], "unsupported");
+        assert_eq!(status["currentModeId"], "bypassPermissions");
+        assert!(!has_mode_set_response(&events));
+    }
+
+    #[tokio::test]
+    async fn missing_mode_metadata_is_unverified_without_claiming_a_default() {
+        let (events, _agent) = create_session_with_fixture(
+            r#"{"sessionId":"sess-mode-1"}"#,
+            EXPECT_CONFIG_DEFAULT,
+            r#""result":{"configOptions":[]}"#,
+        )
+        .await;
+
+        let status = permission_mode_status(&events);
+        assert_eq!(status["status"], "unverified");
+        assert!(status["currentModeId"].is_null());
+        assert!(!has_mode_set_response(&events));
+    }
+
+    #[tokio::test]
+    async fn legacy_mode_set_ack_without_current_state_remains_unverified() {
+        let session_new = r#"{"sessionId":"sess-mode-1","modes":{"currentModeId":"bypassPermissions","availableModes":[{"id":"default"},{"id":"bypassPermissions"}]}}"#;
+        // ACP SetSessionModeResponse contains only optional metadata; current
+        // mode state must come from session/new or current_mode_update.
+        let set_response = r#""result":{}"#;
+        let request_pattern = r#"*'"method":"session/set_mode"'*'"modeId":"default"'*"#;
+        let (events, _agent) =
+            create_session_with_fixture(session_new, request_pattern, set_response).await;
+
+        let status = permission_mode_status(&events);
+        assert_eq!(status["currentModeId"], serde_json::Value::Null);
+        assert_eq!(status["status"], "unverified");
+        assert_eq!(status["mechanism"], "legacy_mode");
+        assert!(captured_session_config(&events)["modes"]["currentModeId"].is_null());
+    }
+
+    #[tokio::test]
+    async fn provider_rejection_reports_known_current_mode_without_failing_session_start() {
+        let (events, _agent) = create_session_with_fixture(
+            CLAUDE_MODE_OPTION_BYPASS,
+            EXPECT_CONFIG_DEFAULT,
+            r#""error":{"code":-32602,"message":"mode change refused"}"#,
+        )
+        .await;
+
+        let status = permission_mode_status(&events);
+        assert_eq!(status["status"], "rejected");
+        assert_eq!(status["currentModeId"], "bypassPermissions");
     }
 }
 

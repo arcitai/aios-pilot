@@ -9199,6 +9199,266 @@ mod observer_publish_cadence_tests {
 }
 
 #[cfg(test)]
+mod permission_relay_e2e_tests {
+    use super::*;
+    use buzz_test_client::{BuzzTestClient, RelayMessage};
+    use nostr::{Alphabet, Filter, Keys, Kind, SingleLetterTag};
+    use std::time::Duration;
+
+    const DEFAULT_PERMISSION_TEST_RELAY: &str = "ws://127.0.0.1:3341";
+
+    fn permission_test_relay_url() -> String {
+        std::env::var("BUZZ_PERMISSION_TEST_RELAY_URL")
+            .unwrap_or_else(|_| DEFAULT_PERMISSION_TEST_RELAY.to_owned())
+    }
+
+    fn find_permission_binding(
+        owner_keys: &Keys,
+        event: &nostr::Event,
+    ) -> Option<crate::permission::PermissionBinding> {
+        let frame = decrypt_observer_payload::<serde_json::Value>(owner_keys, event).ok()?;
+        let envelope = frame.get("payload")?;
+        if let Some(events) = envelope.get("events").and_then(serde_json::Value::as_array) {
+            events.iter().find_map(|event| {
+                (event.get("kind").and_then(|kind| kind.as_str()) == Some("permission_request"))
+                    .then(|| serde_json::from_value(event.get("payload")?.clone()).ok())
+                    .flatten()
+            })
+        } else if frame.get("kind").and_then(|kind| kind.as_str()) == Some("permission_request") {
+            serde_json::from_value(envelope.clone()).ok()
+        } else {
+            None
+        }
+    }
+
+    fn permission_decision(binding: &crate::permission::PermissionBinding) -> serde_json::Value {
+        let mut payload = serde_json::to_value(binding)
+            .expect("serialize owner decision binding")
+            .as_object()
+            .cloned()
+            .expect("permission binding is an object");
+        payload.insert("type".into(), serde_json::json!("resolve_permission"));
+        payload.insert("decision".into(), serde_json::json!("approve"));
+        serde_json::Value::Object(payload)
+    }
+
+    #[tokio::test]
+    #[ignore = "requires the isolated local Buzz relay at 127.0.0.1:3341"]
+    async fn encrypted_relay_permission_decision_runs_exactly_one_fixture_effect() {
+        let relay_url = permission_test_relay_url();
+        let owner_keys = Keys::generate();
+        let agent_keys = Keys::generate();
+        let owner_pubkey = owner_keys.public_key();
+        let owner_pubkey_hex = owner_pubkey.to_hex();
+        let agent_pubkey_hex = agent_keys.public_key().to_hex();
+
+        let mut owner_client = BuzzTestClient::connect(&relay_url, &owner_keys)
+            .await
+            .expect("connect permission-test owner");
+        let subscription_id = format!("permission-e2e-{}", uuid::Uuid::new_v4());
+        owner_client
+            .subscribe(
+                &subscription_id,
+                vec![Filter::new()
+                    .kind(Kind::Custom(
+                        buzz_core::kind::KIND_AGENT_OBSERVER_FRAME as u16,
+                    ))
+                    .custom_tags(
+                        SingleLetterTag::lowercase(Alphabet::P),
+                        [owner_pubkey_hex.as_str()],
+                    )],
+            )
+            .await
+            .expect("subscribe to owner observer frames");
+        owner_client
+            .collect_until_eose(&subscription_id, Duration::from_secs(5))
+            .await
+            .expect("owner observer subscription becomes live");
+
+        let auth_tag_json =
+            buzz_sdk::nip_oa::compute_auth_tag(&owner_keys, &agent_keys.public_key(), "")
+                .expect("create temporary NIP-OA test attestation");
+        let auth_tag = buzz_sdk::nip_oa::parse_auth_tag(&auth_tag_json)
+            .expect("parse temporary NIP-OA test attestation");
+        let mut agent_relay = relay::HarnessRelay::connect(
+            &relay_url,
+            &agent_keys,
+            &agent_pubkey_hex,
+            Some(auth_tag),
+        )
+        .await
+        .expect("connect permission-test agent");
+        agent_relay
+            .subscribe_observer_controls()
+            .await
+            .expect("subscribe agent to owner control frames");
+        let mut control_rx = agent_relay
+            .take_observer_control_rx()
+            .expect("observer control receiver exists");
+
+        let observer = observer::ObserverHandle::in_process();
+        let broker = permission::PermissionBroker::with_limits(
+            permission::PermissionRuntimeIdentity {
+                owner_pubkey: owner_pubkey_hex.clone(),
+                agent_pubkey: agent_pubkey_hex.clone(),
+                relay_url: relay_url.clone(),
+                runtime_start_nonce: uuid::Uuid::new_v4().to_string(),
+            },
+            Duration::from_secs(15),
+            2,
+        );
+        let publisher_task = spawn_relay_observer_publisher(
+            observer.clone(),
+            agent_relay.event_publisher(),
+            agent_keys.clone(),
+            agent_pubkey_hex.clone(),
+            owner_pubkey_hex.clone(),
+            owner_pubkey,
+        );
+
+        let marker_dir = tempfile::tempdir().expect("create fixture output directory");
+        let marker_path = marker_dir.path().join("approved-tool-effect.txt");
+        let marker_env = format!(
+            "BUZZ_TEST_PERMISSION_EFFECT_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let fixture_script = format!(
+            r#"
+read -r _prompt
+printf '%s\n' '{{"jsonrpc":"2.0","id":"fixture-permission","method":"session/request_permission","params":{{"sessionId":"relay-fixture-session","title":"Run a tool","options":[{{"optionId":"fixture-deny","kind":"reject_once"}},{{"optionId":"fixture-allow","kind":"allow_once"}}],"subject":{{"toolCall":{{"kind":"execute","title":"Write one relay-test marker","rawInput":{{"command":"write marker"}}}}}}}}}}'
+read -r decision
+case "$decision" in
+  *fixture-allow*) printf 'one-use-effect\n' >> "${marker_env}" ;;
+esac
+printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'
+"#
+        );
+        let mut acp_client = AcpClient::spawn(
+            "bash",
+            &["-c".to_string(), fixture_script],
+            &[(marker_env, marker_path.to_string_lossy().into_owned())],
+            false,
+        )
+        .await
+        .expect("spawn one-effect ACP fixture");
+        acp_client.set_observer(Some(observer.clone()), 0);
+        acp_client.set_permission_broker(Some(broker.clone()));
+        acp_client.set_observer_context(observer::ObserverContext {
+            channel_id: Some("permission-relay-fixture-channel".into()),
+            session_id: Some("relay-fixture-session".into()),
+            turn_id: Some(uuid::Uuid::new_v4().to_string()),
+            started_at: None,
+        });
+        let prompt_task = tokio::spawn(async move {
+            let result = acp_client
+                .session_prompt_with_idle_timeout(
+                    "relay-fixture-session",
+                    "run the fixture tool",
+                    Duration::from_secs(5),
+                    Duration::from_secs(20),
+                )
+                .await;
+            (acp_client, result)
+        });
+
+        let binding = tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                match owner_client
+                    .recv_event(Duration::from_secs(5))
+                    .await
+                    .expect("receive relay observer frame")
+                {
+                    RelayMessage::Event {
+                        subscription_id: received_subscription,
+                        event,
+                    } if received_subscription == subscription_id => {
+                        if let Some(binding) = find_permission_binding(&owner_keys, &event) {
+                            break binding;
+                        }
+                    }
+                    RelayMessage::Closed {
+                        subscription_id: received_subscription,
+                        message,
+                    } if received_subscription == subscription_id => {
+                        panic!("owner observer subscription closed: {message}");
+                    }
+                    _ => {}
+                }
+            }
+        })
+        .await
+        .expect("permission request reaches owner as an encrypted relay frame");
+
+        let encrypted_decision = encrypt_observer_payload(
+            &owner_keys,
+            &agent_keys.public_key(),
+            &permission_decision(&binding),
+        )
+        .expect("encrypt owner decision for agent");
+        let control_event = buzz_sdk::build_agent_observer_frame(
+            &agent_pubkey_hex,
+            &agent_pubkey_hex,
+            buzz_core::observer::OBSERVER_FRAME_CONTROL,
+            &encrypted_decision,
+        )
+        .expect("build owner-to-agent control frame")
+        .sign_with_keys(&owner_keys)
+        .expect("sign owner control frame");
+        let published = owner_client
+            .send_event(control_event)
+            .await
+            .expect("publish encrypted owner decision");
+        assert!(
+            published.accepted,
+            "relay rejected owner decision: {}",
+            published.message
+        );
+
+        let control_event = tokio::time::timeout(Duration::from_secs(10), control_rx.recv())
+            .await
+            .expect("agent receives relay control frame")
+            .expect("agent control subscription remains open");
+        let mut pool = AgentPool::from_slots(vec![]);
+        handle_relay_observer_control_event(
+            &agent_keys,
+            control_event,
+            &mut pool,
+            Some(&observer),
+            &owner_pubkey_hex,
+            agent_relay.event_publisher(),
+            &broker,
+        );
+        assert_eq!(
+            broker.pending_count(),
+            0,
+            "owner consumed the pending request"
+        );
+
+        let (_acp_client, prompt_result) = prompt_task.await.expect("fixture prompt task");
+        assert_eq!(
+            prompt_result.expect("approved fixture completes its ACP turn"),
+            acp::StopReason::EndTurn
+        );
+        assert_eq!(
+            std::fs::read_to_string(&marker_path).expect("approved fixture writes its marker"),
+            "one-use-effect\n",
+            "one owner decision must produce exactly one fixture side effect"
+        );
+
+        owner_client
+            .close_subscription(&subscription_id)
+            .await
+            .expect("close owner observer subscription");
+        owner_client
+            .disconnect()
+            .await
+            .expect("disconnect permission-test owner");
+        publisher_task.abort();
+        let _ = publisher_task.await;
+    }
+}
+
+#[cfg(test)]
 mod observer_chunk_coalescer_tests {
     use super::*;
 

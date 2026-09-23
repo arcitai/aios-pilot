@@ -41,12 +41,20 @@ are not offered to the owner.
 ACP adapters may expose permission modes such as `auto`, `acceptEdits`, or
 `bypassPermissions`. Selecting an adapter's autonomous mode is an explicit
 opt-in and may allow tool calls without Buzz approval prompts. Buzz shows a
-persistent in-app notice when a managed runtime reports `bypassPermissions`.
+persistent in-app notice when an ACP session reports its current mode as
+`bypassPermissions`. Later ACP mode updates are tracked per session, so a
+reported change updates the notice.
 
 For direct harness launches, `--permission-mode bypass-permissions` or
 `BUZZ_ACP_PERMISSION_MODE=bypassPermissions` explicitly selects bypass mode.
-Managed desktop launches set the harness default to `default`, so an inherited
-shell bypass setting does not silently make a managed agent autonomous.
+Managed desktop launches request `default`. On each new session, Buzz first
+checks ACP `configOptions` for a `mode` selector and explicitly selects
+`default` when that value is advertised. When only the legacy ACP `modes` list
+is available, Buzz uses its advertised `default` entry. Buzz records whether
+the provider confirmed the resulting current mode, rejected the request, or did
+not support or verify it. A configured harness request by itself does not prove
+the provider's current mode; adapters that do not report mode state remain
+unverified.
 
 ## Limits
 
