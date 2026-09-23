@@ -4,11 +4,11 @@ use std::{collections::HashSet, fs, io::Write, path::PathBuf};
 
 use clap::Subcommand;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
-    client::{BuzzClient, extract_d_tag, extract_tag_value, normalize_write_response},
+    client::{extract_d_tag, extract_tag_value, normalize_write_response, BuzzClient},
     error::CliError,
     validate::{parse_uuid, validate_hex64},
 };
@@ -20,6 +20,7 @@ const MAX_MEMBER_CHANNELS: u32 = 10_000;
 const MEMBER_METADATA_BATCH_SIZE: usize = 100;
 
 #[derive(Subcommand)]
+/// Commands for private site documents and offline exports.
 pub enum SitesCmd {
     /// List private Sites channels belonging to a business workspace
     List {
@@ -65,6 +66,7 @@ pub enum SitesCmd {
     },
 }
 
+/// Execute a site command using the captured relay client and signing identity.
 pub async fn dispatch_sites(command: SitesCmd, client: &BuzzClient) -> Result<(), CliError> {
     match command {
         SitesCmd::List { business_channel } => list_sites(client, &business_channel).await,
@@ -117,7 +119,7 @@ async fn list_sites(client: &BuzzClient, business_channel: &str) -> Result<(), C
         .filter(|channel_id| canonical_uuid(channel_id, "member channel").is_ok())
         .collect();
 
-    let channel_ids: Vec<String> = member_channels.into_iter().collect();
+    let channel_ids: Vec<String> = member_channels.iter().cloned().collect();
     let expected_description = site_channel_description(business_channel);
     let mut sites = Vec::new();
     for channel_batch in channel_ids.chunks(MEMBER_METADATA_BATCH_SIZE) {

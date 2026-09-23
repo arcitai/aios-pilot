@@ -225,6 +225,12 @@ enum Cmd {
     /// Read and manage the AIOS business workspace document
     #[command(subcommand)]
     Business(BusinessCmd),
+    /// Read and update private Sites documents in a business workspace
+    #[command(subcommand)]
+    Sites(commands::sites::SitesCmd),
+    /// Request an owner-approved voice conversation
+    #[command(subcommand)]
+    Calls(CallsCmd),
     /// Add, remove, and list emoji reactions
     #[command(subcommand)]
     Reactions(ReactionsCmd),
@@ -794,6 +800,20 @@ pub enum CanvasCmd {
         /// Revision event ID to restore (64-char hex)
         #[arg(long)]
         revision: String,
+    },
+}
+
+/// In-app call requests made by a managed agent.
+#[derive(Subcommand)]
+enum CallsCmd {
+    /// Ring this managed agent's owner; microphone access requires acceptance
+    Request {
+        /// Shared conversation channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Maximum seconds to wait for accept, decline or timeout
+        #[arg(long, default_value_t = 45, value_parser = clap::value_parser!(u64).range(1..=60))]
+        wait_seconds: u64,
     },
 }
 
@@ -2315,7 +2335,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         _ => (None, None),
     };
 
-    let client = BuzzClient::new(relay_url, keys, auth_tag, auth_tag_json)?;
+    let client = BuzzClient::new(relay_url, keys, auth_tag.clone(), auth_tag_json)?;
 
     match cli.command {
         Cmd::Agents(sub) => commands::agents::dispatch(sub, &client).await,
@@ -2323,6 +2343,20 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Channels(sub) => commands::channels::dispatch(sub, &client, &cli.format).await,
         Cmd::Canvas(sub) => commands::channels::dispatch_canvas(sub, &client).await,
         Cmd::Business(sub) => commands::business::dispatch(sub, &client).await,
+        Cmd::Sites(sub) => commands::sites::dispatch_sites(sub, &client).await,
+        Cmd::Calls(CallsCmd::Request {
+            channel,
+            wait_seconds,
+        }) => {
+            let result =
+                commands::calls::request_call(&client, auth_tag.as_ref(), &channel, wait_seconds)
+                    .await?;
+            let json = serde_json::to_string_pretty(&result).map_err(|error| {
+                CliError::Other(format!("could not serialize call decision: {error}"))
+            })?;
+            println!("{json}");
+            Ok(())
+        }
         Cmd::Reactions(sub) => commands::reactions::dispatch(sub, &client).await,
         Cmd::Emoji(sub) => commands::emoji::dispatch(sub, &client).await,
         Cmd::Gifs(sub) => commands::gifs::dispatch(sub, &client).await,

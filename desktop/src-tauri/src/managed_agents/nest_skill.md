@@ -71,6 +71,18 @@ inferences. This CLI cannot connect a provider or manufacture `connected`
 status; direct credential setup to Desktop's Connections screen. Never put
 credentials in documents, source text, exports, messages or command arguments.
 
+## In-app voice calls
+
+A managed local agent can ask its owner to switch a shared conversation to
+voice with `buzz calls request --channel <current-channel-uuid> --wait-seconds 45`.
+Use it when the owner asked for a call or a voice check-in is useful; do not
+repeatedly ring after a decline or timeout. The owner sees an incoming-call
+prompt and explicitly accepts before microphone access begins. The command
+returns `accept`, `decline` or `timeout`. Acceptance confirms the owner's
+session started; it does not prove that your audio has joined. Check the actual
+huddle state before claiming a live conversation. This is an in-app call, not a
+telephone call. Never invent or print the managed runtime nonce or auth tag.
+
 ## Git Repositories
 
 Buzz hosts real git repos, and **you can own one yourself** — no human key needed. `repos create` signs the announcement with *your* key, so the repo is owned by whoever runs it; the owner segment in the clone URL is your own pubkey (hex, not a username). Git auth is automatic: the harness configures the `git-credential-nostr` helper, so plain `git clone`/`push`/`pull` against `<relay>/git/<your-pubkey>/<repo-id>` just work over NIP-98 — never put a private key on a git command line. Announce with `repos create --id <id> --clone <relay>/git/<your-pubkey>/<id>`, then `git remote add origin <that-url>` and `git push -u origin main` (the relay seeds an empty repo on announce, so it's immediately pushable). Requires git 2.46+ for the credential protocol.

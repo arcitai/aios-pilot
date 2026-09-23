@@ -1,4 +1,5 @@
 import * as React from "react";
+import { BusinessVoiceIncomingCallGate } from "@/features/business-voice";
 import { AppHuddleBar } from "@/app/AppHuddleBar";
 import * as BuzzTheme from "@/app/BuzzThemeSurfaces";
 import { HuddleProvider, useHuddle } from "@/features/huddle";
@@ -65,6 +66,7 @@ export function AppHuddleShell({
       onShowHuddleInMainApp={isRoom ? undefined : onShowHuddleInMainApp}
       onViewHuddleChannel={isRoom ? undefined : onViewHuddleChannel}
     >
+      {!isRoom ? <BusinessVoiceIncomingCallGate /> : null}
       <HuddleShortcutHandler>
         <RemindMeLaterProvider pubkey={currentPubkey}>
           <div
