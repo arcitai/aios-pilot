@@ -15,9 +15,10 @@ Updated during the night of 23–24 September 2026 (Europe/Copenhagen).
   clean `fd68911`. Later skills, Sites and Slack-link fixes must be included
   in the next package. Native window interaction remains unavailable
   while the computer is locked. Detailed evidence and limits are below.
-- Skills and Sites modules have landed; active work includes app agent
-  access/CLI, Sites integration and incoming calls. Google Drive
-  OAuth is being built with provider-enforced read-only access. The full
+- Skills, Apps access and integrated Sites have landed. Google Drive is wired
+  and its selected-document browser flow passes; a reviewed credential race
+  still needs its native fix. Active work includes app/Sites agent actions,
+  browser use, tables and workflow approvals. Incoming-call recovery now passes. The full
   platform is not complete; [FEATURES](FEATURES.md) tracks the wider outcome.
 - An hourly heartbeat in the lead task resumes authorized work until the
   product goal is verified or meaningful progress requires a missing external
@@ -43,11 +44,12 @@ the same worker for revisions. They return isolated commits; lead integrates.
 
 ## Next work
 
-1. Integrate the Apps extension slot, explicit agent access and Sites workspace.
-2. Fix reviewed Sites asynchronous result/confirmation binding before release.
-3. Complete agent-facing app/Sites CLI and exercise real agent-created output.
-4. Integrate Publisher hosting/restore, Drive OAuth, incoming calls and workflow
-   approvals; retain an honest list of unfinished paths.
+1. Complete agent-facing app/Sites CLI and exercise real agent-created output.
+2. Finish Drive credential-generation fencing, then rerun its native checks.
+3. Verify Publisher hosting/restore against real Docker volumes and finish
+   durable workflow approvals, isolated browser use and private typed tables.
+4. Continue multi-computer operation and data-backed app contracts, then refresh
+   the packaged desktop and installation/recovery evidence.
 
 ## Proof
 
@@ -372,3 +374,71 @@ inspected. This does not prove live relay persistence or model execution.
 - Work continues: Apps access/CLI, Sites generation/CLI and race fixes,
   Publisher self-hosting and recovery, Google Drive OAuth, incoming calls,
   workflow approval gates and broader platform verification.
+
+
+## Integrated checkpoint — 01:45 local, 24 September
+
+- Apps extension host and Sites share the Business Apps rail. Eight combined
+  browser tests pass, including private persistence, draft navigation guards,
+  and real loopback Publisher preview JavaScript, published JavaScript and
+  revoke-to-404. Desktop IPC/keyring is substituted in that test; Publisher
+  HTTP and the browser iframe are real. Chromium's local-network permission
+  is granted only to the disposable test context; production CSP is unchanged.
+- Slide preview typography now follows its pane width. The original 1280px
+  window cropped the headline; the fixed screenshot and geometry check pass.
+  Sites completions are fenced by selected site/scope and publisher connection
+  generation (13 focused lifecycle checks).
+- Drive handlers and UI are integrated. Two browser tests pass: selected Doc
+  import, provenance, duplicate rejection, disconnect preservation, canceled
+  sign-in and retry. All 46 native connection tests pass. No real Google account
+  was connected. Review found that delayed refresh/connect could restore a
+  deleted credential; the connection task owns that follow-up before release.
+- Incoming-call CLI/protocol and global gate are integrated in the working tree.
+  Six combined incoming/manual voice browser cases pass with synthetic media.
+  A seventh case proves the microphone stops after a failed call confirmation,
+  but found that the collapsed sidebar lacked the new durable cleanup-error
+  retry control. Voice task is fixing the real collapsed surface; retain this
+  failing regression until it passes. Native mic/speaker remains unverified.
+- Publisher Compose/backup v2 support is integrated as 27c10fa; 37 controller
+  tests pass. Live fifth-volume backup/restore is underway in an isolated
+  project on ports distinct from the lead relay. Do not equate mocks with
+  volume recovery evidence.
+- Corrected a stale upstream comment and our capability map: this Buzz base
+  already enforces atomic Canvas expected-revision checks at the relay/DB.
+  Native live proof against :3341 now submits two signed writes built from
+  the same head concurrently: exactly one succeeds, the other conflicts, and
+  only the winner enters history. Both live/scope tests pass. Channel:
+  185acd48-83f3-4674-b67d-27e640dcb250; log /tmp/aios-canvas-atomic-live.log.
+- Sibling CLI PATH discovery is fixed (806dd57) and an actual spawned process
+  test passes. The earlier real model update used an absolute path; do not
+  relabel that earlier turn as proof of bare-command model use.
+- Fixture coordination: voice and workflow workers initially collided on the
+  generated buzz-harness :3030 database. Workflow task now owns that runtime;
+  voice was told to use generated private fixtures on :3341 without any reset.
+  The workflow owner was told to invalidate any proof affected by the fixture
+  reset. User data and the lead :3341 volumes were not reset.
+
+
+## Integrated checkpoint — 01:58 local, 24 September
+
+- Incoming-call recovery follow-up 1c6c725 fixes the collapsed sidebar control.
+  All seven combined incoming/manual voice browser cases now pass, including
+  microphone release after failed confirmation, durable native-leave error,
+  visible retry, and clearing the error on successful retry. Central CLI/gate
+  and refreshed built-in call instructions are committed as 4c7d994.
+- Sites CLI is wired and built. Its six focused checks pass. A separate real
+  CLI test against :3341 passes create-private-room, show/update/list, exact
+  parent scoping, stale revision rejection, invalid-document rejection,
+  outsider denial and offline HTML export without publishing. Test source:
+  scripts/tests/test_aios_sites_cli_live.py; log /tmp/aios-sites-cli-live.log.
+- Apps CLI module 6d57f05 is integrated; root wiring and strict parent-business
+  validation/strong reads are under review and test. Guided agent UI remains
+  with the Apps task. Worker code is not release acceptance by itself.
+- Parallel scratch Rust/Docker builds overloaded the local machine (load over
+  130). A 15-second CLI startup timed out; after load fell, the bounded live
+  test completed in 3.91s. Further lead Cargo commands use CARGO_BUILD_JOBS=2.
+  Task message/status tools subsequently stopped returning promptly; outgoing
+  coordination calls were terminated after yielding without acknowledgement.
+  Do not assume those last resource-control messages were delivered. Read-only
+  worker checkout inspection confirms work continues. No worker process or
+  user container was killed to work around this.
