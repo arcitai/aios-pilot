@@ -760,6 +760,10 @@ pub fn spawn_agent_child(
     }
 
     command.env("BUZZ_ACP_RELAY_OBSERVER", "true");
+    // Do not inherit a shell-level all-tools bypass into managed desktop
+    // agents. The provider's visible runtime-mode setting remains available
+    // through the existing config surface; harness autonomy stays opt-in.
+    command.env("BUZZ_ACP_PERMISSION_MODE", "default");
 
     // buzz-acp owns Git identity, scoped credentials, signing and key cleanup.
     // An advanced custom ACP command bypasses that harness, so retain the

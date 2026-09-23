@@ -36,6 +36,7 @@ use crate::acp::{
 };
 use crate::config::{compose_scoped_session_title, DedupMode, PermissionMode};
 use crate::observer;
+use crate::permission::PermissionBroker;
 use crate::prompt_project::{pick_authoritative_project_home, PromptProjectInfo};
 use crate::queue::{
     CancelReason, ContextMessage, ConversationContext, FlushBatch, PromptChannelInfo,
@@ -840,6 +841,8 @@ pub struct PromptContext {
     pub max_turns_per_session: u32,
     /// Permission mode to apply after session creation. `Default` = skip.
     pub permission_mode: PermissionMode,
+    /// Owner-bound broker shared by the relay loop and live ACP workers.
+    pub permission_broker: Option<PermissionBroker>,
     /// Agent identity — used to derive the NIP-AE conversation key at
     /// session creation for core injection.
     pub agent_keys: nostr::Keys,
@@ -2275,6 +2278,9 @@ pub async fn run_prompt_task(
     };
     let observer_channel_id = source.channel_id();
     let turn_started_at = chrono::Utc::now().to_rfc3339();
+    agent
+        .acp
+        .set_permission_broker(ctx.permission_broker.clone());
     agent.acp.set_observer_context(observer::context_for_turn(
         observer_channel_id,
         None,
@@ -9956,6 +9962,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             context_message_limit: 0,
             max_turns_per_session: 0,
             permission_mode: PermissionMode::Default,
+            permission_broker: None,
             agent_keys: agent_keys.clone(),
             agent_owner_pubkey: owner_pubkey,
             memory_enabled: false,

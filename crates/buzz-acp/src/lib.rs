@@ -9,6 +9,7 @@ mod config;
 mod engram_fetch;
 mod filter;
 mod observer;
+mod permission;
 mod pool;
 mod pool_lifecycle;
 mod prompt_framing;
@@ -43,6 +44,7 @@ use config::{
 use filter::SubscriptionRule;
 use futures_util::FutureExt;
 use nostr::{PublicKey, ToBech32};
+use permission::{PermissionBroker, PermissionRuntimeIdentity};
 use pool::{
     AgentPool, ControlSignal, IdleSwitchResult, OwnedAgent, PromptContext, PromptOutcome,
     PromptResult, PromptSource, SessionState, TimeoutKind,
@@ -1566,18 +1568,20 @@ async fn publish_relay_observer_event(
 /// Maximum age (seconds) for an observer control frame to be considered fresh.
 const OBSERVER_CONTROL_FRESHNESS_SECS: i64 = 300;
 
-fn handle_relay_observer_control_event(
+fn authenticate_relay_observer_control_event(
     keys: &nostr::Keys,
     event: nostr::Event,
-    pool: &mut AgentPool,
-    observer: Option<&observer::ObserverHandle>,
     owner_pubkey_hex: &str,
-    event_publisher: RelayEventPublisher,
-) {
+) -> Option<serde_json::Value> {
+    if event.kind.as_u16() as u32 != buzz_core::kind::KIND_AGENT_OBSERVER_FRAME {
+        tracing::warn!("observer control frame has the wrong event kind — dropping");
+        return None;
+    }
+
     // Defense-in-depth: verify signature even though the relay already checked.
     if let Err(e) = buzz_core::verify_event(&event) {
         tracing::warn!(error = %e, "observer control frame failed signature verification");
-        return;
+        return None;
     }
 
     // Defense-in-depth: verify the sender is the resolved owner.
@@ -1587,7 +1591,24 @@ fn handle_relay_observer_control_event(
             expected = %owner_pubkey_hex,
             "observer control frame from non-owner — dropping"
         );
-        return;
+        return None;
+    }
+
+    let agent_pubkey_hex = keys.public_key().to_hex();
+    let has_target = |name: &str| {
+        event.tags.iter().any(|tag| {
+            tag.as_slice().first().map(String::as_str) == Some(name)
+                && tag.as_slice().get(1).map(String::as_str) == Some(agent_pubkey_hex.as_str())
+        })
+    };
+    let is_control_frame = event.tags.iter().any(|tag| {
+        tag.as_slice().first().map(String::as_str) == Some("frame")
+            && tag.as_slice().get(1).map(String::as_str)
+                == Some(buzz_core::observer::OBSERVER_FRAME_CONTROL)
+    });
+    if !has_target("p") || !has_target("agent") || !is_control_frame {
+        tracing::warn!("observer control frame has an invalid target or frame tag — dropping");
+        return None;
     }
 
     // Freshness: reject stale/replayed frames outside ±5 minute window.
@@ -1599,15 +1620,30 @@ fn handle_relay_observer_control_event(
             now,
             "observer control frame outside freshness window — dropping"
         );
-        return;
+        return None;
     }
 
-    let payload = match decrypt_observer_payload::<serde_json::Value>(keys, &event) {
-        Ok(payload) => payload,
+    match decrypt_observer_payload::<serde_json::Value>(keys, &event) {
+        Ok(payload) => Some(payload),
         Err(error) => {
             tracing::warn!("failed to decrypt observer control frame: {error}");
-            return;
+            None
         }
+    }
+}
+
+fn handle_relay_observer_control_event(
+    keys: &nostr::Keys,
+    event: nostr::Event,
+    pool: &mut AgentPool,
+    observer: Option<&observer::ObserverHandle>,
+    owner_pubkey_hex: &str,
+    event_publisher: RelayEventPublisher,
+    permission_broker: &PermissionBroker,
+) {
+    let Some(payload) = authenticate_relay_observer_control_event(keys, event, owner_pubkey_hex)
+    else {
+        return;
     };
 
     let command_type = payload.get("type").and_then(|value| value.as_str());
@@ -1626,9 +1662,87 @@ fn handle_relay_observer_control_event(
                 event_publisher,
             );
         }
-        _ => {
-            tracing::debug!(payload = %payload, "ignoring unknown observer control frame");
+        Some("resolve_permission") => {
+            if let Err(error) = permission_broker.resolve_control(&payload) {
+                tracing::debug!(target: "acp::permission", "permission decision rejected: {error}");
+            }
         }
+        _ => {
+            tracing::debug!("ignoring unknown observer control frame");
+        }
+    }
+}
+
+#[cfg(test)]
+mod observer_permission_control_auth_tests {
+    use super::*;
+    use nostr::Keys;
+
+    fn control_frame(sender: &Keys, agent: &Keys, payload: &serde_json::Value) -> nostr::Event {
+        let encrypted = encrypt_observer_payload(sender, &agent.public_key(), payload)
+            .expect("encrypt observer control payload");
+        buzz_sdk::build_agent_observer_frame(
+            &agent.public_key().to_hex(),
+            &agent.public_key().to_hex(),
+            buzz_core::observer::OBSERVER_FRAME_CONTROL,
+            &encrypted,
+        )
+        .expect("build observer control event")
+        .sign_with_keys(sender)
+        .expect("sign observer control event")
+    }
+
+    #[test]
+    fn permission_control_requires_the_authenticated_owner_and_agent_target() {
+        let owner = Keys::generate();
+        let other_owner = Keys::generate();
+        let agent = Keys::generate();
+        let payload = serde_json::json!({"type":"resolve_permission"});
+        let owner_hex = owner.public_key().to_hex();
+
+        let valid = control_frame(&owner, &agent, &payload);
+        assert_eq!(
+            authenticate_relay_observer_control_event(&agent, valid, &owner_hex),
+            Some(payload.clone()),
+        );
+
+        let forged_owner = control_frame(&other_owner, &agent, &payload);
+        assert!(
+            authenticate_relay_observer_control_event(&agent, forged_owner, &owner_hex,).is_none()
+        );
+
+        let wrong_target = Keys::generate();
+        let encrypted = encrypt_observer_payload(&owner, &agent.public_key(), &payload)
+            .expect("encrypt wrong-target fixture");
+        let wrong_target_event = buzz_sdk::build_agent_observer_frame(
+            &agent.public_key().to_hex(),
+            &wrong_target.public_key().to_hex(),
+            buzz_core::observer::OBSERVER_FRAME_CONTROL,
+            &encrypted,
+        )
+        .expect("build wrong-target fixture")
+        .sign_with_keys(&owner)
+        .expect("sign wrong-target fixture");
+        assert!(
+            authenticate_relay_observer_control_event(&agent, wrong_target_event, &owner_hex,)
+                .is_none()
+        );
+
+        let telemetry_ciphertext = encrypt_observer_payload(&owner, &agent.public_key(), &payload)
+            .expect("encrypt telemetry fixture");
+        let telemetry_event = buzz_sdk::build_agent_observer_frame(
+            &agent.public_key().to_hex(),
+            &agent.public_key().to_hex(),
+            buzz_core::observer::OBSERVER_FRAME_TELEMETRY,
+            &telemetry_ciphertext,
+        )
+        .expect("build telemetry fixture")
+        .sign_with_keys(&owner)
+        .expect("sign telemetry fixture");
+        assert!(
+            authenticate_relay_observer_control_event(&agent, telemetry_event, &owner_hex,)
+                .is_none()
+        );
     }
 }
 
@@ -2577,6 +2691,15 @@ async fn run_harness(
     let observer = config
         .relay_observer
         .then(observer::ObserverHandle::in_process);
+    let runtime_start_nonce = std::env::var("BUZZ_MANAGED_AGENT_START_NONCE").unwrap_or_default();
+    // Priority: BUZZ_AUTH_TAG (NIP-OA attestation) → --agent-owner flag.
+    let startup_owner = resolve_agent_owner(&config);
+    let permission_broker = PermissionBroker::new(PermissionRuntimeIdentity {
+        owner_pubkey: startup_owner.clone().unwrap_or_default(),
+        agent_pubkey: config.keys.public_key().to_hex(),
+        relay_url: config.relay_url.clone(),
+        runtime_start_nonce: runtime_start_nonce.clone(),
+    });
     if let Some(handle) = &observer {
         handle.emit(
             "harness_started",
@@ -2588,6 +2711,8 @@ async fn run_harness(
                 "agentArgs": config.agent_args,
                 "parallelism": config.agents,
                 "relayObserver": config.relay_observer,
+                "runtimeStartNonce": runtime_start_nonce.clone(),
+                "permissionMode": config.permission_mode.as_wire_str(),
             }),
         );
     }
@@ -2660,8 +2785,6 @@ async fn run_harness(
     let presence_publisher = relay.event_publisher();
     let presence_keys = config.keys.clone();
 
-    // Priority: BUZZ_AUTH_TAG (NIP-OA attestation) → --agent-owner flag.
-    let startup_owner: Option<String> = resolve_agent_owner(&config);
     if let Some(ref owner) = startup_owner {
         tracing::info!("agent owner: {owner}");
     } else {
@@ -2796,7 +2919,6 @@ async fn run_harness(
         ));
     }
 
-    let runtime_start_nonce = std::env::var("BUZZ_MANAGED_AGENT_START_NONCE").unwrap_or_default();
     let dedup_mode = config.dedup_mode;
     let mut queue =
         EventQueue::new(dedup_mode).with_in_flight_deadline(config.max_turn_duration_secs);
@@ -2811,16 +2933,18 @@ async fn run_harness(
         }
     }
 
-    if config.lazy_pool {
-        emit_runtime_lifecycle(
-            observer.as_ref(),
-            &runtime_start_nonce,
-            &pubkey_hex,
-            &config.relay_url,
-            "listening",
-            None,
-        );
-    }
+    emit_runtime_lifecycle(
+        observer.as_ref(),
+        &runtime_start_nonce,
+        &pubkey_hex,
+        &config.relay_url,
+        if config.lazy_pool {
+            "listening"
+        } else {
+            "ready"
+        },
+        None,
+    );
 
     let base_prompt_content = config.base_prompt_content.take();
     let cwd = current_working_directory()?;
@@ -2855,6 +2979,7 @@ async fn run_harness(
         context_message_limit: config.context_message_limit,
         max_turns_per_session: config.max_turns_per_session,
         permission_mode: config.permission_mode,
+        permission_broker: Some(permission_broker.clone()),
         agent_keys: config.keys.clone(),
         agent_owner_pubkey: startup_owner
             .as_deref()
@@ -3249,6 +3374,7 @@ async fn run_harness(
                                     observer.as_ref(),
                                     owner_hex,
                                     relay.event_publisher(),
+                                    &permission_broker,
                                 );
                             } else {
                                 tracing::warn!("observer control frame received but no owner resolved — dropping");

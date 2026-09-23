@@ -14,6 +14,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio_util::codec::{FramedRead, LinesCodec, LinesCodecError};
 
 use crate::observer::{ObserverContext, ObserverHandle};
+use crate::permission::{PermissionBroker, PermissionOutcome};
 use crate::usage::{
     PromptResponseUsage, StandardAdapterKind, StandardUsageTracker, TurnUsage, UsageTracker,
 };
@@ -173,6 +174,8 @@ pub struct AcpClient {
     current_hard_deadline: Option<tokio::time::Instant>,
     /// Optional local observer feed used by the desktop app.
     observer: Option<ObserverHandle>,
+    /// Owner-scoped broker for explicit, one-shot permission decisions.
+    permission_broker: Option<PermissionBroker>,
     /// Pool slot index for this agent process.
     observer_agent_index: Option<usize>,
     /// Best-effort context attached to raw ACP wire events.
@@ -593,6 +596,7 @@ impl AcpClient {
             last_prompt_id: None,
             current_hard_deadline: None,
             observer: None,
+            permission_broker: None,
             observer_agent_index: None,
             observer_context: ObserverContext::default(),
             active_run_id: None,
@@ -608,6 +612,11 @@ impl AcpClient {
     pub fn set_observer(&mut self, observer: Option<ObserverHandle>, agent_index: usize) {
         self.observer = observer;
         self.observer_agent_index = Some(agent_index);
+    }
+
+    /// Attach the current harness permission broker to this worker's session.
+    pub(crate) fn set_permission_broker(&mut self, broker: Option<PermissionBroker>) {
+        self.permission_broker = broker;
     }
 
     /// Update metadata that will be attached to subsequent raw wire events.
@@ -845,7 +854,7 @@ impl AcpClient {
             "params": params,
         });
 
-        tracing::debug!(target: "acp::wire", "→ {}", &serde_json::to_string(&msg).unwrap_or_default());
+        tracing::debug!(target: "acp::wire", method = "session/prompt", "→ ACP request");
         if let Err(e) = self.write_ndjson(&msg).await {
             self.last_prompt_id = None;
             self.current_hard_deadline = None;
@@ -1151,7 +1160,7 @@ impl AcpClient {
             "params": params,
         });
 
-        tracing::debug!(target: "acp::wire", "→ {}", &serde_json::to_string(&msg).unwrap_or_default());
+        tracing::debug!(target: "acp::wire", "→ session/prompt");
 
         // Wrap write + read in a single timeout so a hung agent can't block forever.
         // We cannot use an async block that borrows `self` mutably across two awaits
@@ -1216,7 +1225,7 @@ impl AcpClient {
             "params": params,
         });
 
-        tracing::debug!(target: "acp::wire", "→ (notification) {}", &serde_json::to_string(&msg).unwrap_or_default());
+        tracing::debug!(target: "acp::wire", method, "→ ACP notification");
         self.write_ndjson(&msg).await?;
         Ok(())
     }
@@ -1257,27 +1266,18 @@ impl AcpClient {
                 continue;
             }
 
-            // Only log and reset idle after we have a valid non-empty line.
-            tracing::debug!(target: "acp::wire", "← {trimmed}");
-
             let msg: serde_json::Value = match serde_json::from_str(trimmed) {
                 Ok(v) => v,
                 Err(e) => {
-                    self.observe(
-                        "acp_parse_error",
-                        serde_json::json!({
-                            "line": trimmed,
-                            "error": e.to_string(),
-                        }),
-                    );
                     tracing::warn!(
                         target: "acp::wire",
-                        "failed to parse line as JSON: {e} — skipping"
+                        line_bytes = trimmed.len(),
+                        "failed to parse agent output as JSON: {e} — skipping"
                     );
                     continue;
                 }
             };
-            self.observe("acp_read", msg.clone());
+            self.observe_incoming_message(&msg, trimmed.len());
 
             // Check if this is a response to our expected request (has matching id
             // AND no `method` field — a `method` field means it's an agent-initiated
@@ -1581,26 +1581,18 @@ impl AcpClient {
                         continue;
                     }
 
-                    tracing::debug!(target: "acp::wire", "← {trimmed}");
-
                     let msg: serde_json::Value = match serde_json::from_str(trimmed) {
                         Ok(v) => v,
                         Err(e) => {
-                            self.observe(
-                                "acp_parse_error",
-                                serde_json::json!({
-                                    "line": trimmed,
-                                    "error": e.to_string(),
-                                }),
-                            );
                             tracing::warn!(
                                 target: "acp::wire",
-                                "failed to parse line as JSON: {e} — skipping"
+                                line_bytes = trimmed.len(),
+                                "failed to parse agent output as JSON: {e} — skipping"
                             );
                             continue;
                         }
                     };
-                    self.observe("acp_read", msg.clone());
+                    self.observe_incoming_message(&msg, trimmed.len());
 
                     let activity_now = Instant::now();
                     idle_deadline = activity_now + idle_timeout;
@@ -1965,15 +1957,43 @@ impl AcpClient {
         }
     }
 
-    /// Auto-approve a `session/request_permission` request from the agent.
+    /// Keep raw permission requests out of ACP wire logs and telemetry. Tool
+    /// input is shown through the bounded, credential-redacted permission
+    /// summary instead. Tool-call observer updates retain their useful fields
+    /// while sanitizing raw input with the same redactor.
+    fn observe_incoming_message(&self, msg: &serde_json::Value, line_bytes: usize) {
+        let method = msg.get("method").and_then(|value| value.as_str());
+        if method == Some("session/request_permission") {
+            tracing::debug!(
+                target: "acp::wire",
+                method,
+                line_bytes,
+                "← ACP permission request (payload omitted)"
+            );
+            return;
+        }
+
+        let mut safe = msg.clone();
+        if let Some(update) = safe.pointer_mut("/params/update") {
+            if update
+                .get("sessionUpdate")
+                .and_then(serde_json::Value::as_str)
+                == Some("tool_call")
+            {
+                if let Some(raw_input) = update.get_mut("rawInput") {
+                    *raw_input = crate::permission::sanitize_observer_context(raw_input);
+                }
+            }
+        }
+        tracing::debug!(target: "acp::wire", method, line_bytes, "← ACP message");
+        self.observe("acp_read", safe);
+    }
+
+    /// Wait for an owner decision and answer with an ACP one-shot option.
     ///
-    /// Finds the option with `kind == "allow_once"` and responds with its `optionId`.
-    /// If no `allow_once` option exists, falls back to `reject_once`.
-    ///
-    /// **Critical:** Never hardcode `optionId` — always find it dynamically by `kind`.
-    ///
-    /// The request `id` is stored as `serde_json::Value` to support both numeric
-    /// and string IDs per JSON-RPC 2.0.
+    /// A missing observer, owner, runtime identity, UI decision, or `allow_once`
+    /// option can never turn into approval. Provider option IDs are always
+    /// selected by their protocol `kind`, never hardcoded.
     async fn handle_permission_request(&mut self, msg: &serde_json::Value) -> Result<(), AcpError> {
         // Extract id as a Value — JSON-RPC 2.0 allows both numeric and string IDs.
         let id = msg
@@ -1990,45 +2010,36 @@ impl AcpClient {
             .as_array()
             .ok_or_else(|| AcpError::Protocol("permission request missing options".into()))?;
 
-        tracing::debug!(
-            target: "acp::permission",
-            "session/request_permission id={id}, {} options",
-            options.len()
-        );
-
-        // Find allow_once by kind — NEVER hardcode optionId.
-        let allow_once = options
-            .iter()
-            .find(|opt| opt.get("kind").and_then(|k| k.as_str()) == Some("allow_once"));
-
-        let response = if let Some(opt) = allow_once {
-            let option_id = opt["optionId"]
-                .as_str()
-                .ok_or_else(|| AcpError::Protocol("allow_once option missing optionId".into()))?;
-            tracing::info!(
-                target: "acp::permission",
-                "auto-approving permission id={id} with allow_once optionId={option_id:?}"
-            );
-            permission_response_selected(&id, option_id)
-        } else {
-            // No allow_once — fall back to reject_once.
-            tracing::warn!(
-                target: "acp::permission",
-                "no allow_once option found in permission request id={id}, falling back to reject_once"
-            );
-            let reject = options
+        let find_option = |kind: &str| {
+            options
                 .iter()
-                .find(|opt| opt.get("kind").and_then(|k| k.as_str()) == Some("reject_once"));
+                .find(|opt| opt.get("kind").and_then(serde_json::Value::as_str) == Some(kind))
+                .and_then(|opt| opt.get("optionId"))
+                .and_then(serde_json::Value::as_str)
+        };
 
-            if let Some(opt) = reject {
-                let option_id = opt["optionId"].as_str().unwrap_or("reject");
-                permission_response_selected(&id, option_id)
-            } else {
-                return Err(AcpError::Protocol(
-                    "no suitable permission option found (neither allow_once nor reject_once)"
-                        .into(),
-                ));
+        let outcome = match &self.permission_broker {
+            Some(broker) => {
+                broker
+                    .request(
+                        self.observer.as_ref(),
+                        self.observer_agent_index,
+                        &self.observer_context,
+                        &msg["params"],
+                    )
+                    .await
             }
+            None => PermissionOutcome::Unavailable,
+        };
+
+        let selected_kind = match outcome {
+            PermissionOutcome::Approved => Some("allow_once"),
+            PermissionOutcome::Denied | PermissionOutcome::TimedOut => Some("reject_once"),
+            PermissionOutcome::Unavailable => Some("reject_once"),
+        };
+        let response = match selected_kind.and_then(find_option) {
+            Some(option_id) => permission_response_selected(&id, option_id),
+            None => permission_response_cancelled(&id),
         };
 
         // Write the response first, then mark as responded.
@@ -3072,6 +3083,240 @@ mod tests {
         AcpClient::spawn("bash", &["-c".into(), script.into()], &[], false)
             .await
             .expect("failed to spawn test script")
+    }
+
+    async fn spawn_permission_fixture(marker_path: &std::path::Path) -> (AcpClient, String) {
+        let marker_env = format!(
+            "BUZZ_TEST_PERMISSION_MARKER_{}",
+            uuid::Uuid::new_v4().simple()
+        );
+        let script = format!(
+            r#"
+read -r _prompt
+printf '%s\n' '{{"jsonrpc":"2.0","id":"fixture-permission","method":"session/request_permission","params":{{"sessionId":"fixture-session","title":"Run a tool","options":[{{"optionId":"fixture-deny","kind":"reject_once"}},{{"optionId":"fixture-allow","kind":"allow_once"}}],"subject":{{"toolCall":{{"kind":"execute","title":"Write the fixture marker","rawInput":{{"command":"write marker"}}}}}}}}}}'
+read -r decision
+case "$decision" in
+  *fixture-allow*) printf 'one-use-effect\n' >> "${marker_env}" ;;
+esac
+printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'
+"#
+        );
+        let client = AcpClient::spawn(
+            "bash",
+            &["-c".into(), script],
+            &[(
+                marker_env.clone(),
+                marker_path.to_string_lossy().into_owned(),
+            )],
+            false,
+        )
+        .await
+        .expect("spawn deterministic ACP permission fixture");
+        (client, marker_env)
+    }
+
+    fn permission_test_identity() -> crate::permission::PermissionRuntimeIdentity {
+        crate::permission::PermissionRuntimeIdentity {
+            owner_pubkey: "11".repeat(32),
+            agent_pubkey: "22".repeat(32),
+            relay_url: "ws://127.0.0.1:3000".into(),
+            runtime_start_nonce: "fixture-runtime".into(),
+        }
+    }
+
+    fn permission_test_context() -> ObserverContext {
+        ObserverContext {
+            channel_id: Some("fixture-channel".into()),
+            session_id: Some("fixture-session".into()),
+            turn_id: Some("fixture-turn".into()),
+            started_at: None,
+        }
+    }
+
+    fn permission_control(
+        binding: &crate::permission::PermissionBinding,
+        decision: crate::permission::PermissionDecision,
+    ) -> serde_json::Value {
+        let mut payload = serde_json::to_value(binding).expect("serialize request binding");
+        let fields = payload.as_object_mut().expect("binding is an object");
+        fields.insert("type".into(), serde_json::json!("resolve_permission"));
+        fields.insert("decision".into(), serde_json::to_value(decision).unwrap());
+        payload
+    }
+
+    async fn wait_for_permission_event(
+        rx: &mut tokio::sync::broadcast::Receiver<crate::observer::ObserverEvent>,
+        expected_kind: &str,
+    ) -> serde_json::Value {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                match rx.recv().await {
+                    Ok(event) if event.kind == expected_kind => return event.payload,
+                    Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        panic!("observer closed before {expected_kind}")
+                    }
+                }
+            }
+        })
+        .await
+        .unwrap_or_else(|_| panic!("timed out waiting for {expected_kind}"))
+    }
+
+    async fn start_permission_fixture_prompt(
+        mut client: AcpClient,
+        observer: crate::observer::ObserverHandle,
+        broker: crate::permission::PermissionBroker,
+    ) -> tokio::task::JoinHandle<(AcpClient, Result<StopReason, AcpError>)> {
+        client.set_observer(Some(observer), 2);
+        client.set_permission_broker(Some(broker));
+        client.set_observer_context(permission_test_context());
+        tokio::spawn(async move {
+            let result = client
+                .session_prompt_with_idle_timeout(
+                    "fixture-session",
+                    "run the fixture tool",
+                    std::time::Duration::from_secs(1),
+                    std::time::Duration::from_secs(3),
+                )
+                .await;
+            (client, result)
+        })
+    }
+
+    async fn read_permission_binding(
+        rx: &mut tokio::sync::broadcast::Receiver<crate::observer::ObserverEvent>,
+    ) -> crate::permission::PermissionBinding {
+        serde_json::from_value(wait_for_permission_event(rx, "permission_request").await)
+            .expect("fixture request carries a full binding")
+    }
+
+    fn permission_fixture_marker() -> (tempfile::TempDir, std::path::PathBuf) {
+        let dir = tempfile::tempdir().expect("create permission fixture directory");
+        let marker = dir.path().join("tool-effect.txt");
+        (dir, marker)
+    }
+
+    fn permission_result_status(
+        observer: &crate::observer::ObserverHandle,
+        request_id: &str,
+    ) -> Option<String> {
+        observer.snapshot().into_iter().rev().find_map(|event| {
+            (event.kind == "permission_result"
+                && event.payload["requestId"].as_str() == Some(request_id))
+            .then(|| event.payload["status"].as_str().map(str::to_owned))
+            .flatten()
+        })
+    }
+
+    #[tokio::test]
+    async fn acp_fixture_denial_has_no_tool_side_effect() {
+        let (_dir, marker) = permission_fixture_marker();
+        let (client, _marker_env) = spawn_permission_fixture(&marker).await;
+        let observer = crate::observer::ObserverHandle::in_process();
+        let broker = crate::permission::PermissionBroker::new(permission_test_identity());
+        let mut event_rx = observer.subscribe();
+        let task = start_permission_fixture_prompt(client, observer.clone(), broker.clone()).await;
+        let binding = read_permission_binding(&mut event_rx).await;
+
+        broker
+            .resolve_control(&permission_control(
+                &binding,
+                crate::permission::PermissionDecision::Deny,
+            ))
+            .expect("owner denial resolves the live fixture request");
+        let (mut client, result) = task.await.expect("fixture prompt task");
+        assert_eq!(
+            result.expect("denied call does not fail the ACP turn"),
+            StopReason::EndTurn
+        );
+        assert!(!marker.exists(), "denied tool must have no effect");
+        assert_eq!(broker.pending_count(), 0);
+        assert_eq!(
+            permission_result_status(&observer, &binding.request_id).as_deref(),
+            Some("denied"),
+        );
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn acp_fixture_approval_is_one_shot_and_replay_is_rejected() {
+        let (_dir, marker) = permission_fixture_marker();
+        let (client, _marker_env) = spawn_permission_fixture(&marker).await;
+        let observer = crate::observer::ObserverHandle::in_process();
+        let broker = crate::permission::PermissionBroker::new(permission_test_identity());
+        let mut event_rx = observer.subscribe();
+        let task = start_permission_fixture_prompt(client, observer.clone(), broker.clone()).await;
+        let binding = read_permission_binding(&mut event_rx).await;
+        let control = permission_control(&binding, crate::permission::PermissionDecision::Approve);
+
+        broker
+            .resolve_control(&control)
+            .expect("owner approval resolves the live fixture request");
+        let (mut client, result) = task.await.expect("fixture prompt task");
+        assert_eq!(
+            result.expect("approved call completes the ACP turn"),
+            StopReason::EndTurn
+        );
+        assert_eq!(
+            std::fs::read_to_string(&marker).expect("approved fixture records its effect"),
+            "one-use-effect\n",
+        );
+        assert!(
+            broker.resolve_control(&control).is_err(),
+            "a replayed decision cannot resolve the consumed request"
+        );
+        assert_eq!(std::fs::read_to_string(&marker).unwrap().lines().count(), 1);
+        assert_eq!(broker.pending_count(), 0);
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn acp_fixture_timeout_denies_and_cleans_up_the_pending_request() {
+        let (_dir, marker) = permission_fixture_marker();
+        let (client, _marker_env) = spawn_permission_fixture(&marker).await;
+        let observer = crate::observer::ObserverHandle::in_process();
+        let broker = crate::permission::PermissionBroker::with_limits(
+            permission_test_identity(),
+            std::time::Duration::from_millis(50),
+            8,
+        );
+        let mut event_rx = observer.subscribe();
+        let task = start_permission_fixture_prompt(client, observer.clone(), broker.clone()).await;
+        let _binding = read_permission_binding(&mut event_rx).await;
+
+        let (mut client, result) = task.await.expect("timed fixture prompt task");
+        assert_eq!(
+            result.expect("timeout denies the call and completes turn"),
+            StopReason::EndTurn
+        );
+        assert!(!marker.exists(), "timed out tool must have no effect");
+        assert_eq!(broker.pending_count(), 0);
+        assert_eq!(
+            permission_result_status(&observer, &_binding.request_id).as_deref(),
+            Some("timed_out"),
+        );
+        client.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn acp_fixture_cancellation_cleans_up_pending_request() {
+        let (_dir, marker) = permission_fixture_marker();
+        let (client, _marker_env) = spawn_permission_fixture(&marker).await;
+        let observer = crate::observer::ObserverHandle::in_process();
+        let broker = crate::permission::PermissionBroker::new(permission_test_identity());
+        let mut event_rx = observer.subscribe();
+        let task = start_permission_fixture_prompt(client, observer.clone(), broker.clone()).await;
+        let _binding = read_permission_binding(&mut event_rx).await;
+
+        task.abort();
+        assert!(matches!(task.await, Err(error) if error.is_cancelled()));
+        assert_eq!(broker.pending_count(), 0);
+        assert!(!marker.exists(), "cancelled tool must have no effect");
+        assert_eq!(
+            permission_result_status(&observer, &_binding.request_id).as_deref(),
+            Some("cancelled"),
+        );
     }
 
     #[cfg(unix)]
