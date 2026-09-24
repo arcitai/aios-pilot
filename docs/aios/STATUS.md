@@ -129,15 +129,19 @@ reused as an internal ACL adapter; ordinary working-channel membership must
 not silently grant Business access. No destructive migration or automatic
 ACL expansion. Channel apps and host connectors wait for this layer.
 
-One heavy build slot belongs to that worker, with one Cargo job. It must not
-migrate/reset the user's relay or replace the running native/browser companion.
-It may use the lead Rust build cache, with isolated disposable DB/runtime test
-state. Read `/tmp/aios-server-seams.md` and `/tmp/aios-host-context-handback.md`
-when available, verify actual commits/tests, then review and integrate. Do not
-start another writer on these backend paths. The other worker has resumed its
-Browser MCP repair; `/tmp/aios-browser-candidate.md` records a source/format
-candidate, with Cargo and real navigation proof pending the heavy-slot handoff.
-It is also reviewing the lead's context client changes read-only.
+The backend worker released the heavy slot after its isolated Docker build and
+real CLI scenario. The Browser worker now owns that sole slot, with one Cargo
+job, for its existing MCP candidate's compile/navigation/cleanup proof. The
+backend worker finishes recovery and static review against its cached image;
+any recompilation requires a coordinated handoff. Neither worker may reset the
+user's relay or replace the running native/browser companion. Isolated fixtures
+may use the lead Rust build cache without concurrent heavy work.
+Read `/tmp/aios-server-seams.md` and `/tmp/aios-host-context-handback.md` when
+available, verify actual commits/tests, then review and integrate. Keep one
+writer on backend paths. `/tmp/aios-browser-candidate.md` is still an unaccepted
+candidate until its actual runtime handback. The same worker is also mapping
+the agent context-preference/runtime seams read-only; its expected handback is
+`/tmp/aios-agent-context-seams.md`. Agent runtime integration follows that audit.
 
 Gustav clarified context loading: every workspace agent should have a short
 entrypoint to company knowledge, with selective retrieval as the default and
