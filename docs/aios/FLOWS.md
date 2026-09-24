@@ -64,8 +64,9 @@ Every flow must retain workspace/actor/resource scope across navigation,
 retries and reconnects.
 Auxiliary effects such as agent-avatar uploads carry the same captured scope;
 a switch during setup must not upload to the newly active workspace. Scoped
-upload support must fail explicitly on an older native companion. UI and CLI operate on the same durable objects. A
-configuration save is distinct from a runner actually applying it.
+upload support must fail explicitly on an older native companion. UI and CLI
+operate on the same durable objects. A configuration save is distinct from a
+runner actually applying it.
 
 | ID | Entry and main sequence | Durable result and access | Failure / recovery acceptance |
 | --- | --- | --- | --- |

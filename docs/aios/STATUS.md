@@ -200,6 +200,9 @@ and integrated model proof are still pending.
 
 ### Saved definitions and stopped-create boundary — 24 September, afternoon
 
+Frontend checkpoint: `2eccf74`. Native context and scoped-media changes remain
+in their two assigned worker checkouts; they are not integrated in this commit.
+
 Saved-definition starts from agent cards, profiles and profile duplication now
 converge on one compact private Company knowledge form. Cancelling creates no
 instance. Canonical knowledge is proposed with When needed; shared definitions
