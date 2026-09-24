@@ -2,6 +2,59 @@
 
 Updated 24 September 2026 (Europe/Copenhagen).
 
+## Current integration checkpoint — 24 September, midday
+
+The host-context backend is integrated at `8b00b84` (worker `cce82b9`). Lead
+reviewed the transaction/authority changes and the recorded real CLI, signed
+HTTP/WebSocket and restore results before integration. The only merge conflict
+was additive status history, retained below. The worker reports DB tests 4/4
+and relay tests 5/5; their inline raw stdout was not retained, so those counts
+remain worker-reported. The real-host logs and harness were read independently.
+Disposable proof hosts, volumes and fixture identities are now cleaned up;
+the user's relay on 3341 and its saved data were not migrated or changed.
+
+The isolated Browser MCP repair is integrated at `f713ef5` (worker `8359de8`).
+Five production-bound Rust checks, the ACP binary build and real Chromium
+navigation to a disposable loopback page pass. Lead read those logs and the
+final source. The fixture also observes process-group cleanup. It fixes the
+macOS socket path, private socket-directory permissions, managed npx path and
+installer output on MCP stdout. Provisioning has an overall deadline and the
+launcher strips parent credentials. This is an isolated headless browser;
+shared human-visible browser handoff remains F15 work. Windows was source
+reviewed, not run. Evidence: `/tmp/aios-browser-candidate-{rust-tests,build}.log`
+and `/tmp/aios-browser-candidate-fixture-rerun.log`. Previous lead browser WIP
+is preserved in the named Git stash; its fixes are included in the candidate.
+
+Shared Business metadata/access interpretation is extracted into
+`buzz-business::context` at `56cc024`, preserving CLI error behavior. The full
+affected library suites pass: Business 9/9 and CLI 530/530. This exposed one
+stale CLI inventory expectation; it now includes the already shipped Apps,
+Calls and Sites groups. Clippy for both crates/all targets, scoped formatting,
+diff checks and the integrated file-size gate pass. Logs:
+`/tmp/aios-context-shared-tests-final.log`,
+`/tmp/aios-context-shared-clippy.log`,
+`/tmp/aios-context-integrated-filesize.log`.
+
+Next boundary is actual agent context setup and runtime loading. The backend
+worker owns ACP selection/authorized per-run lookup, with the sole heavy Cargo
+slot (jobs=1). The browser worker is source-only, preparing the native
+instance/grant/revocation/retry contract before implementation. Lead owns React
+and integration; no third worker or concurrent heavy build. Non-secret runtime
+selection uses `BUZZ_ACP_BUSINESS_CONTEXT_ID`,
+`BUZZ_ACP_BUSINESS_CONTEXT_RELAY`, and
+`BUZZ_ACP_BUSINESS_CONTEXT_LOADING` (`when_needed` or explicit `full`). These
+are routing/settings, never grants. No configuration preserves old behavior.
+The shared policy is not authentication; every adapter obtains current host
+metadata and membership under the agent identity.
+
+The current native companion is still the prior verified build. Lead reopened
+Fizz's definition editor on real localhost and cancelled without changing it;
+its shared instructions/skills are distinct from the private running instance.
+Native setup must cover start-from-definition as well as new create/edit.
+Draft prompt/nest guidance is still uncommitted pending runtime binding. The
+full-context option, native grant recovery and their integrated UI/model proof
+are not yet implemented. The wider 22-flow product remains incomplete.
+
 ## Pause, reassessment and revised plan — 24 September morning
 
 Gustav requested a development pause, an audit against Kylon/OpenAgents, and

@@ -190,8 +190,9 @@ Rust and TypeScript validators must pass the same Unicode/boundary fixtures.
 - Context access and agent prompt loading are separate. Follow the
   [accepted Business and agent flows](docs/aios/FLOWS.md#connected-target-flows)
   for default provisioning, selective retrieval and any explicit full-context
-  opt-in. Keep future CLI index/search/source-get operations modular and behind
-  the same context access checks; they are not part of this backend slice.
+  opt-in. CLI index/search/read now use the same context access checks in a
+  separate client slice. Shared metadata interpretation lives in `buzz-business`;
+  each authenticated adapter must supply fresh host metadata and membership.
 - Business Canvas events keep `KIND_CANVAS=40100` and the shared
   `buzz-business` schema (`schemaVersion:1`, maximum 200,000 UTF-8 bytes).
   The relay applies this validator only to typed Business contexts and requires
