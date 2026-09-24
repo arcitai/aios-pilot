@@ -703,7 +703,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 49);
+        assert_eq!(migrations.len(), 50);
         assert_eq!(migrations[0].version, 1);
         assert_eq!(&*migrations[0].description, "initial schema");
         assert!(migrations[0]
@@ -728,7 +728,7 @@ mod postgres_tests {
             .as_str()
             .contains("search_tsv  TSVECTOR GENERATED ALWAYS"));
 
-        let approval_lifecycle = migrations.last().expect("approval lifecycle migration");
+        let approval_lifecycle = &migrations[48];
         assert_eq!(approval_lifecycle.version, 49);
         for fragment in [
             "ADD COLUMN message TEXT",
@@ -743,6 +743,19 @@ mod postgres_tests {
             assert!(
                 approval_lifecycle.sql.as_str().contains(fragment),
                 "migration 0049 must contain {fragment}"
+            );
+        }
+
+        let business_context = &migrations[49];
+        assert_eq!(business_context.version, 50);
+        for fragment in [
+            "ADD COLUMN resource_type TEXT",
+            "idx_channels_one_business_context_per_community",
+            "trg_channels_resource_type_immutable",
+        ] {
+            assert!(
+                business_context.sql.as_str().contains(fragment),
+                "migration 0050 must contain {fragment}"
             );
         }
 

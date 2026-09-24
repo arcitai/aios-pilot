@@ -21,6 +21,8 @@ use super::{
 };
 use crate::commands::business_connections::scope::ConnectionScope;
 
+type RequestLog = Arc<Mutex<Vec<HashMap<String, String>>>>;
+
 const TEST_TOKEN: &str = "xoxb-fixture-slack-token-1234567890";
 const TEST_AUTHORIZATION: &str = "Bearer xoxb-fixture-slack-token-1234567890";
 const CHANNEL_ID: &str = "C12345678";
@@ -212,7 +214,7 @@ async fn local_revoke_removes_only_the_selected_relay_identity_and_provider_entr
 #[tokio::test]
 async fn channel_browsing_is_bounded_filtered_to_membership_and_cursor_paged() {
     async fn list(
-        State(requests): State<Arc<Mutex<Vec<HashMap<String, String>>>>>,
+        State(requests): State<RequestLog>,
         Query(query): Query<HashMap<String, String>>,
         headers: HeaderMap,
     ) -> Result<Json<Value>, StatusCode> {
@@ -232,7 +234,7 @@ async fn channel_browsing_is_bounded_filtered_to_membership_and_cursor_paged() {
             .lock()
             .expect("request log lock")
             .push(query.clone());
-        let first = query.get("cursor").is_none();
+        let first = !query.contains_key("cursor");
         let channels = if first {
             vec![
                 json!({"id": CHANNEL_ID, "name": "operations", "is_private": false, "is_member": true, "is_archived": false}),
@@ -305,7 +307,7 @@ async fn import_reads_only_the_selected_channel_and_marks_omitted_history() {
         })))
     }
     async fn history(
-        State(requests): State<Arc<Mutex<Vec<HashMap<String, String>>>>>,
+        State(requests): State<RequestLog>,
         Query(query): Query<HashMap<String, String>>,
         headers: HeaderMap,
     ) -> Result<Json<Value>, StatusCode> {

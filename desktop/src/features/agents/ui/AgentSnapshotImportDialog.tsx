@@ -220,7 +220,10 @@ export function PreviewBody({
             {preview.agentSkills.map((skill, index) => (
               <details
                 className="rounded bg-muted/40 p-2"
-                key={`${index}-${skill.skillMd.slice(0, 48)}`}
+                // Snapshot entries are immutable and can repeat identical contents;
+                // their ordinal is part of their identity within this preview.
+                // biome-ignore lint/suspicious/noArrayIndexKey: immutable snapshot entries have no independent ID
+                key={`${index}-${skill.skillMd}`}
               >
                 <summary className="cursor-pointer text-xs font-medium">
                   Skill {index + 1} · {skill.assets.length} attached{" "}

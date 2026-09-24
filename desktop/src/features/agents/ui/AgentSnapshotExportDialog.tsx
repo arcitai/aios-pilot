@@ -75,6 +75,7 @@ export function AgentSnapshotExportDialog({
     React.useState<SnapshotMemoryLevel>("none");
   const [format, setFormat] = React.useState<SnapshotFormat>("png");
   const [includeSkills, setIncludeSkills] = React.useState(false);
+  const includeSkillsId = React.useId();
   const shouldReduceMotion = useReducedMotion();
 
   const hasLinkedAgent = linkedAgentPubkey !== null;
@@ -154,8 +155,12 @@ export function AgentSnapshotExportDialog({
 
           {skillCount > 0 ? (
             <div className="space-y-2 rounded-md border p-3">
-              <label className="flex items-start gap-2 text-sm">
+              <label
+                className="flex items-start gap-2 text-sm"
+                htmlFor={includeSkillsId}
+              >
                 <Checkbox
+                  id={includeSkillsId}
                   checked={includeSkills}
                   disabled={isPending}
                   onCheckedChange={(checked) =>

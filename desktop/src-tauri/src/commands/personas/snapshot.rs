@@ -267,16 +267,28 @@ fn materialize_portable_runtime_defaults(
 /// - Memory-source pubkey validation
 /// - Secret exclusion (env_vars never enter the manifest via `build_snapshot`)
 /// - Output filename derived from the agent display name
-pub(crate) async fn materialize_snapshot_bytes(
+pub(crate) struct SnapshotRequest {
     id: String,
     memory_source_pubkey: Option<String>,
     memory_level: MemoryLevel,
     is_png: bool,
     avatar_png_data_url: Option<String>,
     include_skills: bool,
+}
+
+pub(crate) async fn materialize_snapshot_bytes(
+    request: SnapshotRequest,
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<SnapshotPayload, String> {
+    let SnapshotRequest {
+        id,
+        memory_source_pubkey,
+        memory_level,
+        is_png,
+        avatar_png_data_url,
+        include_skills,
+    } = request;
     // ── Load definition record and memory-source instance under lock ─────────
     let (record, memory_pubkey) = {
         let _store_guard = state
@@ -395,6 +407,11 @@ fn resolve_png_body_avatar_bytes(
 /// The user picks the save path via the OS dialog. Returns `true` when the
 /// file was written, `false` when the dialog was cancelled.
 #[tauri::command]
+// Preserve named IPC arguments and the existing frontend contract.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Tauri injects app and state alongside named IPC arguments"
+)]
 pub async fn export_agent_snapshot(
     id: String,
     memory_source_pubkey: Option<String>,
@@ -409,12 +426,14 @@ pub async fn export_agent_snapshot(
     let is_png = parse_format_is_png(&format)?;
 
     let payload = materialize_snapshot_bytes(
-        id,
-        memory_source_pubkey,
-        memory_level,
-        is_png,
-        avatar_png_data_url,
-        include_skills,
+        SnapshotRequest {
+            id,
+            memory_source_pubkey,
+            memory_level,
+            is_png,
+            avatar_png_data_url,
+            include_skills,
+        },
         app.clone(),
         state,
     )
@@ -473,12 +492,14 @@ pub async fn encode_agent_snapshot_for_send(
     let is_png = parse_format_is_png(&format)?;
 
     let payload = materialize_snapshot_bytes(
-        id,
-        memory_source_pubkey,
-        memory_level,
-        is_png,
-        avatar_png_data_url,
-        false,
+        SnapshotRequest {
+            id,
+            memory_source_pubkey,
+            memory_level,
+            is_png,
+            avatar_png_data_url,
+            include_skills: false,
+        },
         app,
         state,
     )

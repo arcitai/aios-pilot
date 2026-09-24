@@ -188,7 +188,7 @@ pub async fn sites_publisher_preview(
     if !preview_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err("The Sites publisher returned an unexpected preview address.".to_string());
     }
-    result.preview_url = checked_public_url(&result.preview_url, &parsed.path())?;
+    result.preview_url = checked_public_url(&result.preview_url, parsed.path())?;
     ensure_scope_is_current(&scope, &state)?;
     Ok(result)
 }

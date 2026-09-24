@@ -20,14 +20,14 @@ use uuid::Uuid;
 use buzz_core::kind::*;
 use buzz_core::tenant::{CommunityId, TenantContext};
 use buzz_datastore_tracing::datastore_span;
-use buzz_db::DbError;
 use buzz_db::workflow::{ApprovalStatus, RunStatus};
+use buzz_db::DbError;
 use buzz_workflow::executor::TriggerContext;
 
 use crate::state::AppState;
 use crate::webhook_secret;
 
-use super::ingest::{IngestAuth, IngestError, IngestResult, extract_channel_id};
+use super::ingest::{extract_channel_id, IngestAuth, IngestError, IngestResult};
 use super::side_effects::{
     emit_group_discovery_events, emit_membership_notification, emit_system_message,
     publish_dm_visibility_snapshot,
@@ -1277,15 +1277,13 @@ mod approval_policy_tests {
     fn approval_policy_requires_bound_member_key_or_exact_role() {
         let designated = vec![0x11; 32];
         let other = vec![0x22; 32];
-        assert!(
-            check_approver_spec(
-                "@Release Manager",
-                &[designated.clone()],
-                &designated,
-                "member"
-            )
-            .is_ok()
-        );
+        assert!(check_approver_spec(
+            "@Release Manager",
+            std::slice::from_ref(&designated),
+            &designated,
+            "member"
+        )
+        .is_ok());
         assert!(check_approver_spec("@Release Manager", &[designated], &other, "member").is_err());
         assert!(check_approver_spec("role:admin", &[], &other, "admin").is_ok());
         assert!(check_approver_spec("admin", &[], &other, "owner").is_err());

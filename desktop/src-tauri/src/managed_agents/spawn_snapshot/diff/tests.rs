@@ -63,6 +63,9 @@ fn mutations() -> Vec<Mutation> {
         ("relay_url", |s| s.relay_url = "wss://other.example".into()),
         ("team_instructions", |s| s.team_instructions = None),
         ("system_prompt", |s| s.system_prompt = None),
+        ("agent_skills_fingerprint", |s| {
+            s.agent_skills_fingerprint = "different-skills".into()
+        }),
         ("model", |s| s.model = None),
         ("provider", |s| s.provider = None),
         ("session_title", |s| s.session_title = None),

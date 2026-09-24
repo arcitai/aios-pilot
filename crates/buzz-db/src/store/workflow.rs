@@ -20,8 +20,8 @@ use uuid::Uuid;
 
 use buzz_core::CommunityId;
 
-use crate::Db;
 use crate::error::{DbError, Result};
+use crate::Db;
 use buzz_datastore_tracing::datastore_span;
 
 // -- Token hashing ------------------------------------------------------------

@@ -20,6 +20,9 @@ void main() {
         includeParentEnvironment: false,
         environment: {
           'PATH': Platform.environment['PATH']!,
+          // Keep pinned tool discovery while excluding inherited build defines.
+          for (final key in ['HOME', 'HERMIT_STATE_DIR'])
+            key: ?Platform.environment[key],
           'SRCROOT': '${Directory.current.path}/ios',
           'CONFIGURATION': 'Release',
           ...environment,

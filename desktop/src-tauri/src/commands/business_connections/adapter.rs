@@ -397,7 +397,7 @@ fn imported_readme(
         .bytes()
         .filter(|byte| !byte.is_ascii_whitespace())
         .collect::<Vec<_>>();
-    if compact.len() > ((MAX_README_CONTENT_BYTES + 2) / 3) * 4 + 8 {
+    if compact.len() > MAX_README_CONTENT_BYTES.div_ceil(3) * 4 + 8 {
         return Err(GitHubConnectionError::ResponseTooLarge);
     }
     let decoded = BASE64

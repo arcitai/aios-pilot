@@ -548,11 +548,13 @@ mod tests {
     fn workspace_signing_key_is_kept_out_of_serialized_huddle_state() {
         let keys = nostr::Keys::generate();
         let signer = keys.public_key().to_hex();
-        let mut state = HuddleState::default();
-        state.workspace_relay_url = Some("wss://relay.example".to_string());
-        state.workspace_signer_pubkey = Some(signer.clone());
-        state.workspace_api_base_url = Some("https://relay.example".to_string());
-        state.workspace_signing_keys = Some(keys);
+        let state = HuddleState {
+            workspace_relay_url: Some("wss://relay.example".to_string()),
+            workspace_signer_pubkey: Some(signer.clone()),
+            workspace_api_base_url: Some("https://relay.example".to_string()),
+            workspace_signing_keys: Some(keys),
+            ..HuddleState::default()
+        };
 
         let serialized = serde_json::to_value(&state).expect("huddle state serializes");
         assert_eq!(serialized["workspace_relay_url"], "wss://relay.example");

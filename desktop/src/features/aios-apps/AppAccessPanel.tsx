@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { canonicalRelayUrl } from "@/features/agents/managedAgentRuntimeStatus";
 import { Button } from "@/shared/ui/button";
+import { truncateNpub } from "@/shared/lib/pubkey";
 import {
   addChannelMembers,
   getRelayWsUrl,
@@ -34,7 +35,7 @@ function errorMessage(error: unknown): string {
 
 function displayMember(pubkey: string, name: string | null): string {
   if (name?.trim()) return name.trim();
-  return `${pubkey.slice(0, 8)}…${pubkey.slice(-8)}`;
+  return truncateNpub(pubkey);
 }
 
 async function assertCapturedScope(scope: AppDocumentScope): Promise<void> {
@@ -296,7 +297,7 @@ export function AppAccessPanel({ appId, scope, enabled }: AppAccessPanelProps) {
                       <option value="">Select an agent</option>
                       {state.fizzAgents.map((agent) => (
                         <option key={agent.pubkey} value={agent.pubkey}>
-                          {agent.name} · {agent.pubkey.slice(0, 8)}
+                          {agent.name} · {truncateNpub(agent.pubkey)}
                         </option>
                       ))}
                     </select>
