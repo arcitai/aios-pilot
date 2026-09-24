@@ -7,7 +7,7 @@ use tauri::{
 use crate::app_state::AppState;
 
 use super::{
-    media::{upload_media_bytes_inner, BlobDescriptor},
+    media::{upload_media_bytes_inner, upload_media_bytes_scoped_inner, BlobDescriptor},
     media_upload_progress::{
         begin_media_upload, cancel_media_upload as cancel_registered_media_upload,
         finish_media_upload,
@@ -39,6 +39,28 @@ pub async fn upload_media_bytes(
     .await;
     finish_media_upload(progress_id.as_deref());
     result
+}
+
+/// Upload raw avatar bytes within the relay and signer scope captured by the
+/// caller. This intentionally has no fallback to the legacy unscoped command.
+#[tauri::command]
+pub async fn upload_media_bytes_scoped(
+    data: Vec<u8>,
+    filename: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<BlobDescriptor, String> {
+    upload_media_bytes_scoped_inner(
+        data,
+        filename,
+        expected_relay_url,
+        expected_signer_pubkey,
+        app,
+        state,
+    )
+    .await
 }
 
 fn decode_raw_upload_header(value: &str) -> Result<String, String> {

@@ -1,5 +1,20 @@
 # AIOS implementation status
 
+## Development paused at Gustav’s request — 24 September 2026
+
+Gustav asked to stop development so he can test the current app. The
+`aios-pilot-natlig-udvikling` automation was deleted, and both active worker
+tasks received the stop instruction and were confirmed idle. No further
+implementation, integration, builds or tests are authorized until he asks to
+resume. Preserve all existing work on disk, including the unfinished native
+context work and scoped media changes. The product is not complete, and the
+latest native context/media implementation has not been integrated into the
+running companion. The localhost app at http://127.0.0.1:1437/ and its relay
+were left running; the frontend returned HTTP 200 at the pause. No Cargo,
+Clippy, rustc or nextest processes remained at the process check.
+
+This explicit pause supersedes autonomous-continuation instructions below.
+
 Updated 24 September 2026 (Europe/Copenhagen).
 
 ## Current integration checkpoint — 24 September, afternoon

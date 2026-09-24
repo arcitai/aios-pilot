@@ -18,9 +18,9 @@ use serde_json::Value as JsonValue;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::WorkflowEngine;
 use crate::error::WorkflowError;
 use crate::schema::{ActionDef, Step, WorkflowDef};
+use crate::WorkflowEngine;
 
 /// Data extracted from the triggering event, passed to every step.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]

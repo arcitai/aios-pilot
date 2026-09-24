@@ -8,6 +8,9 @@ use tokio_util::sync::CancellationToken;
 use crate::app_state::AppState;
 use crate::relay::{parse_json_response, relay_api_base_url_with_override, relay_error_message};
 
+#[path = "media_scoped_upload.rs"]
+mod scoped_upload;
+use self::scoped_upload::ScopedMediaUpload;
 use super::media_filename::sanitize_filename;
 use super::media_transcode::{
     has_heic_extension, is_heic_file, is_video_file, transcode_and_extract_poster,
@@ -402,7 +405,7 @@ pub(crate) async fn upload_image_bytes(
         return Err("profile avatar must be an image".to_string());
     }
     let body = sanitize_image_for_upload(body, &mime)?;
-    do_upload(body, &mime, state, None, None).await
+    do_upload(body, &mime, state, None, None, None).await
 }
 
 async fn do_upload(
@@ -411,6 +414,7 @@ async fn do_upload(
     state: &AppState,
     progress: Option<(tauri::AppHandle, String)>,
     cancellation: Option<&CancellationToken>,
+    scoped_upload: Option<&ScopedMediaUpload>,
 ) -> Result<BlobDescriptor, String> {
     let sha256 = hex::encode(Sha256::digest(&body));
 
@@ -422,11 +426,17 @@ async fn do_upload(
     } else {
         300
     };
-    let base_url = relay_api_base_url_with_override(state);
-    let auth_event = {
-        let keys = state.signing_keys()?;
-        sign_blossom_upload_auth(&keys, &sha256, expiry_secs, &base_url)?
+    let (base_url, keys) = match scoped_upload {
+        Some(scoped_upload) => (
+            scoped_upload.relay_base_url().to_string(),
+            scoped_upload.keys().clone(),
+        ),
+        None => (
+            relay_api_base_url_with_override(state),
+            state.signing_keys()?,
+        ),
     };
+    let auth_event = sign_blossom_upload_auth(&keys, &sha256, expiry_secs, &base_url)?;
 
     let auth_header = format!(
         "Nostr {}",
@@ -472,6 +482,20 @@ async fn do_upload(
     parse_json_response::<BlobDescriptor>(resp).await
 }
 
+async fn upload_prepared_media(
+    body: Vec<u8>,
+    mime: &str,
+    state: &AppState,
+    progress: Option<(tauri::AppHandle, String)>,
+    cancellation: Option<&CancellationToken>,
+    scoped_upload: Option<&ScopedMediaUpload>,
+) -> Result<BlobDescriptor, String> {
+    if let Some(scoped_upload) = scoped_upload {
+        scoped_upload.recheck(state)?;
+    }
+    do_upload(body, mime, state, progress, cancellation, scoped_upload).await
+}
+
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 /// Upload a file that is already in the OS temp directory.
@@ -507,7 +531,7 @@ pub async fn upload_media(
 
     let mime = detect_and_validate_mime(&body)?;
     let body = sanitize_image_for_upload(body, &mime)?;
-    do_upload(body, &mime, &state, None, None).await
+    do_upload(body, &mime, &state, None, None, None).await
 }
 
 /// Read a picked path through the TOCTOU-safe pipeline (fd pin → sniff →
@@ -588,9 +612,9 @@ async fn process_picked_path(
 
     // Upload video first, then poster (best-effort). If poster upload fails,
     // the video descriptor is returned without an image field.
-    let mut descriptor = do_upload(body, &mime, state, progress, None).await?;
+    let mut descriptor = do_upload(body, &mime, state, progress, None, None).await?;
     if let Some(poster) = poster_bytes {
-        match do_upload(poster, "image/jpeg", state, None, None).await {
+        match do_upload(poster, "image/jpeg", state, None, None, None).await {
             Ok(poster_desc) => descriptor.image = Some(poster_desc.url),
             Err(e) => eprintln!("buzz-desktop: poster upload failed (non-fatal): {e}"),
         }
@@ -697,6 +721,32 @@ pub(super) async fn upload_media_bytes_inner(
     state: State<'_, AppState>,
     cancellation: Option<&CancellationToken>,
 ) -> Result<BlobDescriptor, String> {
+    upload_media_bytes_impl(data, filename, progress_id, app, state, cancellation, None).await
+}
+
+pub(super) async fn upload_media_bytes_scoped_inner(
+    data: Vec<u8>,
+    filename: Option<String>,
+    expected_relay_url: String,
+    expected_signer_pubkey: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<BlobDescriptor, String> {
+    // Capture and validate synchronously before any media conversion await.
+    let scoped_upload =
+        ScopedMediaUpload::capture(&state, expected_relay_url, expected_signer_pubkey)?;
+    upload_media_bytes_impl(data, filename, None, app, state, None, Some(scoped_upload)).await
+}
+
+async fn upload_media_bytes_impl(
+    data: Vec<u8>,
+    filename: Option<String>,
+    progress_id: Option<String>,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    cancellation: Option<&CancellationToken>,
+    scoped_upload: Option<ScopedMediaUpload>,
+) -> Result<BlobDescriptor, String> {
     if data.is_empty() {
         return Err("empty upload".to_string());
     }
@@ -770,11 +820,28 @@ pub(super) async fn upload_media_bytes_inner(
     if cancellation.is_some_and(CancellationToken::is_cancelled) {
         return Err("upload cancelled".to_string());
     }
-    let mut descriptor = do_upload(body, &mime, &state, progress, cancellation).await?;
+    let mut descriptor = upload_prepared_media(
+        body,
+        &mime,
+        &state,
+        progress,
+        cancellation,
+        scoped_upload.as_ref(),
+    )
+    .await?;
 
     emit_media_upload_phase(&app, progress_id.as_deref(), "finishing");
     if let Some(poster) = poster_bytes {
-        match do_upload(poster, "image/jpeg", &state, None, cancellation).await {
+        match upload_prepared_media(
+            poster,
+            "image/jpeg",
+            &state,
+            None,
+            cancellation,
+            scoped_upload.as_ref(),
+        )
+        .await
+        {
             Ok(poster_desc) => descriptor.image = Some(poster_desc.url),
             Err(e) => eprintln!("buzz-desktop: poster upload failed (non-fatal): {e}"),
         }
@@ -797,7 +864,6 @@ pub(super) async fn upload_media_bytes_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
     fn test_extract_server_authority_default_ports() {
         assert_eq!(
