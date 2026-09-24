@@ -18,6 +18,8 @@ let handlers;
 let calls;
 let askMainAgentToBuildSite;
 let SiteAgentStartError;
+let retrySiteAgentStart;
+let siteHasAgent;
 
 function rawAgent(pubkey, relayUrl, status = "stopped") {
   return {
@@ -60,12 +62,35 @@ function rawAgent(pubkey, relayUrl, status = "stopped") {
 
 function resetNative(overrides = {}) {
   calls = [];
+  siteHasAgent = false;
   handlers = new Map([
     [
       "list_managed_agents",
       () => [rawAgent(GUIDE_A, RELAY_A), rawAgent(GUIDE_B, RELAY_B)],
     ],
-    ["add_channel_members", () => ({ added: [GUIDE_A], errors: [] })],
+    [
+      "get_channel_members",
+      ({ channelId }) => ({
+        members:
+          channelId === BUSINESS_ID || siteHasAgent
+            ? [
+                {
+                  pubkey: GUIDE_A,
+                  role: "bot",
+                  joined_at: "2026-01-01T00:00:00.000Z",
+                  display_name: "Fizz",
+                },
+              ]
+            : [],
+      }),
+    ],
+    [
+      "add_channel_members",
+      () => {
+        siteHasAgent = true;
+        return { added: [GUIDE_A], errors: [] };
+      },
+    ],
     [
       "send_channel_message",
       () => ({ event_id: "e".repeat(64), created_at: 1234 }),
@@ -88,85 +113,75 @@ before(async () => {
     transformCallback: () => 1,
   };
   globalThis.__TAURI_INTERNALS__ = dom.window.__TAURI_INTERNALS__;
-  ({ askMainAgentToBuildSite, SiteAgentStartError } = await import(
-    "./mainAgent.ts"
-  ));
+  ({ askMainAgentToBuildSite, SiteAgentStartError, retrySiteAgentStart } =
+    await import("./mainAgent.ts"));
 });
 
 after(() => dom.window.close());
 
-test("adds only the relay-matched main agent and sends the exact Sites contract before starting it", async () => {
-  resetNative();
-  const memberConfirmed = [];
-  await askMainAgentToBuildSite({
-    businessChannelId: BUSINESS_ID,
-    siteChannelId: SITE_ID,
-    relayUrl: RELAY_A,
-    signerPubkey: SIGNER,
-    request: "A landing page for our new service.",
-    onMembershipConfirmed: () => memberConfirmed.push(true),
-  });
+const input = {
+  businessChannelId: BUSINESS_ID,
+  siteChannelId: SITE_ID,
+  relayUrl: RELAY_A,
+  signerPubkey: SIGNER,
+  request: "A landing page for our new service.",
+};
 
+test("verifies business and site access, then sends the exact contract before startup", async () => {
+  resetNative();
+  await askMainAgentToBuildSite(input);
   assert.deepEqual(
     calls.map(({ command }) => command),
     [
       "list_managed_agents",
+      "get_channel_members",
+      "get_channel_members",
       "add_channel_members",
+      "get_channel_members",
       "send_channel_message",
       "start_managed_agent",
     ],
   );
-  assert.deepEqual(calls[1].args, {
+  const invite = calls.find(({ command }) => command === "add_channel_members");
+  assert.deepEqual(invite.args, {
     channelId: SITE_ID,
     pubkeys: [GUIDE_A],
     role: "bot",
     expectedRelayUrl: RELAY_A,
     expectedSignerPubkey: SIGNER,
   });
-  assert.equal(calls[2].args.channelId, SITE_ID);
-  assert.deepEqual(calls[2].args.mentionPubkeys, [GUIDE_A]);
-  assert.equal(calls[2].args.expectedRelayUrl, RELAY_A);
-  assert.equal(calls[2].args.expectedSignerPubkey, SIGNER);
-  assert.match(calls[2].args.content, new RegExp(BUSINESS_ID));
-  assert.match(calls[2].args.content, new RegExp(SITE_ID));
-  assert.match(calls[2].args.content, /buzz sites show --business-channel/);
-  assert.match(calls[2].args.content, /buzz sites update --business-channel/);
-  assert.match(calls[2].args.content, /"schemaVersion": 1/);
-  assert.match(calls[2].args.content, /120000/);
-  assert.match(calls[2].args.content, /200000 UTF-8 bytes/);
-  assert.deepEqual(calls[3].args, {
-    pubkey: GUIDE_A,
-    expectedRelayUrl: RELAY_A,
-    expectedSignerPubkey: SIGNER,
-    replayFloorUnix: 1234,
-  });
-  assert.deepEqual(memberConfirmed, [true]);
+  for (const { args } of calls.filter(
+    ({ command }) => command === "get_channel_members",
+  )) {
+    assert.equal(args.expectedRelayUrl, RELAY_A);
+    assert.equal(args.expectedSignerPubkey, SIGNER);
+  }
+  const sent = calls.find(
+    ({ command }) => command === "send_channel_message",
+  ).args;
+  assert.equal(sent.channelId, SITE_ID);
+  assert.deepEqual(sent.mentionPubkeys, [GUIDE_A]);
+  assert.equal(sent.expectedRelayUrl, RELAY_A);
+  assert.equal(sent.expectedSignerPubkey, SIGNER);
+  for (const part of [
+    BUSINESS_ID,
+    SITE_ID,
+    "buzz sites show --business-channel",
+    "buzz sites update --business-channel",
+    '"schemaVersion": 1',
+    "200000 UTF-8 bytes",
+    "no database",
+  ])
+    assert.ok(sent.content.includes(part));
+  assert.equal(calls.at(-1).args.replayFloorUnix, 1234);
 });
 
-test("does not start before an accepted message and reuses an accepted request after startup failure", async () => {
-  let sendAttempts = 0;
-  let startAttempts = 0;
+test("a failed send never starts the agent", async () => {
   resetNative({
     send_channel_message: () => {
-      sendAttempts += 1;
-      if (sendAttempts === 1) throw new Error("message was not accepted");
-      return { event_id: "f".repeat(64), created_at: 5678 };
-    },
-    start_managed_agent: () => {
-      startAttempts += 1;
-      if (startAttempts === 1) throw new Error("runtime unavailable");
-      return rawAgent(GUIDE_A, RELAY_A, "running");
+      throw new Error("message was not accepted");
     },
   });
-
-  const input = {
-    businessChannelId: BUSINESS_ID,
-    siteChannelId: SITE_ID,
-    relayUrl: RELAY_A,
-    signerPubkey: SIGNER,
-    request: "A booking page for our new service.",
-    onMembershipConfirmed() {},
-  };
   await assert.rejects(
     askMainAgentToBuildSite(input),
     /message was not accepted/,
@@ -175,20 +190,96 @@ test("does not start before an accepted message and reuses an accepted request a
     calls.some(({ command }) => command === "start_managed_agent"),
     false,
   );
+});
 
+test("retrying an accepted request starts it without a second message, while a new identical request is allowed", async () => {
+  let attempts = 0;
+  resetNative({
+    start_managed_agent: () => {
+      if (++attempts === 1) throw new Error("runtime unavailable");
+      return rawAgent(GUIDE_A, RELAY_A, "running");
+    },
+  });
+  let receipt;
+  await assert.rejects(askMainAgentToBuildSite(input), (error) => {
+    assert.ok(error instanceof SiteAgentStartError);
+    receipt = error.receipt;
+    return true;
+  });
+  await retrySiteAgentStart(receipt);
+  assert.equal(
+    calls.filter(({ command }) => command === "send_channel_message").length,
+    1,
+  );
+  assert.equal(attempts, 2);
+  await askMainAgentToBuildSite(input);
+  assert.equal(
+    calls.filter(({ command }) => command === "send_channel_message").length,
+    2,
+  );
+  assert.equal(
+    calls.filter(({ command }) => command === "add_channel_members").length,
+    1,
+  );
+});
+
+test("missing business access does not grant access or send a request", async () => {
+  resetNative({ get_channel_members: () => ({ members: [] }) });
   await assert.rejects(
     askMainAgentToBuildSite(input),
-    (error) => error instanceof SiteAgentStartError,
+    /does not have access to this business/,
   );
-  assert.equal(sendAttempts, 2);
+  assert.equal(
+    calls.some(({ command }) =>
+      [
+        "add_channel_members",
+        "send_channel_message",
+        "start_managed_agent",
+      ].includes(command),
+    ),
+    false,
+  );
+});
 
-  await askMainAgentToBuildSite(input);
-  assert.equal(sendAttempts, 2);
-  assert.equal(startAttempts, 2);
-  assert.deepEqual(
-    calls
-      .filter(({ command }) => command === "start_managed_agent")
-      .map(({ args }) => args.replayFloorUnix),
-    [5678, 5678],
+test("an already-like error is not proof of membership", async () => {
+  resetNative({
+    add_channel_members: () => ({
+      added: [],
+      errors: [{ pubkey: GUIDE_A, error: "already processing: denied" }],
+    }),
+  });
+  await assert.rejects(
+    askMainAgentToBuildSite(input),
+    /already processing: denied/,
+  );
+  assert.equal(
+    calls.some(({ command }) => command === "send_channel_message"),
+    false,
+  );
+});
+
+test("retry refuses revoked access instead of re-inviting the agent", async () => {
+  resetNative({
+    start_managed_agent: () => {
+      throw new Error("offline");
+    },
+  });
+  let receipt;
+  await assert.rejects(askMainAgentToBuildSite(input), (error) => {
+    receipt = error.receipt;
+    return true;
+  });
+  siteHasAgent = false;
+  await assert.rejects(
+    retrySiteAgentStart(receipt),
+    /access to this site could not be confirmed/,
+  );
+  assert.equal(
+    calls.filter(({ command }) => command === "add_channel_members").length,
+    1,
+  );
+  assert.equal(
+    calls.filter(({ command }) => command === "send_channel_message").length,
+    1,
   );
 });

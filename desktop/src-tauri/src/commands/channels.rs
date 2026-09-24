@@ -6,7 +6,7 @@ use crate::{
     models::{ChannelDetailInfo, ChannelInfo, ChannelMembersResponse, GetChannelsPayload},
     nostr_convert,
     relay::{
-        assert_expected_relay_scope, assert_expected_signer, query_relay,
+        assert_expected_relay_scope, assert_expected_signer, query_relay, query_relay_at_with_keys,
         relay_api_base_url_with_override, submit_event, submit_event_at_with_keys,
         submit_event_with_keys,
     },
@@ -146,15 +146,28 @@ fn profile_join_pubkeys(members: &[crate::models::ChannelMemberInfo], limit: usi
 #[tauri::command]
 pub async fn get_channel_members(
     channel_id: String,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<ChannelMembersResponse, String> {
-    let events = query_relay(
+    let relay_base = relay_api_base_url_with_override(&state);
+    assert_expected_relay_scope(expected_relay_url.as_deref(), &relay_base)?;
+    let signing_keys = state.signing_keys()?;
+    assert_expected_signer(
+        expected_signer_pubkey.as_deref(),
+        &signing_keys.public_key().to_hex(),
+    )?;
+    let events = query_relay_at_with_keys(
         &state,
+        &relay_base,
         &[serde_json::json!({
             "kinds": [39002],
             "#d": [channel_id],
-            "limit": 1
+            "limit": 1,
+            "consistency": "strong"
         })],
+        &signing_keys,
+        None,
     )
     .await?;
 
@@ -168,13 +181,16 @@ pub async fn get_channel_members(
     // query cost is bounded on large rosters (see MEMBER_PROFILE_JOIN_LIMIT).
     let pubkeys = profile_join_pubkeys(&response.members, MEMBER_PROFILE_JOIN_LIMIT);
     if !pubkeys.is_empty() {
-        let profile_events = query_relay(
+        let profile_events = query_relay_at_with_keys(
             &state,
+            &relay_base,
             &[serde_json::json!({
                 "kinds": [0],
                 "authors": pubkeys,
                 "limit": pubkeys.len()
             })],
+            &signing_keys,
+            None,
         )
         .await
         .unwrap_or_default();

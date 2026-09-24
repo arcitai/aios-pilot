@@ -1,4 +1,35 @@
-# AIOS business workspace CLI
+# AIOS workspace CLI
+
+The bundled `buzz` executable covers business context, built-in apps, Sites,
+agent management, skills, workflows and in-app call requests. Run a command
+with `--help` to inspect its flags. Credentials come from the managed runtime
+or the operator's private environment, never from a saved app document.
+
+## Apps, Sites and calls
+
+```bash
+buzz apps list --channel <business-id>
+buzz apps show --channel <business-id> --app slides
+buzz apps update --channel <business-id> --app slides \
+  --expected-revision <revision> --document slides.json
+
+buzz sites list --business-channel <business-id>
+buzz sites show --business-channel <business-id> --site-channel <site-id>
+buzz sites update --business-channel <business-id> --site-channel <site-id> \
+  --expected-revision <revision> --document site.json
+
+buzz calls request --channel <conversation-id> --wait-seconds 45
+```
+
+Apps are individually private. Open the app in Desktop and invite the intended
+agent before asking it to change the document. `apps create` is also available,
+but creates a workspace owned only by the caller. See [Apps](APPS.md) for the
+data contract and [Sites](SITES.md) for preview, export and publication.
+Updating or exporting a site does not publish it. Calls require a managed
+local runtime with its owner authorization and current startup nonce; the
+owner must accept before voice starts. See [Voice](VOICE.md).
+
+## Business context
 
 `buzz business` reads and updates the same version-one business document used
 by Buzz Desktop. It stores that JSON in a dedicated private channel canvas and

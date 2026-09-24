@@ -11,6 +11,7 @@ import type {
   UpdateChannelInput,
 } from "@/shared/api/types";
 import { invokeTauri } from "@/shared/api/tauri";
+import type { CanvasScope } from "@/shared/api/canvasTypes";
 
 export type RawChannel = {
   id: string;
@@ -285,10 +286,11 @@ export async function getChannelMessagesBefore(
 
 export async function getChannelMembers(
   channelId: string,
+  scope?: CanvasScope,
 ): Promise<ChannelMember[]> {
   const response = await invokeTauri<RawChannelMembersResponse>(
     "get_channel_members",
-    { channelId },
+    { channelId, ...scope },
   );
   return response.members.map(fromRawChannelMember);
 }

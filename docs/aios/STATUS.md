@@ -16,8 +16,8 @@ Updated during the night of 23–24 September 2026 (Europe/Copenhagen).
   in the next package. Native window interaction remains unavailable
   while the computer is locked. Detailed evidence and limits are below.
 - Skills, Apps access and integrated Sites have landed. Google Drive is wired
-  and its selected-document browser flow passes; a reviewed credential race
-  still needs its native fix. Active work includes app/Sites agent actions,
+  and its selected-document browser flow passes. Its credential race fix is
+  integrated and 50 connection checks pass. Active work includes app/Sites agent actions,
   browser use, tables and workflow approvals. Incoming-call recovery now passes. The full
   platform is not complete; [FEATURES](FEATURES.md) tracks the wider outcome.
 - An hourly heartbeat in the lead task resumes authorized work until the
@@ -442,3 +442,39 @@ inspected. This does not prove live relay persistence or model execution.
   Do not assume those last resource-control messages were delivered. Read-only
   worker checkout inspection confirms work continues. No worker process or
   user container was killed to work around this.
+
+
+## Recovery and integrated Sites — 08:16 local, 24 September
+
+- The owner reported the Mac ran out of memory. Commits and all lead edits
+  survived. App task communication recovered after restart. Resume with at
+  most two lightweight worker tasks and one heavy build/test process at a time;
+  Cargo jobs = 1 for the lead. Do not resume every scratch Rust/Docker build.
+  Workflow review and Apps guided UI resumed; browser, tables and call-relay
+  work remain preserved in their isolated worktrees.
+- Integrated publisher Docker-context fix `3dd6902`, Drive operation fencing
+  `ecd0c2a`, and guided Sites worker commit `c25db97`. Lead fixed the Sites
+  native test imports and verified 50 connection, 27 Nest and 2 native Sites
+  length-contract tests. The scoped member-read change then passed one native
+  stale-tenant/signer test and 32 channel tests.
+- Guided Sites now verifies parent and selected-site membership, grants only
+  the chosen main agent, sends before starting, and retains a failed-start
+  receipt only in the mounted UI. Retry never resends; a new identical request
+  works. Load agent changes respects unsaved drafts and retains the conversation.
+  Code, access/history and version identifiers are collapsed. Agent instructions
+  use scoped CLI updates and disclose static-site capability limits.
+- Four mounted Sites browser flows pass after recovery, including one with the
+  actual Publisher process, real preview JavaScript, publication and revoke404.
+  Native IPC is mocked in these browser tests; this does not prove a real model
+  generated the site. Typecheck, 27 Sites JS tests and the file-size gate pass.
+- Self-host worker's actual Docker proof was recovered and its command output
+  inspected: v2 backup contains five volumes; fresh restore on distinct ports
+  served the same site with CSP, two messages/root-reply thread and 70-byte
+  media. Both generated projects were then removed with label-scoped cleanup.
+  Evidence is in task `01a0cfc6-dc9e-7312-9e86-e20bb153cd4f`, successful command
+  outputs `exec-884a28a2-a2ff-4b80-aa47-52b2f0effe92`,
+  `exec-14d4ff56-7d60-4055-9d40-9b821fbb3dcf` and
+  `exec-d9e1337c-e978-45ae-a6bf-90c751486ad6`.
+- The owner reaffirmed minimal UI and asked for a final design pass. Design
+  and Review design skills are selected; final product-wide review remains
+  open. No public release or updated desktop package is claimed.

@@ -4,7 +4,7 @@ import { installMockBridge } from "../helpers/bridge";
 import { waitForAnimations } from "../helpers/animations";
 import { startSitesPublisherFixture } from "../helpers/sites-publisher";
 
-async function openSites(page: Page) {
+async function openSites(page: Page, mainAgent = false, advanced = true) {
   await installMockBridge(page);
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
   await page.route("http://127.0.0.1:4173/", async (route) => {
@@ -64,6 +64,14 @@ async function openSites(page: Page) {
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Site Studio");
   await page.getByRole("button", { name: "Create my workspace" }).click();
+  if (mainAgent) {
+    await page
+      .getByRole("button", { name: "Begin with my agent", exact: true })
+      .click();
+    await expect(page.getByTestId("business-agent-controls")).toContainText(
+      "Ready — continue in the conversation",
+    );
+  }
   await page.getByRole("button", { name: "Apps", exact: true }).click();
   await page.getByTestId("aios-app-nav-sites").click();
   await expect(page.getByTestId("aios-sites-workspace")).toBeVisible();
@@ -78,6 +86,7 @@ async function openSites(page: Page) {
   await expect(page.getByLabel("Site name", { exact: true })).toHaveValue(
     "Customer welcome",
   );
+  if (advanced) await page.getByText("Edit code", { exact: true }).click();
 }
 
 test("Sites shares the Apps rail and preserves a private saved page across business navigation", async ({
@@ -268,4 +277,140 @@ test("an unsaved Sites draft survives app switching and is guarded when leaving 
   await page.getByRole("button", { name: "Apps", exact: true }).click();
   await page.getByTestId("aios-app-nav-sites").click();
   await expect(page.getByLabel("HTML source", { exact: true })).toHaveValue("");
+});
+
+test("guided Sites work verifies access, retries startup once and loads the agent result without losing a draft", async ({
+  page,
+}) => {
+  await openSites(page, true, false);
+  await expect(
+    page.getByLabel("HTML source", { exact: true }),
+  ).not.toBeVisible();
+  await page.evaluate(async () => {
+    const native = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke: (
+            command: string,
+            args?: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const original = native.invoke;
+    const agents = (await original("list_managed_agents")) as {
+      pubkey: string;
+      persona_id: string;
+    }[];
+    const agent = agents.find(
+      (candidate) => candidate.persona_id === "builtin:fizz",
+    );
+    if (!agent) throw new Error("Main agent fixture missing");
+    await original("stop_managed_agent", { pubkey: agent.pubkey });
+    let failed = false;
+    native.invoke = (command, args) => {
+      if (command === "start_managed_agent" && !failed) {
+        failed = true;
+        return Promise.reject(new Error("Synthetic unavailable runtime"));
+      }
+      return original(command, args);
+    };
+  });
+  const request = page.getByLabel("What should the site do?", { exact: true });
+  await request.fill("Introduce our design studio and its services.");
+  await page
+    .getByRole("button", { name: "Ask main agent", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Synthetic unavailable runtime" }),
+  ).toContainText("without sending your request again");
+  await page.getByRole("button", { name: "Retry agent", exact: true }).click();
+  await expect(request).toHaveValue("");
+  await expect(page.getByTestId("site-agent-conversation")).toBeVisible();
+  const sentCount = () =>
+    page.evaluate(
+      () =>
+        (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).filter(
+          (row) =>
+            row.command === "send_channel_message" &&
+            String(row.payload?.content).includes("help me build this site."),
+        ).length,
+    );
+  expect(await sentCount()).toBe(1);
+  await request.fill("Introduce our design studio and its services.");
+  await page
+    .getByRole("button", { name: "Ask main agent", exact: true })
+    .click();
+  await expect(request).toHaveValue("");
+  expect(await sentCount()).toBe(2);
+
+  await page.evaluate(async () => {
+    const native = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke: (
+            command: string,
+            args?: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const request = (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).findLast(
+      (row) =>
+        row.command === "send_channel_message" &&
+        String(row.payload?.content).includes("help me build this site."),
+    );
+    if (!request) throw new Error("No saved site request");
+    const channelId = request.payload?.channelId;
+    const canvas = (await native.invoke("get_canvas", { channelId })) as {
+      content: string;
+      event_id: string;
+    };
+    const doc = JSON.parse(canvas.content);
+    doc.files.indexHtml = "<h1>A new page from your agent</h1>";
+    await native.invoke("set_canvas", {
+      channelId,
+      content: JSON.stringify(doc),
+      expectedRevision: canvas.event_id,
+    });
+  });
+  await page.getByText("Edit code", { exact: true }).click();
+  await page
+    .getByLabel("HTML source", { exact: true })
+    .fill("<h1>My unfinished edit</h1>");
+  await request.fill("Improve the headline.");
+  await expect(
+    page.getByRole("button", { name: "Ask main agent", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByText("Save your changes before asking the agent.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Load agent changes", exact: true })
+    .click();
+  await expect(page.getByRole("alertdialog")).toBeVisible();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await expect(page.getByLabel("HTML source", { exact: true })).toHaveValue(
+    "<h1>My unfinished edit</h1>",
+  );
+  await page
+    .getByRole("button", { name: "Load agent changes", exact: true })
+    .click();
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: /Discard/ })
+    .click();
+  await expect(page.getByLabel("HTML source", { exact: true })).toHaveValue(
+    "<h1>A new page from your agent</h1>",
+  );
+  await expect(page.getByTestId("site-agent-conversation")).toBeVisible();
+  await page.getByText("Edit code", { exact: true }).click();
+  await page.screenshot({
+    path: "test-results/aios-sites-guided.png",
+    animations: "disabled",
+  });
 });

@@ -88,7 +88,10 @@ export function useSitesWorkspace({
   const contextIsBlocked = contextChangePending || contextIsStale;
   const isBusy = isLoadingChannels || isLoadingCanvas || isCreating || isSaving;
   const canEdit =
-    !contextIsBlocked && selectedChannel !== null && !isLoadingCanvas;
+    !contextIsBlocked &&
+    selectedChannel !== null &&
+    !isLoadingCanvas &&
+    loadError === null;
   const draftGuard = useSitesDraftGuard({
     isDirty,
     isCreating,
@@ -97,14 +100,20 @@ export function useSitesWorkspace({
   });
 
   const loadSite = React.useCallback(
-    async (channel: Channel, targetContext: WorkspaceContext) => {
+    async (
+      channel: Channel,
+      targetContext: WorkspaceContext,
+      keepCurrentDraft = false,
+    ) => {
       const generation = ++canvasLoadGeneration.current;
       const targetKey = contextKey(targetContext);
       setSelectedChannelId(channel.id);
       setIsLoadingCanvas(true);
-      setDraft(null);
-      setSavedCanvasContent(null);
-      setRevision("none");
+      if (!keepCurrentDraft) {
+        setDraft(null);
+        setSavedCanvasContent(null);
+        setRevision("none");
+      }
       setSourceRevision(null);
       setLoadError(null);
       setMalformedCanvas(null);
@@ -228,7 +237,12 @@ export function useSitesWorkspace({
     );
     if (channel)
       draftGuard.runAfterDraftDecision(
-        () => void loadSite(channel, liveContextRef.current),
+        () =>
+          void loadSite(
+            channel,
+            liveContextRef.current,
+            channel.id === selectedChannelIdRef.current,
+          ),
       );
   }
 

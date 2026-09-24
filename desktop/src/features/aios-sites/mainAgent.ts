@@ -1,25 +1,88 @@
 import {
   addChannelMembers,
+  getChannelMembers,
   listManagedAgents,
   sendChannelMessage,
 } from "@/shared/api/tauri";
 import { startManagedAgent } from "@/shared/api/tauriManagedAgents";
+import type { CanvasScope } from "@/shared/api/canvasTypes";
+import type { ManagedAgent } from "@/shared/api/types";
 import { pickWelcomeGuideAgentForRelay } from "@/features/onboarding/welcomeGuide";
 
-const acceptedRequests = new Map<string, number>();
+/** A sent request retained by its mounted UI only while startup needs a retry. */
+export type SiteAgentRequestReceipt = {
+  agent: ManagedAgent;
+  businessChannelId: string;
+  siteChannelId: string;
+  scope: CanvasScope;
+  replayFloorUnix: number;
+};
 
 export class SiteAgentStartError extends Error {
-  readonly agentName: string;
-  readonly causeMessage: string;
+  readonly receipt: SiteAgentRequestReceipt;
 
-  constructor(agentName: string, causeMessage: string) {
+  constructor(receipt: SiteAgentRequestReceipt, cause: unknown) {
     super(
-      `The request was sent, but ${agentName} could not be started: ${causeMessage}`,
+      `Your request was sent, but ${receipt.agent.name} could not start. ${cause instanceof Error ? cause.message : String(cause)}`,
     );
     this.name = "SiteAgentStartError";
-    this.agentName = agentName;
-    this.causeMessage = causeMessage;
+    this.receipt = receipt;
   }
+}
+
+async function requireBusinessAccess(
+  agent: ManagedAgent,
+  channelId: string,
+  scope: CanvasScope,
+) {
+  const members = await getChannelMembers(channelId, scope);
+  if (!members.some(({ pubkey }) => pubkey === agent.pubkey)) {
+    throw new Error(
+      "Your main agent does not have access to this business yet. Open Main agent to finish setting it up, then try again.",
+    );
+  }
+}
+
+async function requireSiteAccess(
+  agent: ManagedAgent,
+  channelId: string,
+  scope: CanvasScope,
+) {
+  const members = await getChannelMembers(channelId, scope);
+  if (!members.some(({ pubkey }) => pubkey === agent.pubkey)) {
+    throw new Error(
+      "The main agent's access to this site could not be confirmed. Check Private access and try again.",
+    );
+  }
+}
+
+/** Retry only the startup of an already accepted request; never send it again. */
+export async function retrySiteAgentStart(receipt: SiteAgentRequestReceipt) {
+  await requireBusinessAccess(
+    receipt.agent,
+    receipt.businessChannelId,
+    receipt.scope,
+  );
+  await requireSiteAccess(receipt.agent, receipt.siteChannelId, receipt.scope);
+  const agent = (await listManagedAgents()).find(
+    ({ pubkey, relayUrl }) =>
+      pubkey === receipt.agent.pubkey &&
+      relayUrl === receipt.scope.expectedRelayUrl,
+  );
+  if (!agent)
+    throw new Error(
+      "This main agent is no longer available. Open Agents to check its setup.",
+    );
+  if (agent.status === "running") return agent;
+  try {
+    await startManagedAgent(agent.pubkey, {
+      ...receipt.scope,
+      replayFloorUnix: receipt.replayFloorUnix,
+    });
+  } catch (cause) {
+    throw new SiteAgentStartError(receipt, cause);
+  }
+  return agent;
 }
 
 export async function askMainAgentToBuildSite({
@@ -28,90 +91,81 @@ export async function askMainAgentToBuildSite({
   relayUrl,
   signerPubkey,
   request,
-  onMembershipConfirmed,
 }: {
   businessChannelId: string;
   siteChannelId: string;
   relayUrl: string;
   signerPubkey: string;
   request: string;
-  onMembershipConfirmed: () => void;
 }) {
+  const trimmed = request.trim();
+  if (!trimmed || trimmed.length > 6000)
+    throw new Error("Describe the site in 1–6,000 characters.");
+  const scope = {
+    expectedRelayUrl: relayUrl,
+    expectedSignerPubkey: signerPubkey,
+  };
   const agent = pickWelcomeGuideAgentForRelay(
     await listManagedAgents(),
     relayUrl,
   );
-  if (!agent) {
-    throw new Error(
-      "Set up the main agent for this relay in Agents, then try again.",
-    );
-  }
-
-  const membership = await addChannelMembers({
-    channelId: siteChannelId,
-    pubkeys: [agent.pubkey],
-    role: "bot",
-    expectedRelayUrl: relayUrl,
-    expectedSignerPubkey: signerPubkey,
-  });
-  const membershipError = membership.errors.find(
-    ({ error }) => !error.toLowerCase().includes("already"),
-  );
-  if (membershipError) throw new Error(membershipError.error);
-  onMembershipConfirmed();
-
-  const requestKey = JSON.stringify([
-    relayUrl,
-    signerPubkey,
-    businessChannelId,
-    siteChannelId,
-    agent.pubkey,
-    request.trim(),
-  ]);
-  let replayFloorUnix = acceptedRequests.get(requestKey);
-  if (replayFloorUnix === undefined) {
-    const message = await sendChannelMessage(
-      siteChannelId,
-      buildSiteRequest({
-        agentName: agent.name,
-        businessChannelId,
-        siteChannelId,
-        request,
-      }),
-      null,
-      undefined,
-      [agent.pubkey],
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      relayUrl,
-      signerPubkey,
-    );
-    replayFloorUnix = message.createdAt;
-    if (acceptedRequests.size >= 100) {
-      const oldestKey = acceptedRequests.keys().next().value;
-      if (oldestKey !== undefined) acceptedRequests.delete(oldestKey);
-    }
-    acceptedRequests.set(requestKey, replayFloorUnix);
-  }
-
-  if (agent.status !== "running") {
+  if (!agent)
+    throw new Error("Set up your main agent in Main agent, then try again.");
+  await requireBusinessAccess(agent, businessChannelId, scope);
+  const members = await getChannelMembers(siteChannelId, scope);
+  if (!members.some(({ pubkey }) => pubkey === agent.pubkey)) {
+    const result = await addChannelMembers({
+      channelId: siteChannelId,
+      pubkeys: [agent.pubkey],
+      role: "bot",
+      ...scope,
+    });
+    // Read authoritative membership even after a concurrent invite or partial error.
     try {
-      await startManagedAgent(agent.pubkey, {
-        expectedRelayUrl: relayUrl,
-        expectedSignerPubkey: signerPubkey,
-        replayFloorUnix,
-      });
+      await requireSiteAccess(agent, siteChannelId, scope);
     } catch (cause) {
-      throw new SiteAgentStartError(
-        agent.name,
-        cause instanceof Error ? cause.message : String(cause),
+      throw new Error(
+        result.errors[0]?.error ??
+          (cause instanceof Error ? cause.message : String(cause)),
       );
     }
   }
-
+  const message = await sendChannelMessage(
+    siteChannelId,
+    buildSiteRequest({
+      agentName: agent.name,
+      businessChannelId,
+      siteChannelId,
+      request: trimmed,
+    }),
+    null,
+    undefined,
+    [agent.pubkey],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    relayUrl,
+    signerPubkey,
+  );
+  const receipt = {
+    agent,
+    businessChannelId,
+    siteChannelId,
+    scope,
+    replayFloorUnix: message.createdAt,
+  };
+  if (agent.status !== "running") {
+    try {
+      await startManagedAgent(agent.pubkey, {
+        ...scope,
+        replayFloorUnix: message.createdAt,
+      });
+    } catch (cause) {
+      throw new SiteAgentStartError(receipt, cause);
+    }
+  }
   return agent;
 }
 
@@ -153,5 +207,5 @@ The complete saved document must be strict JSON in this exact shape, with no ext
 
 Keep title within 120 UTF-16 code units, indexHtml within 120000, styleCss within 80000, and appJs within 80000. The full serialized JSON must stay within 200000 UTF-8 bytes. Save one complete document with the Sites command, using the revision you just read (or \`none\` only if there is no saved canvas):
 \`buzz sites update --business-channel ${businessChannelId} --site-channel ${siteChannelId} --expected-revision <current-event-id-or-none> --document -\`
-Send the JSON document on stdin. Do not use an unscoped canvas write. If the revision changed, re-read and preserve the latest document before deciding what to do. Do not publish or share the site externally. After the save is accepted, summarize what you built and let me inspect it with the isolated preview.`;
+Send the JSON document on stdin. Do not use an unscoped canvas write. If the revision changed, re-read and preserve the latest document before deciding what to do. This is a static HTML/CSS/JavaScript site with no database, backend functions, email delivery, or authenticated customer accounts. Do not make simulated form submissions, payment, login or saved data look functional; explain any needed integration clearly. Do not publish or share the site externally. After the save is accepted, summarize what you built and let me inspect it with the isolated preview.`;
 }

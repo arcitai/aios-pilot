@@ -242,7 +242,10 @@ pub(super) async fn fetch_health(
 #[cfg(test)]
 mod tests {
     use super::super::types::SitesPublisherFiles;
-    use super::{checked_public_url, validate_site};
+    use super::{
+        checked_public_url, validate_site, MAX_SITE_BYTES, MAX_SITE_HTML_CODE_UNITS,
+        MAX_SITE_TITLE_CODE_UNITS,
+    };
     use serde_json::Value;
 
     #[test]

@@ -43,40 +43,52 @@ export function SiteEditorPanels({
 }) {
   return (
     <>
-      <div className="grid min-w-0 grid-cols-1 gap-4 2xl:grid-cols-2">
-        <SiteCodeEditor
-          disabled={disabled}
-          onChange={onUpdateFile}
-          value={document.files}
-        />
-        <SitePreview
-          isCurrentSnapshot={previewIsCurrent}
-          previewExpiresAt={previewExpiresAt}
-          configured={previewConfigured}
-          disabled={disabled}
-          error={previewError}
-          loading={previewLoading}
-          onRun={onRunPreview}
-          previewUrl={previewUrl}
-        />
-      </div>
-      <SiteAccessPanel
-        channelId={channel.id}
-        channelName={channel.name}
+      <SitePreview
+        isCurrentSnapshot={previewIsCurrent}
+        previewExpiresAt={previewExpiresAt}
+        configured={previewConfigured}
         disabled={disabled}
-        memberCount={channel.memberCount}
-        onMembershipChanged={onMembershipChanged}
-        scope={context.scope}
+        error={previewError}
+        loading={previewLoading}
+        onRun={onRunPreview}
+        previewUrl={previewUrl}
       />
-      <SiteVersionHistory
-        currentRevision={revision}
-        disabled={disabled}
-        key={`${channel.id}:${revision}`}
-        onSelect={onSelectHistory}
-        parentBusinessChannelId={businessChannelId}
-        scope={context.scope}
-        channelId={channel.id}
-      />
+      <details className="rounded-xl border border-border/50 bg-card p-4">
+        <summary className="cursor-pointer text-sm font-medium">
+          Edit code
+        </summary>
+        <div className="mt-4">
+          <SiteCodeEditor
+            disabled={disabled}
+            onChange={onUpdateFile}
+            value={document.files}
+          />
+        </div>
+      </details>
+      <details className="rounded-xl border border-border/50 bg-card p-4">
+        <summary className="cursor-pointer text-sm font-medium">
+          Access and version history
+        </summary>
+        <div className="mt-4 flex flex-col gap-4">
+          <SiteAccessPanel
+            channelId={channel.id}
+            channelName={channel.name}
+            disabled={disabled}
+            memberCount={channel.memberCount}
+            onMembershipChanged={onMembershipChanged}
+            scope={context.scope}
+          />
+          <SiteVersionHistory
+            currentRevision={revision}
+            disabled={disabled}
+            key={`${channel.id}:${revision}`}
+            onSelect={onSelectHistory}
+            parentBusinessChannelId={businessChannelId}
+            scope={context.scope}
+            channelId={channel.id}
+          />
+        </div>
+      </details>
     </>
   );
 }

@@ -51,6 +51,8 @@ export function SitesWorkspace({
     document: draft,
     canPublish:
       !!draft &&
+      workspace.canEdit &&
+      !workspace.isBusy &&
       !workspace.isDirty &&
       !workspace.isSaving &&
       !workspace.isCreating &&
@@ -98,8 +100,8 @@ export function SitesWorkspace({
               </span>
             </div>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
-              {companyName ? `For ${companyName} · ` : ""}Build static sites in
-              versioned Buzz canvases.
+              {companyName ? `For ${companyName} · ` : ""}Create, preview and
+              share a page for your business.
             </p>
           </div>
         </div>
@@ -118,6 +120,7 @@ export function SitesWorkspace({
           <Button
             disabled={
               !draft ||
+              !workspace.canEdit ||
               workspace.contextIsBlocked ||
               workspace.isSaving ||
               workspace.isCreating ||
@@ -236,8 +239,8 @@ export function SitesWorkspace({
                 </h2>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
                   Start with a landing page, a small internal tool, or a web
-                  app. Your drafts live in private Buzz canvases, and you can
-                  export a standalone HTML file whenever you need it.
+                  app. Work with your main agent, preview the result and choose
+                  when to share it. Your drafts start private.
                 </p>
                 <Button
                   className="mt-5"
@@ -280,6 +283,8 @@ export function SitesWorkspace({
                   key={`${selectedChannel.id}:${context.scope.expectedRelayUrl}:${context.scope.expectedSignerPubkey}`}
                   businessChannelId={businessChannelId}
                   disabled={workspace.isBusy || workspace.contextIsBlocked}
+                  isDirty={workspace.isDirty}
+                  onLoadLatest={() => workspace.openSite(selectedChannel.id)}
                   onMembershipChanged={workspace.refreshChannels}
                   renderConversation={renderConversation}
                   scope={context.scope}
@@ -312,23 +317,6 @@ export function SitesWorkspace({
                   publisher={publisher}
                   siteId={selectedChannel.id}
                 />
-                <section className="rounded-xl border border-border/45 bg-muted/15 px-4 py-3">
-                  <p className="text-xs font-medium">
-                    Agents and the CLI use the same canvas document
-                  </p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                    The saved JSON includes{" "}
-                    <code className="rounded bg-muted/65 px-1 py-0.5 font-mono text-2xs">
-                      schemaVersion: 1
-                    </code>
-                    , site and parent channel ids, title, and the three fixed
-                    files. A specialist can read and write it with{" "}
-                    <code className="rounded bg-muted/65 px-1 py-0.5 font-mono text-2xs">
-                      buzz canvas get/set --channel &lt;site-channel-id&gt;
-                    </code>
-                    ; each accepted canvas write is a version in Buzz history.
-                  </p>
-                </section>
               </>
             ) : null}
           </div>

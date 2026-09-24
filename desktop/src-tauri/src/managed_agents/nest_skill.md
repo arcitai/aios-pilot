@@ -71,6 +71,52 @@ inferences. This CLI cannot connect a provider or manufacture `connected`
 status; direct credential setup to Desktop's Connections screen. Never put
 credentials in documents, source text, exports, messages or command arguments.
 
+## Built-in apps and sites
+
+Apps have private workspaces separate from the company's context. Use the
+explicit business UUID and app/site target supplied by the user's current
+workspace. Being a member of the business does not grant access to every app.
+Never invite yourself, copy the business membership, or silently create a
+different workspace when a target is inaccessible.
+
+For Slides, Calendar and Design, first open the selected app in Desktop and
+have its owner grant you access. Inspect its saved document:
+
+```bash
+buzz apps show --channel <business-channel-uuid> --app slides
+```
+
+The result contains `channel_id`, `revision` and the app-specific `document`.
+Keep the existing document's schema and unrelated content. Submit only that
+inner document, not the output envelope:
+
+```bash
+buzz apps update --channel <business-channel-uuid> --app slides \
+  --expected-revision <revision-from-show> --document - < slides.json
+```
+
+The same commands accept `calendar` and `design`. Use `none` only when `show`
+reports an empty saved document. `apps create` makes a workspace private to
+the caller; do not use it as a substitute for the owner's selected app.
+Calendar events are internal planning records, not connected Google Calendar
+events. Design exports and previews are static HTML, not deployed services.
+
+For a site, both UUIDs are explicit:
+
+```bash
+buzz sites show --business-channel <business-uuid> --site-channel <site-uuid>
+buzz sites update --business-channel <business-uuid> --site-channel <site-uuid> \
+  --expected-revision <revision-from-show> --document - < site.json
+```
+
+Preserve the complete Sites document returned by `show`, including its IDs and
+schema version. A site supports HTML, CSS and JavaScript. It has no database,
+server functions, email delivery or authenticated customer accounts. Do not
+present simulated forms, checkout or login as working integrations. A preview
+or HTML export is not publication. Only report a saved result after the command
+succeeds; after a conflict, re-read and reconcile rather than forcing a write.
+Publishing and sharing require the owner's explicit action in the Sites UI.
+
 ## In-app voice calls
 
 A managed local agent can ask its owner to switch a shared conversation to

@@ -38,7 +38,7 @@ export function SitePreview({
             <p className="mt-0.5 text-xs text-muted-foreground">
               {previewUrl && previewExpiresAt
                 ? `${isCurrentSnapshot ? "Current snapshot" : "Earlier snapshot"} · expires ${new Date(previewExpiresAt).toLocaleTimeString()}`
-                : "Run the current draft in the isolated Sites origin."}
+                : "Try your latest changes before sharing."}
             </p>
           </div>
         </div>
@@ -64,8 +64,8 @@ export function SitePreview({
       <div className="flex items-center gap-2 border-b border-border/40 bg-muted/20 px-4 py-2 text-2xs text-muted-foreground">
         <ShieldCheck className="size-3.5 shrink-0 text-primary" />
         <p>
-          Separate origin · opaque sandbox · no parent access · network and
-          storage blocked
+          Preview is isolated from your workspace and cannot access your private
+          data.
         </p>
       </div>
       {error ? (
@@ -100,12 +100,9 @@ export function SitePreview({
           <span className="flex size-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
             <Eye className="size-5" />
           </span>
-          <p className="text-sm font-medium">
-            Preview is ready in a separate origin
-          </p>
+          <p className="text-sm font-medium">Your preview is ready</p>
           <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-            This publisher address is not on the desktop’s narrow iframe
-            allowlist. Use Open preview in browser above.
+            Open this preview in your browser using the button above.
           </p>
         </div>
       ) : (
@@ -119,9 +116,8 @@ export function SitePreview({
               : "Connect a self-hosted Sites publisher to preview"}
           </p>
           <p className="max-w-sm text-xs leading-relaxed text-muted-foreground">
-            Preview runs on a separate local publisher origin with an opaque
-            sandbox policy. The Buzz desktop shell keeps its own script policy
-            unchanged.
+            You can test the page here before anyone else sees it. Connections
+            to external services are disabled in previews.
           </p>
         </div>
       )}

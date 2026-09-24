@@ -8,6 +8,11 @@ open-source product, forked locally from block/buzz at
 
 Build a coherent business workspace for nontechnical people. Preserve Buzz's
 actual components, typography, colors, navigation and conversation experience.
+On 24 September Gustav emphasized minimal UI with little visual noise. Show
+the current task and one primary next action; reveal setup and technical
+details only when useful. Perform a final design-skill review across the real
+product flows and fix findings before delivery. `DESIGN.md` owns these visual
+and interaction rules.
 The first agent is the user's persistent home base: it learns the business,
 helps connect tools, proposes source-backed company context, accepts corrections,
 and only then helps create specialist agents and useful apps. Kylon is a

@@ -112,6 +112,7 @@ function BusinessApps({
               expectedRelayUrl={expectedRelayUrl}
               expectedSignerPubkey={expectedSignerPubkey}
               onDirtyChange={onSiteDirtyChange}
+              renderConversation={conversation}
             />
           </React.Suspense>
         ),

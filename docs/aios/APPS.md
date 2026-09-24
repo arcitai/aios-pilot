@@ -71,10 +71,10 @@ canceled and may still complete after the parent discards the visible draft.
 Private app-channel access is a separate ACL. Business-channel membership is
 not inherited, and the app setup does not invite business-channel members.
 Until a user is explicitly added to an app channel, that user cannot read its
-Canvas. The current slice has no app-channel membership editor, so app
-documents created by one identity remain private to that identity unless an
-administrator manages the app channel separately. Do not describe these app
-documents as team-shared by default.
+Canvas. The app's Access panel supports deliberate invitations and removal,
+with membership readback. Documents begin private to their creator; business
+members are not automatically invited. Do not describe these app documents
+as team-shared by default.
 
 The normal store is `CanvasAppDocumentStore`. `LocalAppDocumentStore` is only
 offered after a relay load/save problem as an explicit device-only recovery
@@ -107,6 +107,26 @@ The Tauri native CSP needs a narrowly scoped `frame-src` allowance for the
 sandboxed `srcDoc` preview. This feature does not change `tauri.conf.json`;
 verify the exact local asset origin and policy behavior in the native WebView
 when integrating the app.
+
+## Agent and CLI access
+
+The integrated `buzz apps list|show|create|update` commands use the same private
+app channels and document parser as the desktop contract. `--channel` selects
+the parent business UUID; `--app` is `slides`, `calendar` or `design`.
+`show` returns the inner document and its saved revision. `update` takes that
+inner document with `--document` (JSON, path, `@path` or `-` for stdin) and a
+required `--expected-revision`. The relay atomically rejects a stale revision.
+
+Open the app as its human owner and invite the selected agent before asking
+that agent to update it. CLI `create` produces a private channel owned by its
+caller; it does not automatically invite a delegated agent's human owner.
+UI exporters provide HTML and ICS; the CLI currently returns JSON.
+
+Three real-relay flows in `scripts/tests/test_aios_apps_cli_live.py` verify
+creation, reopen/update, stale-write and outsider rejection, parent marker
+validation, and TypeScript parser readback of all three persisted documents.
+Run with an explicitly selected loopback `AIOS_TEST_RELAY_URL` and compiled
+`AIOS_TEST_CLI`; the test creates fresh synthetic identities and channels.
 
 ## Source provenance
 

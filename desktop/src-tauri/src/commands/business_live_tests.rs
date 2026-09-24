@@ -1,5 +1,5 @@
 //! Native command checks. Live proof uses only an explicitly selected loopback relay.
-use super::{create_channel, get_canvas, get_canvas_history, set_canvas};
+use super::{create_channel, get_canvas, get_canvas_history, get_channel_members, set_canvas};
 use crate::app_state::{build_app_state, AppState};
 use tauri::Manager;
 
@@ -51,6 +51,13 @@ async fn business_commands_reject_stale_tenant_or_signer_before_network() {
             app.state(),
         )
         .await;
+        let members = get_channel_members(
+            channel.clone(),
+            Some(expected_relay.clone()),
+            Some(expected_signer.clone()),
+            app.state(),
+        )
+        .await;
         let history = get_canvas_history(
             channel.clone(),
             Some(20),
@@ -63,6 +70,7 @@ async fn business_commands_reject_stale_tenant_or_signer_before_network() {
         .await;
         for result in [
             read.map(|_| ()),
+            members.map(|_| ()),
             write.map(|_| ()),
             create.map(|_| ()),
             history.map(|_| ()),
@@ -103,6 +111,16 @@ async fn live_roundtrip() {
         Some("AIOS business workspace · private company context and main-agent conversation. [aios.business-workspace:v1]".into()),
         None, Some(relay.clone()), Some(signer.clone()), app.state(),
     ).await.expect("create private workspace through the native command");
+    let members = get_channel_members(
+        channel.id.clone(),
+        Some(relay.clone()),
+        Some(signer.clone()),
+        app.state(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(members.members.len(), 1);
+    assert_eq!(members.members[0].pubkey, signer);
     let original = serde_json::json!({
         "schemaVersion":1,"kind":"aios.business-workspace",
         "company":{"name":"Native Test Studio","website":"","summary":"A test company","audience":"Small teams","offers":"Design","goals":"Reliable onboarding"},

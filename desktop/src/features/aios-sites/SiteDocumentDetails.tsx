@@ -57,28 +57,27 @@ export function SiteDocumentDetails({
             onChange={(event) => onChangeTitle(event.target.value)}
             value={draft.title}
           />
-          <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-            <LockKeyhole className="size-3.5" /> Private canvas in{" "}
-            <code className="rounded bg-muted/55 px-1.5 py-0.5 font-mono text-2xs">
-              #{channel.name}
-            </code>
-            <span aria-hidden>·</span> Revision{" "}
-            <code className="rounded bg-muted/55 px-1.5 py-0.5 font-mono text-2xs">
-              {revision === "none" ? "not saved" : `${revision.slice(0, 12)}…`}
-            </code>
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <LockKeyhole className="size-3.5" /> Private workspace
             {sourceRevision ? (
               <span className="text-primary">
-                Editing a past version · saving creates a new revision
+                Editing a past version · saving keeps its history
               </span>
             ) : null}
           </p>
+          <details className="mt-2 text-2xs text-muted-foreground">
+            <summary className="cursor-pointer">Version details</summary>
+            <p className="mt-1 break-all">
+              #{channel.name} ·{" "}
+              {revision === "none" ? "Not saved yet" : revision} ·{" "}
+              {(siteBytes / 1024).toFixed(1)} KB / 195 KB
+            </p>
+          </details>
         </div>
         <div className="flex items-center gap-2 text-2xs text-muted-foreground">
           <span className={isDirty ? "text-amber-600" : "text-primary"}>
-            {isDirty ? "Unsaved changes" : "Saved to Buzz"}
+            {isDirty ? "Unsaved changes" : "Saved privately"}
           </span>
-          <span aria-hidden>·</span>
-          <span>{(siteBytes / 1024).toFixed(1)} KB / 195 KB</span>
         </div>
       </div>
 
