@@ -1,0 +1,97 @@
+name: AIOS Pilot CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: aios-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    name: ${{ matrix.lane }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [backend, native, frontends, mobile]
+    env:
+      CARGO_BUILD_JOBS: 2
+      CARGO_PROFILE_DEV_DEBUG: 0
+      CARGO_PROFILE_TEST_DEBUG: 0
+      CMAKE_POLICY_VERSION_MINIMUM: '3.5'
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: aios_ci
+          POSTGRES_PASSWORD: aios_fixture_only
+          POSTGRES_DB: aios_ci
+        ports: ['5432:5432']
+        options: --health-cmd 'pg_isready -U aios_ci' --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd 'redis-cli ping' --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: cashapp/activate-hermit@cea9af7913204a965fd488637a8d1811bba2e616 # v1
+      - name: Linux native dependencies
+        if: matrix.lane == 'backend' || matrix.lane == 'native'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential clang cmake ninja-build pkg-config libssl-dev libasound2-dev libayatana-appindicator3-dev libgtk-3-dev librsvg2-dev libwebkit2gtk-4.1-dev libxdo-dev patchelf postgresql-client redis-tools
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32
+        if: matrix.lane == 'backend' || matrix.lane == 'native'
+        with:
+          key: aios-${{ matrix.lane }}
+          workspaces: |
+            .
+            desktop/src-tauri
+      # Together these lanes execute every dependency of `just ci`. Database
+      # integration is additional; its services are fresh for this job only.
+      - name: Backend acceptance
+        if: matrix.lane == 'backend'
+        env:
+          BUZZ_TEST_EXTERNAL_INFRA: '1'
+          DATABASE_URL: postgres://aios_ci:aios_fixture_only@localhost:5432/aios_ci
+          REDIS_URL: redis://localhost:6379
+        run: just fmt-check clippy test-unit test
+      - name: Native acceptance
+        if: matrix.lane == 'native'
+        run: just desktop-tauri-fmt-check desktop-tauri-clippy desktop-tauri-check desktop-tauri-test
+      - name: Frontend and repository acceptance
+        if: matrix.lane == 'frontends'
+        run: |
+          just desktop-install-ci
+          just desktop-check desktop-test desktop-build web-check web-build security-review-check file-size-check
+          actionlint .github/workflows/aios-ci.yml
+      - name: Mobile acceptance
+        if: matrix.lane == 'mobile'
+        run: just mobile-install mobile-check mobile-test
+      - name: Store frontend build artifacts
+        if: matrix.lane == 'frontends'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: aios-pilot-frontends-${{ github.sha }}
+          path: |
+            desktop/dist/
+            web/dist/
+          if-no-files-found: error
+          retention-days: 14
+  acceptance:
+    name: AIOS acceptance
+    needs: verify
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every verification lane
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}
+        run: test "$VERIFY_RESULT" = success

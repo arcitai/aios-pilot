@@ -24,6 +24,8 @@ use super::{
 };
 use crate::commands::business_connections::scope::ConnectionScope;
 
+type BlockRequestLog = Arc<Mutex<Vec<(String, HashMap<String, String>)>>>;
+
 const TEST_TOKEN: &str = "ntn_fixture_internal_token_123456789";
 const TEST_AUTHORIZATION: &str = "Bearer ntn_fixture_internal_token_123456789";
 const PAGE_ID: &str = "11111111-1111-4111-8111-111111111111";
@@ -315,7 +317,7 @@ async fn import_reads_text_only_uses_api_provenance_and_stops_at_depth_limit() {
         Path(id): Path<String>,
         Query(query): Query<HashMap<String, String>>,
         headers: HeaderMap,
-        State(calls): State<Arc<Mutex<Vec<(String, HashMap<String, String>)>>>>,
+        State(calls): State<BlockRequestLog>,
     ) -> Result<Json<Value>, StatusCode> {
         if !authorized(&headers) {
             return Err(StatusCode::UNAUTHORIZED);

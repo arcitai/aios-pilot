@@ -1,6 +1,6 @@
 # AGENTS.md — AI Agent Contributor Guide
 
-This guide is for AI agents contributing to the Buzz codebase. It covers
+This guide is for AI agents contributing to Arcitai AIOS Pilot, derived from Buzz. It covers
 agent-specific context and conventions. For general contributor info (setup,
 code style, PR process, architecture), see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -25,29 +25,22 @@ and runtime evidence answer different questions.
 
 ---
 
-## Ecosystem
+## Ownership and delivery
 
-Buzz spans five repos. This one (`block/buzz`) is the OSS source for the relay, desktop, mobile, and CLI. The others handle internal builds and deployment:
+The maintained application is `arcitai/aios-pilot`. Buzz is the upstream source;
+its notices and history remain intact. Block's internal repositories, signing
+keys, deployment accounts and release pipelines are not this project's targets.
 
-| Repo | Purpose |
-|------|---------|
-| [block/buzz](https://github.com/block/buzz) | OSS source — relay, desktop app, mobile app, CLI, agent harness |
-| [squareup/buzz-releases](https://github.com/squareup/buzz-releases) | Buildkite pipelines producing Block-signed macOS + iOS builds with `-block` desktop version suffix |
-| [squareup/sprout-oss](https://github.com/squareup/sprout-oss) | CI pipeline building the relay Docker image and pushing to internal ECR |
-| [squareup/block-coder-tf-stacks](https://github.com/squareup/block-coder-tf-stacks) | Terraform + ArgoCD deploying the relay to the staging Kubernetes cluster |
-| [squareup/sprout-backend-blox](https://github.com/squareup/sprout-backend-blox) | Desktop backend provider script connecting Blox workstation agents to the relay |
+Use Software & Defence Factory's supplied method and skills for bounded jobs;
+do not install personal AIOS context or copy method skills into this repository.
+Start from a committed revision. `bash scripts/factory-check.sh` installs pinned
+dependencies and runs the existing full `just ci` acceptance gate. Review the
+candidate diff and actual check results before handoff. A model report never
+substitutes for those checks or authorizes publication.
 
-```
-block/buzz (source)
-  ├─► buzz-releases      (desktop + mobile builds → Artifactory, GitHub, Mobile Releases)
-  ├─► sprout-oss         (relay Docker image → ECR)
-  │     └─► block-coder-tf-stacks  (Helm chart → ArgoCD → staging cluster)
-  └─── sprout-backend-blox         (Blox compute provider for Desktop agent launch)
-```
-
-See [RELEASING.md](RELEASING.md) for the desktop release flow and
-[CONTRIBUTING.md § Ecosystem](CONTRIBUTING.md#ecosystem) for contributor
-access information.
+See [Factory development](docs/aios/FACTORY.md) for independent CI, toolchain,
+work-in-progress recovery and release boundaries. Upstream release workflows
+are retained as reference but disabled in this repository's Actions settings.
 
 ---
 

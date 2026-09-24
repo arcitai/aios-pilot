@@ -269,6 +269,9 @@ const EVENTS_INVENTORY: &[(&str, usize, usize)] = &[
     ("src/commands/team_snapshot.rs", 1, 1),            // boundary 6
     ("src/commands/personas/snapshot/import.rs", 2, 1), // boundary 7 + its in-file injection-test fixture URL
     ("src/native_websocket.rs", 0, 2),                  // boundary 8 (WS frames; no events URL)
+    // Authenticated loopback ingress route for the isolated browser-dev bridge;
+    // receives requests and does not publish events to a remote relay.
+    ("src/browser_dev/mod.rs", 1, 0),
     // Test-only fixtures — no production egress, no guard:
     ("src/relay_admission.rs", 1, 0),
     ("src/native_relay_client_transport_tests.rs", 1, 0),

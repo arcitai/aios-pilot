@@ -64,7 +64,7 @@ pub fn parse_agent_skill(skill_md: &str) -> Result<AgentSkillMetadata, String> {
         .ok_or_else(|| "SKILL.md frontmatter must be a YAML mapping".to_string())?;
     let value = |key: &str| {
         mapping
-            .get(&serde_yaml::Value::String(key.to_string()))
+            .get(serde_yaml::Value::String(key.to_string()))
             .and_then(serde_yaml::Value::as_str)
             .map(str::to_string)
     };

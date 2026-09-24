@@ -32,7 +32,12 @@ cd "${REPO_ROOT}"
 
 # ---- Load .env if present ---------------------------------------------------
 
-if [[ -f ".env" ]]; then
+if [[ "${BUZZ_TEST_EXTERNAL_INFRA:-0}" == 1 ]]; then
+  # CI supplies an explicit disposable database. Do not read operator .env files
+  # or silently fall back to the shared local Docker stack in this mode.
+  : "${DATABASE_URL:?external test mode requires DATABASE_URL}"
+  : "${REDIS_URL:?external test mode requires REDIS_URL}"
+elif [[ -f ".env" ]]; then
   log "Loading .env..."
   set -o allexport
   # shellcheck disable=SC1091
@@ -70,6 +75,12 @@ run_test_step() {
 # ---- Check / start infra (for integration tests) ----------------------------
 
 ensure_infra() {
+  if [[ "${BUZZ_TEST_EXTERNAL_INFRA:-0}" == 1 ]]; then
+    psql "$DATABASE_URL" --no-psqlrc --set=ON_ERROR_STOP=1 --command='SELECT 1' >/dev/null
+    [[ "$(redis-cli -u "$REDIS_URL" ping)" == PONG ]]
+    cargo run -p buzz-admin -- migrate
+    return
+  fi
   "${REPO_ROOT}/bin/just" _ensure-migrations
 }
 

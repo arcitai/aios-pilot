@@ -2,6 +2,7 @@ import * as React from "react";
 import { UsersRound } from "lucide-react";
 import type { CanvasScope } from "@/shared/api/canvasTypes";
 import { Button } from "@/shared/ui/button";
+import { truncateNpub } from "@/shared/lib/pubkey";
 import { Input } from "@/shared/ui/input";
 import {
   Dialog,
@@ -16,7 +17,7 @@ import { useBusinessAccess } from "./useBusinessAccess";
 type Choice = { pubkey: string; name: string; action: "grant" | "remove" };
 
 function displayName(pubkey: string, name: string | null) {
-  return name?.trim() || `${pubkey.slice(0, 8)}…${pubkey.slice(-6)}`;
+  return name?.trim() || truncateNpub(pubkey);
 }
 
 /** A focused access dialog, separate from channel and agent setup. */

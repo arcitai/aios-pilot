@@ -264,7 +264,10 @@ test("shared Rust app-schema fixture matches desktop normalization and limits", 
     MAX_APP_CANVAS_DOCUMENT_BYTES,
   );
   assert.equal(APP_DOCUMENT_CONTRACT.limits.slides, MAX_SLIDES);
-  assert.equal(APP_DOCUMENT_CONTRACT.limits.calendarEvents, MAX_CALENDAR_EVENTS);
+  assert.equal(
+    APP_DOCUMENT_CONTRACT.limits.calendarEvents,
+    MAX_CALENDAR_EVENTS,
+  );
   assert.equal(
     APP_DOCUMENT_CONTRACT.limits.eventDescription,
     MAX_EVENT_DESCRIPTION_LENGTH,
