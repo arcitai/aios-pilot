@@ -13,6 +13,9 @@ use url::Url;
 /// The exact `kind` value for a business workspace document.
 pub const BUSINESS_DOCUMENT_KIND: &str = "aios.business-workspace";
 
+/// The NIP-29 resource tag value for the canonical Business context group.
+pub const BUSINESS_CONTEXT_RESOURCE_TYPE: &str = "aios.business-context:v1";
+
 /// The only document schema version currently supported.
 pub const BUSINESS_DOCUMENT_SCHEMA_VERSION: u32 = 1;
 
