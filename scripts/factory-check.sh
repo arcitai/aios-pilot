@@ -8,6 +8,10 @@ export CMAKE_POLICY_VERSION_MINIMUM=3.5
 # small /tmp mount is intentionally noexec; use this disposable checkout.
 export TMPDIR="$PWD/.factory-build/tmp"
 mkdir -p "$TMPDIR"
+if [[ "${FACTORY_PHASE:-}" == verify ]]; then
+  : "${FACTORY_BASE_REVISION:?Factory 0.3.4+ must provide the candidate base}"
+  export CHECK_FILE_SIZES_BASE="$FACTORY_BASE_REVISION"
+fi
 # Hermit and Flutter need writable SDK caches inside a read-only factory image.
 if [[ -d /opt/hermit-cache ]]; then
   mkdir -p .factory-build

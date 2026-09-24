@@ -25,6 +25,9 @@ in `TESTING.md`; never use a running personal workspace database as a fixture.
 creates writable Hermit, Cargo and Flutter caches in ignored `.factory-build/`.
 It also puts executable temporary build/test files there instead of the
 container's small, non-executable `/tmp` mount.
+Factory 0.3.4 or newer supplies `FACTORY_BASE_REVISION`; the entrypoint passes
+that immutable candidate base to the existing file-size ratchet. It never uses
+the candidate head as a substitute for a missing comparison base.
 Git must support credential `authtype` (Git 2.46 or newer). Run containers with
 `--init` so process lifecycle tests can reap orphaned children correctly.
 Use a disposable checkout with sufficient disk, non-root execution, bounded CPU
