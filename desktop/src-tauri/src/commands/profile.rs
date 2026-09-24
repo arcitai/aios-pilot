@@ -11,7 +11,8 @@ use crate::{
     models::{ProfileInfo, SearchUsersResponse, UserNotesResponse, UsersBatchResponse},
     nostr_convert,
     relay::{
-        query_relay, query_relay_at_with_keys, relay_http_base_url, submit_event,
+        assert_expected_relay_scope, assert_expected_signer, query_relay, query_relay_at_with_keys,
+        relay_api_base_url_with_override, relay_http_base_url, submit_event,
         submit_event_at_with_keys,
     },
 };
@@ -266,8 +267,17 @@ pub async fn search_users(
     query: String,
     limit: Option<u32>,
     cursor: Option<String>,
+    expected_relay_url: Option<String>,
+    expected_signer_pubkey: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<SearchUsersResponse, String> {
+    let api_base_url = relay_api_base_url_with_override(&state);
+    assert_expected_relay_scope(expected_relay_url.as_deref(), &api_base_url)?;
+    let signing_keys = state.signing_keys()?;
+    assert_expected_signer(
+        expected_signer_pubkey.as_deref(),
+        &signing_keys.public_key().to_hex(),
+    )?;
     let trimmed = query.trim();
     let max = limit.unwrap_or(8).min(500) as usize;
     let page = cursor
@@ -284,13 +294,16 @@ pub async fn search_users(
     }
 
     if trimmed.is_empty() {
-        let events = query_relay(
+        let events = query_relay_at_with_keys(
             &state,
+            &api_base_url,
             &[serde_json::json!({
                 "kinds": [0],
                 "limit": max,
                 "page": page,
             })],
+            &signing_keys,
+            None,
         )
         .await?;
 
@@ -325,7 +338,14 @@ pub async fn search_users(
     // the relay runs whole-word `websearch_to_tsquery` matching and "tyl"
     // returns zero results for "Tyler". Same bridge-only extension the topbar
     // message search uses (see `build_search_messages_filter`).
-    let events = query_relay(&state, &[build_user_search_filter(trimmed, max, page)]).await?;
+    let events = query_relay_at_with_keys(
+        &state,
+        &api_base_url,
+        &[build_user_search_filter(trimmed, max, page)],
+        &signing_keys,
+        None,
+    )
+    .await?;
 
     let mut response = nostr_convert::rank_user_search_results(&events, trimmed, max);
     if events.len() >= max {
