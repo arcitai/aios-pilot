@@ -1,7 +1,10 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
-    time::{SystemTime, UNIX_EPOCH},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use axum::{
@@ -16,6 +19,7 @@ use sha2::Digest as _;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
+    sync::Notify,
 };
 use url::Url;
 
@@ -71,6 +75,18 @@ struct FixtureState {
     capture: Arc<Mutex<FixtureCapture>>,
     exported_text: Arc<String>,
     metadata_mime_type: Arc<String>,
+    control: Arc<FixtureControl>,
+}
+
+#[derive(Default)]
+struct FixtureControl {
+    hold_first_authorization_code: AtomicBool,
+    hold_refresh: AtomicBool,
+    authorization_code_requests: AtomicUsize,
+    authorization_started: Notify,
+    release_authorization: Notify,
+    refresh_started: Notify,
+    release_refresh: Notify,
 }
 
 fn record_authorization(state: &FixtureState, headers: &HeaderMap) {
@@ -158,14 +174,35 @@ async fn refresh_token(
         capture.token_form = Some(form);
     }
     if grant_type == "authorization_code" {
+        let request_index = state
+            .control
+            .authorization_code_requests
+            .fetch_add(1, Ordering::SeqCst);
+        if request_index == 0
+            && state
+                .control
+                .hold_first_authorization_code
+                .load(Ordering::SeqCst)
+        {
+            state.control.authorization_started.notify_one();
+            state.control.release_authorization.notified().await;
+        }
         Json(json!({
-            "access_token": "fixture-connected-access-token-012345",
+            "access_token": if request_index == 0 {
+                "fixture-first-connected-access-token-012345"
+            } else {
+                "fixture-second-connected-access-token-012345"
+            },
             "refresh_token": REFRESH_TOKEN,
             "token_type": "Bearer",
             "expires_in": 3600,
             "scope": DRIVE_READONLY_SCOPE
         }))
     } else {
+        if state.control.hold_refresh.load(Ordering::SeqCst) {
+            state.control.refresh_started.notify_one();
+            state.control.release_refresh.notified().await;
+        }
         Json(json!({
             "access_token": "fixture-refreshed-access-token-012345",
             "token_type": "Bearer",
@@ -179,10 +216,24 @@ async fn fixture_server(
     exported_text: String,
     metadata_mime_type: &str,
 ) -> (Url, Url, FixtureState) {
+    fixture_server_controlled(
+        exported_text,
+        metadata_mime_type,
+        Arc::new(FixtureControl::default()),
+    )
+    .await
+}
+
+async fn fixture_server_controlled(
+    exported_text: String,
+    metadata_mime_type: &str,
+    control: Arc<FixtureControl>,
+) -> (Url, Url, FixtureState) {
     let state = FixtureState {
         capture: Arc::new(Mutex::new(FixtureCapture::default())),
         exported_text: Arc::new(exported_text),
         metadata_mime_type: Arc::new(metadata_mime_type.to_string()),
+        control,
     };
     let router = Router::new()
         .route("/drive/v3/about", get(about))
@@ -230,6 +281,48 @@ fn now() -> u64 {
         .as_secs()
 }
 
+type CallbackTask = tokio::task::JoinHandle<Result<(), std::io::Error>>;
+type CallbackTaskSlot = Arc<Mutex<Option<CallbackTask>>>;
+
+fn fixture_browser_opener(callback_task: CallbackTaskSlot) -> impl FnOnce(&str) -> Result<(), ()> {
+    move |authorization_url| {
+        let url = Url::parse(authorization_url).map_err(|_| ())?;
+        let params = url
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect::<HashMap<_, _>>();
+        let redirect_uri = params.get("redirect_uri").ok_or(())?;
+        let redirect = Url::parse(redirect_uri).map_err(|_| ())?;
+        let port = redirect.port().ok_or(())?;
+        let state = params.get("state").ok_or(())?.clone();
+        let task = tokio::spawn(async move {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).await?;
+            let request = format!(
+                "GET /?code=fixture-authorization-code&state={state}&scope={DRIVE_READONLY_SCOPE} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+            );
+            stream.write_all(request.as_bytes()).await?;
+            let mut response = Vec::new();
+            stream.read_to_end(&mut response).await?;
+            Ok::<(), std::io::Error>(())
+        });
+        if let Ok(mut captured) = callback_task.lock() {
+            *captured = Some(task);
+        }
+        Ok(())
+    }
+}
+
+async fn join_fixture_callback(callback_task: &CallbackTaskSlot) {
+    let task = callback_task
+        .lock()
+        .expect("callback task slot is readable")
+        .take()
+        .expect("callback task was started");
+    task.await
+        .expect("callback task joins")
+        .expect("callback request succeeds");
+}
+
 #[test]
 fn oauth_url_requests_only_readonly_drive_and_binds_pkce_state() {
     let verifier = "v".repeat(43);
@@ -270,7 +363,7 @@ async fn connect_uses_loopback_pkce_exchange_and_saves_only_after_verification()
     let (drive_origin, oauth_origin, fixture) =
         fixture_server("text".to_string(), GOOGLE_DOC_MIME_TYPE).await;
     let store = MemoryCredentials::default();
-    let scope = scope("wss://community-a.example", 'a');
+    let scope = scope("wss://pkce-connect.example", 'a');
     let adapter = GoogleDriveAdapter::for_test(&store, drive_origin, oauth_origin)
         .expect("fixture adapter builds");
     let authorization = Arc::new(Mutex::new(None::<HashMap<String, String>>));
@@ -306,7 +399,7 @@ async fn connect_uses_loopback_pkce_exchange_and_saves_only_after_verification()
                     *captured = Some(task);
                 }
                 Ok(())
-            })
+            }, || Ok(()))
             .await
             .expect("local OAuth fixture completes");
 
@@ -348,7 +441,10 @@ async fn connect_uses_loopback_pkce_exchange_and_saves_only_after_verification()
         serde_json::from_str(&stored).expect("stored credential parses");
     assert_eq!(stored.scope, DRIVE_READONLY_SCOPE);
     assert_eq!(stored.refresh_token, REFRESH_TOKEN);
-    assert_eq!(stored.access_token, "fixture-connected-access-token-012345");
+    assert_eq!(
+        stored.access_token,
+        "fixture-first-connected-access-token-012345"
+    );
 }
 
 #[test]
@@ -468,7 +564,7 @@ async fn status_search_and_import_use_bounded_readonly_fixture_requests() {
     )
     .await;
     let store = MemoryCredentials::default();
-    let scope = scope("wss://community-a.example", 'a');
+    let scope = scope("wss://search-import.example", 'b');
     store
         .store(&scope.keyring_key("google"), &credential_json(now() + 3600))
         .expect("seed scoped credential");
@@ -533,7 +629,7 @@ async fn refresh_form_omits_client_secret_and_preserves_refresh_token() {
     let (drive_origin, oauth_origin, fixture) =
         fixture_server("text".to_string(), GOOGLE_DOC_MIME_TYPE).await;
     let store = MemoryCredentials::default();
-    let scope = scope("wss://community-a.example", 'a');
+    let scope = scope("wss://refresh-success.example", 'f');
     store
         .store(
             &scope.keyring_key("google"),
@@ -573,6 +669,196 @@ async fn refresh_form_omits_client_secret_and_preserves_refresh_token() {
 }
 
 #[tokio::test]
+async fn revoke_invalidates_a_delayed_refresh_across_adapter_instances() {
+    let control = Arc::new(FixtureControl::default());
+    control.hold_refresh.store(true, Ordering::SeqCst);
+    let (drive_origin, oauth_origin, _fixture) = fixture_server_controlled(
+        "text".to_string(),
+        GOOGLE_DOC_MIME_TYPE,
+        Arc::clone(&control),
+    )
+    .await;
+    let store = MemoryCredentials::default();
+    let scope = scope("wss://delayed-refresh-revoke.example", 'd');
+    store
+        .store(
+            &scope.keyring_key("google"),
+            &credential_json(now().saturating_sub(1)),
+        )
+        .expect("seed expired access credential");
+    let refreshing =
+        GoogleDriveAdapter::for_test(&store, drive_origin.clone(), oauth_origin.clone())
+            .expect("refresh adapter builds");
+    let revoking = GoogleDriveAdapter::for_test(&store, drive_origin, oauth_origin)
+        .expect("revocation adapter builds");
+
+    let mut status = Box::pin(refreshing.status(&scope));
+    let mut refresh_entered = Box::pin(tokio::time::timeout(
+        Duration::from_secs(3),
+        control.refresh_started.notified(),
+    ));
+    tokio::select! {
+        result = &mut status => panic!("refresh completed before the fixture gate: {result:?}"),
+        result = &mut refresh_entered => result.expect("refresh request reached fixture"),
+    }
+
+    revoking
+        .revoke(&scope)
+        .expect("revoke deletes the scoped key");
+    control.release_refresh.notify_one();
+    assert_eq!(
+        status.await,
+        Err(GoogleConnectionError::OperationSuperseded)
+    );
+    assert!(store
+        .load(&scope.keyring_key("google"))
+        .expect("keyring can be checked after refresh")
+        .is_none());
+}
+
+#[tokio::test]
+async fn revoke_invalidates_delayed_oauth_connect_before_it_can_save() {
+    let control = Arc::new(FixtureControl::default());
+    control
+        .hold_first_authorization_code
+        .store(true, Ordering::SeqCst);
+    let (drive_origin, oauth_origin, _fixture) = fixture_server_controlled(
+        "text".to_string(),
+        GOOGLE_DOC_MIME_TYPE,
+        Arc::clone(&control),
+    )
+    .await;
+    let store = MemoryCredentials::default();
+    let scope = scope("wss://delayed-connect-revoke.example", 'd');
+    let connecting =
+        GoogleDriveAdapter::for_test(&store, drive_origin.clone(), oauth_origin.clone())
+            .expect("connect adapter builds");
+    let revoking = GoogleDriveAdapter::for_test(&store, drive_origin, oauth_origin)
+        .expect("revocation adapter builds");
+    let callback_task = Arc::new(Mutex::new(None));
+    let mut connect = Box::pin(connecting.connect(
+        &scope,
+        CLIENT_ID,
+        fixture_browser_opener(Arc::clone(&callback_task)),
+        || Ok(()),
+    ));
+    let mut exchange_entered = Box::pin(tokio::time::timeout(
+        Duration::from_secs(3),
+        control.authorization_started.notified(),
+    ));
+    tokio::select! {
+        result = &mut connect => panic!("connect completed before the fixture gate: {result:?}"),
+        result = &mut exchange_entered => result.expect("token exchange reached fixture"),
+    }
+
+    revoking
+        .revoke(&scope)
+        .expect("revoke deletes the scoped key");
+    control.release_authorization.notify_one();
+    assert_eq!(
+        connect.await,
+        Err(GoogleConnectionError::OperationSuperseded)
+    );
+    join_fixture_callback(&callback_task).await;
+    assert!(store
+        .load(&scope.keyring_key("google"))
+        .expect("keyring can be checked after connect")
+        .is_none());
+}
+
+#[tokio::test]
+async fn newer_connect_generation_wins_when_older_oauth_response_is_delayed() {
+    let control = Arc::new(FixtureControl::default());
+    control
+        .hold_first_authorization_code
+        .store(true, Ordering::SeqCst);
+    let (drive_origin, oauth_origin, _fixture) = fixture_server_controlled(
+        "text".to_string(),
+        GOOGLE_DOC_MIME_TYPE,
+        Arc::clone(&control),
+    )
+    .await;
+    let store = MemoryCredentials::default();
+    let scope = scope("wss://overlapping-connects.example", 'e');
+    let older = GoogleDriveAdapter::for_test(&store, drive_origin.clone(), oauth_origin.clone())
+        .expect("older adapter builds");
+    let newer = GoogleDriveAdapter::for_test(&store, drive_origin, oauth_origin)
+        .expect("newer adapter builds");
+    let older_callback = Arc::new(Mutex::new(None));
+    let newer_callback = Arc::new(Mutex::new(None));
+    let mut older_connect = Box::pin(older.connect(
+        &scope,
+        CLIENT_ID,
+        fixture_browser_opener(Arc::clone(&older_callback)),
+        || Ok(()),
+    ));
+    let mut older_exchange_entered = Box::pin(tokio::time::timeout(
+        Duration::from_secs(3),
+        control.authorization_started.notified(),
+    ));
+    tokio::select! {
+        result = &mut older_connect => panic!("older connect completed before the fixture gate: {result:?}"),
+        result = &mut older_exchange_entered => result.expect("older exchange reached fixture"),
+    }
+
+    newer
+        .connect(
+            &scope,
+            CLIENT_ID,
+            fixture_browser_opener(Arc::clone(&newer_callback)),
+            || Ok(()),
+        )
+        .await
+        .expect("newer connect saves its credential");
+    join_fixture_callback(&newer_callback).await;
+
+    control.release_authorization.notify_one();
+    assert_eq!(
+        older_connect.await,
+        Err(GoogleConnectionError::OperationSuperseded)
+    );
+    join_fixture_callback(&older_callback).await;
+    let stored = store
+        .load(&scope.keyring_key("google"))
+        .expect("new credential remains readable")
+        .expect("new credential remains stored");
+    let stored: StoredGoogleCredential =
+        serde_json::from_str(&stored).expect("new credential parses");
+    assert_eq!(
+        stored.access_token,
+        "fixture-second-connected-access-token-012345"
+    );
+}
+
+#[tokio::test]
+async fn connect_checks_active_scope_before_persisting_oauth_credentials() {
+    let (drive_origin, oauth_origin, _fixture) =
+        fixture_server("text".to_string(), GOOGLE_DOC_MIME_TYPE).await;
+    let store = MemoryCredentials::default();
+    let scope = scope("wss://active-scope-check.example", 'f');
+    let adapter = GoogleDriveAdapter::for_test(&store, drive_origin, oauth_origin)
+        .expect("fixture adapter builds");
+    let callback_task = Arc::new(Mutex::new(None));
+
+    assert_eq!(
+        adapter
+            .connect(
+                &scope,
+                CLIENT_ID,
+                fixture_browser_opener(Arc::clone(&callback_task)),
+                || Err(GoogleConnectionError::ActiveScopeChanged),
+            )
+            .await,
+        Err(GoogleConnectionError::ActiveScopeChanged)
+    );
+    join_fixture_callback(&callback_task).await;
+    assert!(store
+        .load(&scope.keyring_key("google"))
+        .expect("keyring can be checked after active-scope rejection")
+        .is_none());
+}
+
+#[tokio::test]
 async fn import_rejects_non_docs_and_oversized_exports() {
     let (drive_origin, oauth_origin, _fixture) = fixture_server(
         "text".to_string(),
@@ -580,7 +866,7 @@ async fn import_rejects_non_docs_and_oversized_exports() {
     )
     .await;
     let store = MemoryCredentials::default();
-    let scope = scope("wss://community-a.example", 'a');
+    let scope = scope("wss://import-reject.example", 'c');
     store
         .store(&scope.keyring_key("google"), &credential_json(now() + 3600))
         .expect("seed scoped credential");
@@ -609,8 +895,8 @@ async fn credential_entries_are_scoped_and_disconnect_is_local() {
     let (drive_origin, oauth_origin, _fixture) =
         fixture_server("text".to_string(), GOOGLE_DOC_MIME_TYPE).await;
     let store = MemoryCredentials::default();
-    let first = scope("wss://community-a.example", 'a');
-    let second = scope("wss://community-b.example", 'a');
+    let first = scope("wss://credential-scope-a.example", 'a');
+    let second = scope("wss://credential-scope-b.example", 'a');
     store
         .store(&first.keyring_key("google"), &credential_json(now() + 3600))
         .expect("seed first scoped credential");

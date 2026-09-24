@@ -18,8 +18,8 @@ use crate::{app_state::AppState, relay, secret_store::SecretStore};
 
 pub use self::adapter::{GitHubAccount, GitHubConnectionStatus, GitHubRepository, ImportedReadme};
 pub use self::google_drive::{
-    GoogleDriveConnectionStatus, GoogleDriveFile, GoogleDriveOAuthClientConfig,
-    GoogleDriveSearchResult, ImportedGoogleDoc,
+    GoogleDriveConnectionStatus, GoogleDriveOAuthClientConfig, GoogleDriveSearchResult,
+    ImportedGoogleDoc,
 };
 pub use self::notion::{
     ImportedNotionPage, NotionAccount, NotionConnectionStatus, NotionPageSearchResult,
@@ -29,7 +29,7 @@ pub use self::slack::{
 };
 use self::{
     adapter::{CredentialStore, GitHubAdapter},
-    google_drive::{validate_configured_client_id, GoogleDriveAdapter},
+    google_drive::{validate_configured_client_id, GoogleConnectionError, GoogleDriveAdapter},
     notion::NotionAdapter,
     scope::{require_matching_scope, ConnectionScope},
     slack::SlackAdapter,
@@ -493,9 +493,15 @@ pub async fn connect_google_drive_connection(
     let client_id = read_google_drive_client_id(&app)?
         .ok_or_else(|| "Set up a Google Desktop OAuth client ID first.".to_string())?;
     google_drive_adapter()?
-        .connect(&scope, &client_id, |url| {
-            app.opener().open_url(url, None::<&str>).map_err(|_| ())
-        })
+        .connect(
+            &scope,
+            &client_id,
+            |url| app.opener().open_url(url, None::<&str>).map_err(|_| ()),
+            || {
+                ensure_scope_is_current(&scope, &state)
+                    .map_err(|_| GoogleConnectionError::ActiveScopeChanged)
+            },
+        )
         .await
         .map_err(|error| error.to_string())?;
     ensure_scope_is_current(&scope, &state)?;

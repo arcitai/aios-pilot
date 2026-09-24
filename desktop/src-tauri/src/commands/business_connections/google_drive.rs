@@ -16,6 +16,9 @@ use tokio::{
 use url::Url;
 use zeroize::{Zeroize, Zeroizing};
 
+mod operations;
+use self::operations::{operation_lease, revoke_scope_credentials, OperationLease};
+
 use super::{
     adapter::CredentialStore,
     scope::ConnectionScope,
@@ -102,6 +105,9 @@ pub(super) enum GoogleConnectionError {
     Browser,
     TokenExchange,
     ReconnectRequired,
+    OperationSuperseded,
+    TooManyConcurrentOperations,
+    ActiveScopeChanged,
     ScopeMismatch,
     Network,
     HttpStatus(u16),
@@ -147,6 +153,18 @@ impl fmt::Display for GoogleConnectionError {
             Self::ReconnectRequired => write!(
                 formatter,
                 "The Google connection expired. Connect Google Drive again."
+            ),
+            Self::OperationSuperseded => write!(
+                formatter,
+                "This Google Drive operation was superseded by a newer connection change. Check the connection status and try again."
+            ),
+            Self::TooManyConcurrentOperations => write!(
+                formatter,
+                "Too many Google Drive connection operations are active. Wait and try again."
+            ),
+            Self::ActiveScopeChanged => write!(
+                formatter,
+                "The active relay or identity changed before the Google connection could be saved."
             ),
             Self::ScopeMismatch => write!(
                 formatter,
@@ -273,16 +291,19 @@ impl<'a> GoogleDriveAdapter<'a> {
         })
     }
 
-    pub async fn connect<F>(
+    pub async fn connect<F, G>(
         &self,
         scope: &ConnectionScope,
         client_id: &str,
         open_browser: F,
+        scope_is_current: G,
     ) -> Result<(), GoogleConnectionError>
     where
         F: FnOnce(&str) -> Result<(), ()>,
+        G: Fn() -> Result<(), GoogleConnectionError> + Send + Sync,
     {
         validate_client_id(client_id)?;
+        let lease = operation_lease(scope, true)?;
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|_| GoogleConnectionError::Callback)?;
@@ -308,9 +329,11 @@ impl<'a> GoogleDriveAdapter<'a> {
                 Err(_) => return Err(GoogleConnectionError::CallbackTimeout),
             },
         );
+        lease.ensure_current()?;
         let token_response = self
             .exchange_authorization_code(client_id, &code, &verifier, &redirect_uri)
             .await?;
+        lease.ensure_current()?;
         validate_token_response(&token_response, true)?;
         let refresh_token = token_response
             .refresh_token
@@ -330,25 +353,27 @@ impl<'a> GoogleDriveAdapter<'a> {
             scope: DRIVE_READONLY_SCOPE.to_string(),
         };
         verify_about(&self.drive, &credential.access_token).await?;
-        self.save_credential(scope, &credential)?;
+        self.save_credential_if_current(scope, &lease, &credential, scope_is_current)?;
         Ok(())
     }
 
     pub fn revoke(&self, scope: &ConnectionScope) -> Result<(), GoogleConnectionError> {
-        self.credentials
-            .delete(&scope.keyring_key("google"))
-            .map_err(|_| GoogleConnectionError::Store)
+        revoke_scope_credentials(scope, self.credentials)
     }
 
     pub async fn status(
         &self,
         scope: &ConnectionScope,
     ) -> Result<GoogleDriveConnectionStatus, GoogleConnectionError> {
+        let lease = operation_lease(scope, false)?;
         let Some(mut credential) = self.load_credential(scope)? else {
+            lease.ensure_current()?;
             return Ok(GoogleDriveConnectionStatus { connected: false });
         };
-        self.refresh_if_needed(scope, &mut credential).await?;
+        self.refresh_if_needed(scope, &mut credential, &lease)
+            .await?;
         verify_about(&self.drive, &credential.access_token).await?;
+        lease.ensure_current()?;
         Ok(GoogleDriveConnectionStatus { connected: true })
     }
 
@@ -358,8 +383,10 @@ impl<'a> GoogleDriveAdapter<'a> {
         query: &str,
         cursor: Option<&str>,
     ) -> Result<GoogleDriveSearchResult, GoogleConnectionError> {
+        let lease = operation_lease(scope, false)?;
         let mut credential = self.require_credential(scope)?;
-        self.refresh_if_needed(scope, &mut credential).await?;
+        self.refresh_if_needed(scope, &mut credential, &lease)
+            .await?;
         let url = build_list_url(&self.drive, query, cursor)?;
         let response = self
             .authenticated_get(url, &credential.access_token)?
@@ -387,6 +414,7 @@ impl<'a> GoogleDriveAdapter<'a> {
             Some(_) => return Err(GoogleConnectionError::InvalidCursor),
             None => None,
         };
+        lease.ensure_current()?;
         Ok(GoogleDriveSearchResult {
             files,
             has_more: next_cursor.is_some(),
@@ -400,9 +428,15 @@ impl<'a> GoogleDriveAdapter<'a> {
         file_id: &str,
     ) -> Result<ImportedGoogleDoc, GoogleConnectionError> {
         validate_file_id(file_id)?;
-        timeout(IMPORT_TIMEOUT, self.import_document_inner(scope, file_id))
-            .await
-            .map_err(|_| GoogleConnectionError::ImportTimeout)?
+        let lease = operation_lease(scope, false)?;
+        let imported = timeout(
+            IMPORT_TIMEOUT,
+            self.import_document_inner(scope, file_id, &lease),
+        )
+        .await
+        .map_err(|_| GoogleConnectionError::ImportTimeout)??;
+        lease.ensure_current()?;
+        Ok(imported)
     }
 
     fn load_credential(
@@ -434,11 +468,16 @@ impl<'a> GoogleDriveAdapter<'a> {
             .ok_or(GoogleConnectionError::NotConfigured)
     }
 
-    fn save_credential(
+    fn save_credential_if_current<F>(
         &self,
         scope: &ConnectionScope,
+        lease: &OperationLease,
         credential: &StoredGoogleCredential,
-    ) -> Result<(), GoogleConnectionError> {
+        before_save: F,
+    ) -> Result<(), GoogleConnectionError>
+    where
+        F: FnOnce() -> Result<(), GoogleConnectionError>,
+    {
         validate_stored_credential(credential)?;
         let serialized = Zeroizing::new(
             serde_json::to_string(credential)
@@ -447,16 +486,26 @@ impl<'a> GoogleDriveAdapter<'a> {
         if serialized.len() > MAX_CREDENTIAL_BYTES {
             return Err(GoogleConnectionError::InvalidResponse);
         }
-        self.credentials
-            .store(&scope.keyring_key("google"), &serialized)
-            .map_err(|_| GoogleConnectionError::Store)
+        lease.with_current(|| {
+            before_save()?;
+            self.credentials
+                .store(&scope.keyring_key("google"), &serialized)
+                .map_err(|_| GoogleConnectionError::Store)
+        })
     }
 
     async fn refresh_if_needed(
         &self,
         scope: &ConnectionScope,
         credential: &mut StoredGoogleCredential,
+        lease: &OperationLease,
     ) -> Result<(), GoogleConnectionError> {
+        let _refresh = lease.refresh_gate().lock().await;
+        lease.ensure_current()?;
+        let latest = self
+            .load_credential(scope)?
+            .ok_or(GoogleConnectionError::NotConfigured)?;
+        *credential = latest;
         let now = now_unix()?;
         if credential.access_expires_at > now.saturating_add(60) {
             return Ok(());
@@ -498,7 +547,7 @@ impl<'a> GoogleDriveAdapter<'a> {
         if let Some(seconds) = token.refresh_token_expires_in {
             credential.refresh_expires_at = Some(now.saturating_add(seconds));
         }
-        self.save_credential(scope, credential)?;
+        self.save_credential_if_current(scope, lease, credential, || Ok(()))?;
         Ok(())
     }
 
@@ -538,9 +587,11 @@ impl<'a> GoogleDriveAdapter<'a> {
         &self,
         scope: &ConnectionScope,
         file_id: &str,
+        lease: &OperationLease,
     ) -> Result<ImportedGoogleDoc, GoogleConnectionError> {
         let mut credential = self.require_credential(scope)?;
-        self.refresh_if_needed(scope, &mut credential).await?;
+        self.refresh_if_needed(scope, &mut credential, lease)
+            .await?;
         let metadata_path = format!("files/{file_id}");
         let mut metadata_url = self
             .drive
