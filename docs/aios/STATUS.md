@@ -146,7 +146,9 @@ and falsifiable prompt/read checks are in `FLOWS.md`. The lead has drafted a
 bounded index/search/read module in `buzz-business` and corresponding CLI
 commands, now checkpointed in `21116f6`. Independent source review accepts the
 bounded CLI capability; 9 Business tests, 23 CLI tests, 7 Apps tests and the
-affected Clippy/build/help checks pass. Real typed-host proof remains pending.
+affected Clippy/build/help checks pass. The isolated real-CLI host scenario now
+passes; final backend review/integration and the full recovery handback remain
+pending.
 Automatic agent setup grants and the
 explicit full-context preference/runtime path are not implemented yet.
 
@@ -839,12 +841,17 @@ types. Final clippy is clean for both crates
 formatting pass. Independent CLI/retrieval source review accepts checkpoint
 `21116f6`; `/tmp/aios-knowledge-cli-review.md` records its exact scope and limits.
 
-`test_aios_business_cli_live.py` is a new unexecuted real-CLI fixture for a
-fresh disposable host: adoption preserves documents/membership, agent access
+`test_aios_business_cli_live.py` passes against a fresh disposable typed host:
+adoption preserves documents/membership, agent access
 is denied before a grant and after revocation, selected reads omit unrelated
 text, stale pagination conflicts, and generic Canvas writes cannot bypass the
-Business schema. The backend worker owns isolated PostgreSQL/relay setup.
-No new schema or access change has been applied to the user's host.
+Business schema. Lead inspected `/tmp/aios-context-proof-20260924-01-live-cli.log`:
+the actual unittest reports one passing scenario, and CLI reads after isolated
+restore retain canonical context, document revision, members and selected source
+results. Source host is loopback 3399 and restored host is 3400; neither is the
+user's existing relay. Image and relay binary digests are in that evidence log.
+Final backend handback, source review and integration remain pending. No new
+schema or access change has been applied to the user's host.
 
 Bundled agent guidance is being updated to use company discovery and selective
 reads from ordinary conversations; the nest skill version is bumped to refresh
@@ -852,3 +859,8 @@ existing installs after a native build. This is drafted guidance, not proof that
 new running agents already receive it. Actual localhost agent creation was
 inspected without creating or changing an agent. Full-context opt-in and
 workspace agent provisioning remain the next implementation boundary.
+The new guidance requires an explicit context reference or canonical discovery;
+wire this into setup/run metadata before claiming legacy Welcome/Saved pilot
+work compatibility. Do not expose storage UUIDs in ordinary onboarding messages
+as a substitute for that runtime binding. Existing channel Canvas injection
+already carries metadata and a lookup route, not the full Canvas body.
