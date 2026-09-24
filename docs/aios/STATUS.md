@@ -35,9 +35,24 @@ diff checks and the integrated file-size gate pass. Logs:
 `/tmp/aios-context-shared-clippy.log`,
 `/tmp/aios-context-integrated-filesize.log`.
 
-Next boundary is actual agent context setup and runtime loading. The backend
-worker owns ACP selection/authorized per-run lookup, with the sole heavy Cargo
-slot (jobs=1). The browser worker is source-only, implementing the reviewed native
+Agent creation UI is checkpointed at `b179c7d`. ACP prompt loading is integrated
+at `86c90ed` (worker `d44f9aa`). Lead reviewed the signed metadata/current
+membership/full Canvas boundary, framing and production prompt dispatch.
+The clean worker source's nine focused tests were rerun by the lead, with raw
+results retained in `/tmp/aios-acp-context-focused.log`: default prompts omit
+source bodies, full mode includes the validated document and exact revision,
+and revocation blocks the next prompt in the same provider session. Failure,
+size, deadline and capability checks also pass. The worker reports the broader
+997-test unit suite plus 2 git-bootstrap and 9 lifecycle tests passing; their
+original raw stdout was not retained. These remain worker-reported counts.
+The fixture uses a synthetic signed relay and fake ACP stdio provider, not a
+live model or the user's relay. The document limit does not prove model fit.
+
+Clippy found two existing needless-return warnings in ACP's permission-mode
+handling (`pool.rs`); the backend worker owns their bounded repair and retained
+final checks, with the sole heavy Cargo slot (jobs=1). Lead runs no Cargo during
+that repair. Transfer the slot explicitly to the native worker afterwards.
+The browser worker is source-only, implementing the reviewed native
 instance/grant/revocation/retry contract in
 `/Users/gustavanderson/Documents/Codex/2026-09-24/aios-native-agent-context`,
 branch `native-agent-context-setup`, verified from clean `19c8063`. Lead owns React
@@ -111,7 +126,7 @@ Fizz's definition editor on real localhost and cancelled without changing it;
 its shared instructions/skills are distinct from the private running instance.
 Native setup must cover start-from-definition as well as new create/edit.
 Draft prompt/nest guidance is still uncommitted pending runtime binding. The
-full-context frontend option is present; native grant recovery and integrated
+full-context frontend and ACP prompt path are present; native grant recovery and integrated
 UI/model proof are still pending. Existing-agent edit/retry, start from a saved
 definition and first-agent context setup must use this same contract next.
 The wider 22-flow product remains incomplete.

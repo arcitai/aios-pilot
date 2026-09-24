@@ -172,7 +172,12 @@ never enter the shared persona. The native adapter must advertise protocol 1
 before this UI can create a context-bearing instance; the older running
 companion fails visibly instead of silently ignoring the new fields. Native
 grants, existing-agent edit/retry, start from a saved definition, first-agent
-setup and actual prompt loading remain pending integration; see `STATUS.md`.
+setup and actual native-to-model integration remain pending; see `STATUS.md`.
+ACP checkpoint `86c90ed` adds current signed context/membership checks before
+each prompt, including reused sessions. Nine retained controlled tests cover
+selective/full framing, exact revision, revocation and failure bounds. This is
+production-dispatch proof with a synthetic host and fake ACP provider; it is
+not live model, native grant or token-window evidence.
 
 At launch, bind non-secret context metadata to the actual agent/relay pair.
 Keep the owner signing secret out of the runner. The existing owner-signed
