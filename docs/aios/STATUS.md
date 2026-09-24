@@ -134,8 +134,17 @@ migrate/reset the user's relay or replace the running native/browser companion.
 It may use the lead Rust build cache, with isolated disposable DB/runtime test
 state. Read `/tmp/aios-server-seams.md` and `/tmp/aios-host-context-handback.md`
 when available, verify actual commits/tests, then review and integrate. Do not
-start another writer on these backend paths. The navigation-review worker is
-finished; its earlier browser-MCP WIP remains unaccepted.
+start another writer on these backend paths. The other worker has resumed its
+Browser MCP repair; `/tmp/aios-browser-candidate.md` records a source/format
+candidate, with Cargo and real navigation proof pending the heavy-slot handoff.
+It is also reviewing the lead's context client changes read-only.
+
+Gustav clarified context loading: every workspace agent should have a short
+entrypoint to company knowledge, with selective retrieval as the default and
+full-document loading as an explicit agent setup option. The target contract
+and falsifiable prompt/read checks are in `FLOWS.md`. The lead has drafted a
+bounded index/search/read module in `buzz-business`, not yet compiled or wired
+into CLI/runtime; it is not an implemented agent capability yet.
 
 Lead checkout still has pre-existing uncommitted browser-MCP repair/test and
 Rust formatting-only changes; they were deliberately excluded from `adf2ac0`.
@@ -158,8 +167,8 @@ on 1437 with its native bridge on 1438, profile `aios-browser-local`.
 - Skills, Apps access and integrated Sites have landed. Google Drive is wired
   and its selected-document browser flow passes. Its credential race fix is
   integrated and 50 connection checks pass. Active work includes app/Sites agent actions,
-  browser use, tables and workflow approvals. Worker implementation is paused
-  at the reassessment checkpoint above. Incoming-call recovery now passes. The full
+  browser use, tables and workflow approvals. Implementation has resumed under
+  the revised flow map and ordered plan above. Incoming-call recovery now passes. The full
   platform is not complete; [FEATURES](FEATURES.md) tracks the wider outcome.
 - An hourly heartbeat in the lead task resumes authorized work until the
   product goal is verified or meaningful progress requires a missing external
@@ -764,3 +773,30 @@ The backend worker owns the single heavy-build slot again. The other existing
 worker is resuming its paused Browser MCP repair as source/format work only,
 with test/build scheduling still coordinated by the lead. Its candidate is
 not yet accepted. No additional worker tasks were created.
+
+## Host context discovery in clients — 11:39 local
+
+The native channel metadata projection now retains the host's `resource` tag
+through list/detail responses and the stable directory hash. Malformed or
+duplicate discriminators reject conversion. Business prefers the registered
+`aios.business-context:v1` resource independently of its display description;
+explicit legacy IDs remain available for old drafts. Unknown future resource
+types cannot masquerade as legacy Business through the old about marker.
+
+An open Business editor pins its resolved context ID. A directory refresh that
+discovers the new canonical context therefore cannot replace the company
+under an unsaved draft. A production-bound browser regression exercises failed
+save → reload saved context → Keep editing while the new host reference arrives.
+Removing the pin loses the draft (`/tmp/aios-context-selection-mutation-browser.log`);
+restoring it passes. The final four navigation flows pass in
+`/tmp/aios-context-metadata-browser-final.log`, along with three native parser/hash
+tests (`/tmp/aios-context-metadata-native.log`), three TypeScript selection tests,
+typecheck, frontend build, changed-file formatting and differential size checks.
+
+The actual localhost UI still reopens Browser Studio's existing summary and
+priorities when moving between Business and Plugins. This confirms compatibility
+with the current untyped relay. The new native projection has compiled in tests;
+the companion and user relay have not been replaced or migrated for this slice.
+Typed registration and its real multi-identity authorization/restore proof remain
+the backend worker's phase-two work. No ACL, stored document or credential was
+changed by this client patch. Independent source review is pending.

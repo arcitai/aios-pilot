@@ -85,6 +85,7 @@ fn fnv1a_64(data: &[u8]) -> u64 {
 #[derive(serde::Serialize)]
 struct ChannelInfoForHash<'a> {
     id: &'a str,
+    resource_type: &'a Option<String>,
     name: &'a str,
     channel_type: &'a str,
     visibility: &'a str,
@@ -112,6 +113,7 @@ pub(super) fn compute_channels_hash(channels: &[ChannelInfo]) -> String {
         .iter()
         .map(|c| ChannelInfoForHash {
             id: &c.id,
+            resource_type: &c.resource_type,
             name: &c.name,
             channel_type: &c.channel_type,
             visibility: &c.visibility,

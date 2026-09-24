@@ -106,6 +106,18 @@ pub(crate) fn profile_has_valid_oa_owner(event: &Event) -> bool {
 
 // ── kind:39000 / 39002 (NIP-29) ─────────────────────────────────────────────
 
+// An ambiguous discriminator must not turn a typed resource into a legacy group.
+fn channel_resource_type(event: &Event) -> Result<Option<String>, String> {
+    let mut tags = tags_named(event, "resource");
+    let Some(tag) = tags.next() else {
+        return Ok(None);
+    };
+    if tags.next().is_some() || tag.len() != 2 || tag[1].is_empty() {
+        return Err("kind:39000 has invalid resource metadata".to_string());
+    }
+    Ok(Some(tag[1].clone()))
+}
+
 /// Convert a NIP-29 kind:39000 channel metadata event to [`ChannelInfo`].
 ///
 /// Optionally merges with a kind:40901 channel summary sidecar event for
@@ -177,6 +189,7 @@ pub fn channel_info_from_event(
 
     Ok(ChannelInfo {
         id,
+        resource_type: channel_resource_type(event)?,
         name,
         channel_type,
         visibility,
@@ -234,6 +247,7 @@ pub fn channel_detail_from_event(event: &Event) -> Result<ChannelDetailInfo, Str
 
     Ok(ChannelDetailInfo {
         id,
+        resource_type: channel_resource_type(event)?,
         name,
         channel_type,
         visibility,

@@ -30,10 +30,18 @@ export function useBusinessWorkspace(contextId?: string) {
     queryFn: findBusinessWorkspaces,
     enabled: Boolean(scope[0] && scope[1]),
   });
+  // Resolve once from a fresh directory, then pin the ID. A newly registered
+  // canonical context must never replace the company under an open editor.
+  const initialChannel = channels.isFetchedAfterMount
+    ? channels.data?.[0]
+    : undefined;
+  React.useEffect(() => {
+    if (!selectedId && initialChannel) setSelectedId(initialChannel.id);
+  }, [initialChannel, selectedId]);
   // An explicit resource link must never fall back to a different company's data.
   const channel = selectedId
     ? channels.data?.find((item) => item.id === selectedId)
-    : channels.data?.[0];
+    : initialChannel;
   const unavailable = Boolean(selectedId && channels.isSuccess && !channel);
   const contextKey = ["business-context", ...scope, channel?.id];
   const context = useQuery({
@@ -132,6 +140,7 @@ export function useBusinessWorkspace(contextId?: string) {
   return {
     channel,
     channels,
+    resolving: !selectedId && !channels.isFetchedAfterMount,
     context,
     busy,
     error: unavailable

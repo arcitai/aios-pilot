@@ -4,8 +4,9 @@ import {
   getChannels,
   setCanvas,
 } from "@/shared/api/tauri";
-import type { Channel } from "@/shared/api/types";
 import type { CanvasScope } from "@/shared/api/canvasTypes";
+import { businessWorkspaces } from "./workspaceSelection";
+export { isBusinessChannel } from "./workspaceSelection";
 import {
   BUSINESS_CHANNEL_DESCRIPTION,
   newBusinessDocument,
@@ -13,19 +14,10 @@ import {
   serializeBusinessDocument,
 } from "./document";
 
-export function isBusinessChannel(channel: Channel) {
-  return (
-    channel.isMember &&
-    channel.visibility === "private" &&
-    channel.description === BUSINESS_CHANNEL_DESCRIPTION &&
-    !channel.archivedAt
-  );
-}
-
 /** A marker identifies a candidate; the canvas schema is verified before it is edited. */
 export async function findBusinessWorkspaces() {
   const result = await getChannels(null);
-  return (result.channels ?? []).filter(isBusinessChannel);
+  return businessWorkspaces(result.channels ?? []);
 }
 
 export async function loadBusinessWorkspace(

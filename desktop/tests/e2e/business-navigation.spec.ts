@@ -128,3 +128,142 @@ test("an unavailable saved-work link cannot open a different company's data", as
     "Private Studio",
   );
 });
+
+test("the registered host context opens first while explicit legacy drafts keep their original context", async ({
+  page,
+}) => {
+  await installMockBridge(page);
+  await page.goto("/");
+  await page.getByTestId("open-business-view").click();
+  await page.getByLabel("What is your business called?").fill("Legacy Studio");
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await expect(page.getByTestId("business-workspace")).toContainText(
+    "Legacy Studio",
+  );
+  await page.getByTestId("open-plugins-view").click();
+  await page.getByTestId("open-business-view").click();
+  await page
+    .getByRole("button", { name: "Company context", exact: true })
+    .click();
+  await page
+    .getByLabel("What you do", { exact: true })
+    .fill("Keep this legacy draft.");
+  const legacyId = await page.evaluate(async () => {
+    const native = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke: (
+            command: string,
+            args?: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const original = native.invoke;
+    const directory = (await original("get_channels", { knownHash: null })) as {
+      channels: { id: string; name: string }[];
+    };
+    const legacy = directory.channels.find(
+      (channel) => channel.name === "Legacy Studio",
+    );
+    if (!legacy) throw new Error("Legacy fixture was not created");
+    const snapshot = (await original("get_canvas", {
+      channelId: legacy.id,
+    })) as { content: string };
+    const host = (await original("create_channel", {
+      name: "Canonical company knowledge",
+      channelType: "stream",
+      visibility: "private",
+      description: "Company knowledge",
+    })) as { id: string };
+    const document = JSON.parse(snapshot.content);
+    document.company.name = "Host Studio";
+    await original("set_canvas", {
+      channelId: host.id,
+      content: JSON.stringify(document),
+      expectedRevision: "none",
+    });
+    let denyNextLegacySave = true;
+    native.invoke = async (command, args) => {
+      if (
+        command === "set_canvas" &&
+        args?.channelId === legacy.id &&
+        denyNextLegacySave
+      ) {
+        denyNextLegacySave = false;
+        throw new Error("Context save temporarily unavailable");
+      }
+      const result = await original(command, args);
+      if (command !== "get_channels") return result;
+      const data = result as { channels: { id: string }[] | null };
+      return {
+        ...data,
+        channels:
+          data.channels?.map((channel) =>
+            channel.id === host.id
+              ? { ...channel, resource_type: "aios.business-context:v1" }
+              : channel,
+          ) ?? null,
+      };
+    };
+    return legacy.id;
+  });
+  const directoryReads = await page.evaluate(
+    () =>
+      (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).filter(
+        (entry) => entry.command === "get_channels",
+      ).length,
+  );
+  await page
+    .getByRole("button", { name: "Save company context", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Context save temporarily unavailable" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Reload saved context", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Keep editing", exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).filter(
+            (entry) => entry.command === "get_channels",
+          ).length,
+      ),
+    )
+    .toBeGreaterThan(directoryReads);
+  await expect(
+    page.getByRole("option", {
+      name: "Canonical company knowledge",
+      exact: true,
+    }),
+  ).toHaveCount(1);
+  await expect(page.getByLabel("What you do", { exact: true })).toHaveValue(
+    "Keep this legacy draft.",
+  );
+  await page
+    .getByRole("button", { name: "Save company context", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "Saved" }),
+  ).toBeVisible();
+  await page.getByTestId("open-plugins-view").click();
+  await page.getByTestId("open-business-view").click();
+  await expect(
+    page
+      .getByTestId("business-workspace")
+      .getByRole("heading", { name: "Host Studio", exact: true }),
+  ).toBeVisible();
+  await page.evaluate((id) => {
+    window.location.hash = `/saved-work?context=${id}`;
+  }, legacyId);
+  const saved = page.getByTestId("saved-work-workspace");
+  await expect(saved).toContainText(
+    "Earlier drafts and conversation · Legacy Studio",
+  );
+  await expect(saved).not.toContainText("Host Studio");
+});

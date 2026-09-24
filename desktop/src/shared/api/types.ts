@@ -4,6 +4,8 @@ export type ChannelRole = "owner" | "admin" | "member" | "guest" | "bot";
 
 export type Channel = {
   id: string;
+  /** Relay-owned type; absent on ordinary groups and older hosts. */
+  resourceType?: string | null;
   name: string;
   channelType: ChannelType;
   visibility: ChannelVisibility;

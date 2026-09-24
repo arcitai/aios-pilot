@@ -25,6 +25,7 @@ export function BusinessWorkspace() {
     workspace.channels.error?.message ??
     workspace.context.error?.message;
   const loading =
+    workspace.resolving ||
     workspace.channels.isPending ||
     (workspace.channel && workspace.context.isPending);
   const reload = () =>

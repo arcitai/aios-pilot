@@ -306,6 +306,7 @@ fn duplicate_channel_rejection_is_ensure_success_only() {
 fn make_channel(id: &str, name: &str, last_message_at: Option<String>) -> ChannelInfo {
     ChannelInfo {
         id: id.to_string(),
+        resource_type: None,
         name: name.to_string(),
         channel_type: "stream".to_string(),
         visibility: "open".to_string(),
@@ -336,6 +337,14 @@ fn hash_is_order_insensitive() {
         compute_channels_hash(&[c4, c3]),
         "hash must be insensitive to channel list ordering",
     );
+}
+
+#[test]
+fn resource_registration_invalidates_channel_list_hash() {
+    let mut channel = make_channel("context-id", "Company", None);
+    let legacy = compute_channels_hash(std::slice::from_ref(&channel));
+    channel.resource_type = Some("aios.business-context:v1".to_string());
+    assert_ne!(legacy, compute_channels_hash(&[channel]));
 }
 
 #[test]
@@ -431,6 +440,7 @@ fn starter_match_requires_open_unarchived_stream_by_normalized_name() {
     let spec = &STARTER_CHANNELS[0];
     let mut channel = ChannelInfo {
         id: "chan-1".to_string(),
+        resource_type: None,
         name: " General ".to_string(),
         channel_type: "stream".to_string(),
         visibility: "open".to_string(),

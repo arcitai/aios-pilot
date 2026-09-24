@@ -15,6 +15,7 @@ import type { CanvasScope } from "@/shared/api/canvasTypes";
 
 export type RawChannel = {
   id: string;
+  resource_type?: string | null;
   name: string;
   channel_type: ChannelType;
   visibility: "open" | "private";
@@ -77,6 +78,7 @@ type RawChannelMembersResponse = {
 export function fromRawChannel(channel: RawChannel): Channel {
   return {
     id: channel.id,
+    resourceType: channel.resource_type ?? null,
     name: channel.name,
     channelType: channel.channel_type,
     visibility: channel.visibility,

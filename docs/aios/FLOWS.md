@@ -108,6 +108,42 @@ Prefer visible, reversible transitions: draft → saved → applied/ready; previ
 Persist enough to resume without repeating completed external effects.
 Show a human-readable reason and the next action at the affected surface.
 
+### Company knowledge in agent work — clarified 24 September
+
+Gustav clarified that every workspace agent should have an entry point to the
+company's knowledge, in the same spirit as the AIOS plugin's small entrypoint
+and selective context loading. Access does not mean inserting the whole
+Business document into every prompt. Keep these as separate settings:
+
+- **Access:** provision the company's shared knowledge for workspace agents
+  during authorized agent setup. The host still verifies the agent identity
+  and current grant on every read. A missing/revoked grant must be visible and
+  cannot be bypassed by an entrypoint, skill, cached index or owner credential.
+- **Loading:** default to **When needed**. Give the agent a short route to the
+  current context and the available lookup commands. It can inspect an index,
+  search bounded excerpts and fetch selected company sections or sources with
+  their IDs, provenance and revision. Do not preload all source bodies.
+- **Explicit opt-in:** create/edit agent offers **Full company context**.
+  Fetch the authorized document at the start of a new run, record its revision
+  and include it as reference data. Report unsupported runtime/context-size
+  limits; never silently truncate while claiming the full document was loaded.
+
+The default setup should make company knowledge usable by each new workspace
+agent. Only an actor with context-management authority may issue that grant;
+otherwise show the missing access and its recovery in the agent form. Existing
+private context/history is not made public, and updating an older agent must
+not silently widen access to legacy conversation history. Agents need the
+same authorized lookup behavior from Welcome, ordinary channels and CLI.
+Reference text is data, not authority to change tools or permissions. This is
+the accepted target; the current full-document `business show` command alone
+does not yet implement selective retrieval or the loading setting.
+
+Acceptance adds two distinctive checks: a source body with a unique sentinel
+is absent from a default agent's initial prompt and appears only after the
+agent requests that source; an explicitly opted-in agent receives the full
+authorized document and its revision. Revoking context access denies future
+lookups/new-run loads in both modes. Historical prompts cannot be recalled.
+
 ## Representative acceptance journey
 
 Use an isolated fictional studio with two human identities and two agents.

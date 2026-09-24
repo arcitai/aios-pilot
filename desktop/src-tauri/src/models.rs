@@ -111,6 +111,9 @@ pub struct UserNotesResponse {
 #[derive(Serialize, Deserialize)]
 pub struct ChannelInfo {
     pub id: String,
+    /// Host-owned resource discriminator from the relay's metadata event.
+    #[serde(default)]
+    pub resource_type: Option<String>,
     pub name: String,
     pub channel_type: String,
     pub visibility: String,
@@ -136,6 +139,9 @@ pub struct ChannelInfo {
 #[derive(Serialize, Deserialize)]
 pub struct ChannelDetailInfo {
     pub id: String,
+    /// Host-owned resource discriminator; absent for ordinary and legacy groups.
+    #[serde(default)]
+    pub resource_type: Option<String>,
     pub name: String,
     pub channel_type: String,
     pub visibility: String,

@@ -90,7 +90,8 @@ export function SavedWorkWorkspace({
         </div>
       ) : !document || !workspace.channel ? (
         <p className="p-6 text-sm text-muted-foreground" role="status">
-          {workspace.channels.isPending ||
+          {workspace.resolving ||
+          workspace.channels.isPending ||
           (workspace.channel && workspace.context.isPending)
             ? "Loading saved work…"
             : "No earlier saved work is available."}
