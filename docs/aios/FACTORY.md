@@ -38,11 +38,31 @@ and memory, and no operator credentials or Docker socket inside the job.
 
 ## Independent CI and delivery
 
-`AIOS Pilot CI` splits every dependency of `just ci` across four Linux lanes
-for pull requests and main, and adds disposable-database integration tests.
-The `AIOS acceptance` check requires every lane to pass. The frontend lane
-stores commit-labelled desktop/web build artifacts; use them only together
-with the complete revision's acceptance result.
+`AIOS Pilot CI` runs relevant checks before PR merge and batches the complete
+four-lane Linux matrix every three hours on main, at minute 37 UTC. There is
+no additional push trigger. Scheduled/manual full runs retain every dependency
+of `just ci` and disposable-database integration. **Run workflow** always runs
+the full matrix; scheduled runs omit expensive work only when a successful
+scheduled/manual full run already covers the same SHA. Failures remain eligible
+for retry. An unchanged interval starts only the lightweight cadence job, without
+a checkout, lane tests, verification matrix or acceptance runner. That control
+job still consumes Actions runtime. PR acceptance always runs, including when
+the cadence decision fails. GitHub may delay a schedule, and its workflow must
+exist on the default branch before the timer becomes active.
+
+For PRs, frontend/repository policy checks always run. Native desktop changes
+also select native checks; mobile changes select mobile checks. Shared backend,
+toolchain, build configuration and unrecognized paths conservatively select all
+four lanes. The selector compares the recorded PR base with the tested merge
+revision, includes deletions and fails on an unavailable base. A newer PR
+revision cancels its obsolete run. Needed native compilation and relevant builds
+still run before merge; the three-hour interval does not waive those checks.
+
+The `AIOS acceptance` check requires every selected lane to pass. Full scheduled
+or manual runs also store commit-labelled desktop/web build artifacts; use them
+only together with that complete revision's acceptance result. A scoped PR pass
+does not establish full-matrix or release readiness. Factory acceptance remains
+the complete `bash scripts/factory-check.sh` gate.
 These are not signed desktop installers. Signing, auto-update publishing and
 production deployment need their own Arcitai destinations and release setup.
 All 26 inherited Buzz workflows are disabled in this repository's Actions
