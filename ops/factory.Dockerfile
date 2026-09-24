@@ -22,6 +22,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends libcurl4-openss
     && tar -xJf /tmp/git.tar.xz -C /tmp \
     && RUSTUP_TOOLCHAIN=1.95.0 HERMIT_STATE_DIR=/opt/hermit-cache PATH=/opt/aios-toolchain/bin:$PATH make -C /tmp/git-2.55.0 -j4 prefix=/usr/local NO_TCLTK=YesPlease install \
     && rm -rf /tmp/git.tar.xz /tmp/git-2.55.0 /var/lib/apt/lists/*
+# The Git build invokes Hermit again and may refresh private cache entries.
+RUN chmod -R a+rX /opt/hermit-cache /opt/rustup /opt/cargo
 ENV HERMIT_STATE_DIR=/opt/hermit-cache
 ENV PATH=/opt/aios-toolchain/bin:$PATH
 USER node
