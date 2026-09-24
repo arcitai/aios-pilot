@@ -21,6 +21,15 @@ test("main agent settings open inside the business conversation", async ({
     .getByLabel("What is your business called?")
     .fill("Onboarding Studio");
   await page.getByRole("button", { name: "Create my workspace" }).click();
+  await expect(
+    page.getByText(
+      "Your business context and conversation with your main agent.",
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByText(/\[aios\.business-workspace:v1\]/),
+  ).not.toBeVisible();
   const controls = page.getByTestId("business-agent-controls");
   await expect(controls).toContainText("Your main agent is stopped.");
   await controls.getByRole("button", { name: "Main agent settings" }).click();

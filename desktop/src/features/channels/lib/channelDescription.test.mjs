@@ -24,6 +24,32 @@ test("getChannelDescription falls back when channel is null", () => {
   );
 });
 
+test("generated app channels show a human description without exposing their storage marker", () => {
+  const channel = makeChannel({
+    description:
+      "AIOS business workspace · private company context and main-agent conversation. [aios.business-workspace:v1]",
+  });
+  assert.equal(
+    getChannelDetail(channel),
+    "Your business context and conversation with your main agent.",
+  );
+  assert.match(channel.description, /\[aios\.business-workspace:v1\]/);
+  assert.equal(
+    getChannelDetail(
+      makeChannel({ description: "aios.app-document:v1:business-123:slides" }),
+    ),
+    "Your private slides workspace.",
+  );
+  assert.equal(
+    getChannelDetail(
+      makeChannel({
+        description: "We discuss [aios.business-workspace:v1] here.",
+      }),
+    ),
+    "We discuss [aios.business-workspace:v1] here.",
+  );
+});
+
 test("getChannelDescription falls back when no detail fields are set", () => {
   assert.equal(
     getChannelDescription(makeChannel()),
