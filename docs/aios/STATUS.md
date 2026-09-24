@@ -116,6 +116,33 @@ continued from Business into the ordinary Welcome channel. No data migration
 or ACL expansion happened in this slice.
 Snapshot before navigation edits: `/var/folders/7g/xcm5r8yx0896jskb9w0wz8yw0000gn/T/aios-before-navigation-cuteu_3l`.
 
+## Next active work — host context
+
+Navigation is checkpointed in `adf2ac0`. The existing server/Tables worker task
+`01a0cfcd-f659-7ea1-a638-6a44ae8420f3` is assigned the first host-context layer in
+`/Users/gustavanderson/Downloads/aios-pilot-host`, branch `ai-os-context-host`,
+created from that checkpoint. Its prior Tables worktree remains preserved.
+The worker first records its source-backed seam proposal and exact bounded
+contract, then implements a typed, host-owned context reference/discovery path
+through signed events, shared validation and CLI. A private NIP-29 group may be
+reused as an internal ACL adapter; ordinary working-channel membership must
+not silently grant Business access. No destructive migration or automatic
+ACL expansion. Channel apps and host connectors wait for this layer.
+
+One heavy build slot belongs to that worker, with one Cargo job. It must not
+migrate/reset the user's relay or replace the running native/browser companion.
+It may use the lead Rust build cache, with isolated disposable DB/runtime test
+state. Read `/tmp/aios-server-seams.md` and `/tmp/aios-host-context-handback.md`
+when available, verify actual commits/tests, then review and integrate. Do not
+start another writer on these backend paths. The navigation-review worker is
+finished; its earlier browser-MCP WIP remains unaccepted.
+
+Lead checkout still has pre-existing uncommitted browser-MCP repair/test and
+Rust formatting-only changes; they were deliberately excluded from `adf2ac0`.
+Do not lose them or treat them as accepted. Native browser navigation remained
+unverified at the last recorded proof. The real localhost app remains running
+on 1437 with its native bridge on 1438, profile `aios-browser-local`.
+
 ## Current state
 
 - Local independent Buzz fork: `/Users/gustavanderson/Downloads/aios-pilot`.
