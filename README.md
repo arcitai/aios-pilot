@@ -1,12 +1,26 @@
-> **AIOS Pilot — local Buzz fork.** This repository develops a business workspace
-> with conversational onboarding, company context, connections, modular apps and
-> self-hosted collaboration. Start with the [product contract](AIOS_PILOT.md),
-> [product flow map](docs/aios/FLOWS.md), [capability map](docs/aios/FEATURES.md)
-> and [verified development status](docs/aios/STATUS.md).
-> Develop and test on [localhost](docs/aios/BROWSER.md).
-> Desktop packaging is deferred until the product is ready; [desktop notes](docs/aios/DESKTOP.md).
-> The upstream Buzz documentation and attribution are retained below; its feature
-> descriptions are not a claim that every path has been verified in this pilot.
+# AIOS Pilot
+
+An open-source workspace application developed by [Arcitai](https://github.com/arcitai).
+This is an independently maintained fork of [Buzz](https://github.com/block/buzz),
+evolving into its own product. AIOS Pilot is the working name; it is separate
+from the personal AIOS plugin and owner-home setup.
+
+The app brings together conversational onboarding, business context, agents,
+connections, modular channel apps and self-hosted collaboration. It is under
+active development, not a claim of production readiness.
+
+Start with the [product contract](AIOS_PILOT.md), [flow map](docs/aios/FLOWS.md),
+[capability map](docs/aios/FEATURES.md) and [development status](docs/aios/STATUS.md).
+See [browser development](docs/aios/BROWSER.md), [desktop notes](docs/aios/DESKTOP.md)
+and [source ownership](docs/aios/ORIGIN.md).
+
+Licensed under [Apache-2.0](LICENSE). Buzz's copyright, license and source history
+are preserved. Its upstream documentation follows below; those descriptions do
+not establish verification of every feature in this fork.
+
+---
+
+## Upstream Buzz documentation
 
 <h1 align="center">Buzz 🐝</h1>
 
