@@ -323,7 +323,6 @@ pub async fn cmd_create_app_to(
         client,
         &business_channel_id,
         &channel,
-        app_id,
         document,
         "none",
         true,
@@ -372,7 +371,6 @@ pub async fn cmd_update_app_to(
         client,
         &business_channel_id,
         &channel,
-        app_id,
         document,
         &expected_revision,
         false,
@@ -385,12 +383,12 @@ async fn write_app_document(
     client: &BuzzClient,
     business_channel_id: &str,
     channel: &AppChannel,
-    app_id: AppId,
     document: Value,
     expected_revision: &str,
     created_channel: bool,
     out: &mut dyn Write,
 ) -> Result<(), CliError> {
+    let app_id = channel.app_id;
     let content = serialize_app_envelope(business_channel_id, app_id, document)?;
     let channel_uuid = parse_uuid(&channel.channel_id)?;
     let head = fetch_canvas_head(client, &channel.channel_id).await?;

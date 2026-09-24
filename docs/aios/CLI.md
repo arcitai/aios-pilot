@@ -35,6 +35,60 @@ owner must accept before voice starts. See [Voice](VOICE.md).
 by Buzz Desktop. It stores that JSON in a dedicated private channel canvas and
 uses Buzz's signed Nostr event and relay membership paths.
 
+## Discover and read selectively
+
+All commands use the current relay and signing identity. Company knowledge is
+independent of the working conversation. Start with metadata-only discovery:
+
+```bash
+buzz business discover
+buzz business index --channel <context-id>
+buzz business search --channel <context-id> --query "brand tone" --limit 5
+buzz business read --channel <context-id> --entry <entry-id> --limit 2000
+```
+
+`discover` returns `{canonical_context_id, contexts}`. Each context reference has
+an ID, name and `registered` flag; no Canvas text is returned. Prefer an explicit
+selected context, otherwise the canonical reference. Multiple old contexts do
+not imply that an agent should choose one. No accessible canonical reference is
+a visible setup/access prerequisite, never an instruction to self-grant access.
+
+`index`, `search` and `read` return `{context_id, revision, result}`. Index entries
+contain IDs, titles, character counts and available provenance without bodies.
+Search matches one to eight literal whitespace-separated terms, case-insensitively,
+in titles/text, in document order. It returns at most 20 hits, 300-character
+excerpts, and a total match count. `title_only` means the excerpt is opening text
+rather than a body match. It is lexical retrieval, not semantic search.
+`read` returns at most 4,000 Unicode characters from exactly one entry. Company
+entry IDs include `company:summary` and `company:goals`; source IDs have a
+`source:` prefix. Preserve the IDs returned by the index.
+
+For pagination, pass `next_offset` as `--offset` and the result's revision as
+`--expected-revision`. Continuing without the revision fails; a changed revision
+returns a conflict. Restart rather than combining pages from different versions.
+Every lookup refreshes membership and the current snapshot. Revocation is an
+error, not an empty successful result. The full document is fetched internally
+under the caller's identity; only selected output reaches the CLI response.
+These commands do not imply that agent setup grants or full-context loading
+preferences have already been implemented.
+
+## Explicit host registration
+
+A host with typed context support can register an existing private Business
+resource without rewriting its document or membership:
+
+```bash
+buzz business adopt --channel <context-id>
+```
+
+The relay must authorize both host administration and context administration.
+Registration uses a signed metadata event and verifies the typed reference on
+readback. A retry for the same ID is idempotent; an existing different canonical
+ID is a conflict. An acknowledged write without verified readback is reported as
+unknown delivery, not success. Retry with the same ID. An older relay may accept
+the event without supporting the resource tag; that remains unverified.
+Registration never grants company data to more people or agents.
+
 ## Initialize and inspect
 
 ```bash
@@ -47,8 +101,10 @@ buzz business init \
 buzz business show --channel <channel-id>
 ```
 
-`init` trims the supplied company name, creates or finds a private stream with
-the exact Desktop marker, then writes an empty version-one document. The
+`init` reuses an accessible canonical context when one exists. Otherwise it
+trims the supplied company name and creates or finds a private stream with the
+exact legacy Desktop marker, then writes the initial version-one document.
+It does not implicitly register a canonical host reference. The
 channel is named after the trimmed company name, or `My business` when the
 company name is empty; the document keeps an empty name in that case. Repeated
 `--offer` and `--goal` flags are joined with newlines into the corresponding
@@ -71,8 +127,10 @@ buzz business show --channel <channel-id>
 buzz business source list --channel <channel-id>
 ```
 
-The CLI verifies that the selected channel has the business marker, is private
-and not archived, and includes the current signer as a member. Relay denials
+The CLI verifies the canonical Business resource type, or the exact legacy
+marker when no resource type exists. Unknown resource types cannot fall back to
+the marker. The selected resource must be private, unarchived and include the
+current signer as a member. Relay denials
 remain errors. The channel's private membership is the access boundary; the
 CLI does not add finer-grained source permissions.
 

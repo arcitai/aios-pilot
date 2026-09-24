@@ -1,4 +1,6 @@
 pub mod agent_management;
+mod business_args;
+pub use business_args::{BusinessCmd, BusinessSourceCmd, BusinessSourceKind};
 mod client;
 mod commands;
 mod error;
@@ -818,129 +820,6 @@ enum CallsCmd {
         #[arg(long, default_value_t = 45, value_parser = clap::value_parser!(u64).range(1..=60))]
         wait_seconds: u64,
     },
-}
-
-/// Commands for the dedicated private AIOS business workspace.
-#[derive(Subcommand)]
-pub enum BusinessCmd {
-    /// Create the private business workspace and its initial document if absent
-    Init {
-        /// Company name for a newly initialized document
-        #[arg(long)]
-        name: String,
-        /// Company website
-        #[arg(long, default_value = "")]
-        website: String,
-        /// Short company summary
-        #[arg(long, default_value = "")]
-        summary: String,
-        /// Intended audience
-        #[arg(long, default_value = "")]
-        audience: String,
-        /// Initial offer (repeat the flag for multiple offers)
-        #[arg(long = "offer")]
-        offers: Vec<String>,
-        /// Initial goal (repeat the flag for multiple goals)
-        #[arg(long = "goal")]
-        goals: Vec<String>,
-    },
-    /// Show the current business document and its channel/revision identifiers
-    Show {
-        /// Business workspace channel UUID returned by `business init`
-        #[arg(long)]
-        channel: String,
-    },
-    /// Replace the current document from a validated JSON file (use '-' for stdin)
-    Update {
-        /// Business workspace channel UUID returned by `business init`
-        #[arg(long)]
-        channel: String,
-        /// Input path, or '-' to read from stdin
-        #[arg(long)]
-        file: String,
-        /// Revision returned by `business show`; fail if the canvas has moved
-        #[arg(long)]
-        expected_revision: Option<String>,
-    },
-    /// Import a validated JSON document; equivalent to `business update`
-    Import {
-        /// Business workspace channel UUID returned by `business init`
-        #[arg(long)]
-        channel: String,
-        /// Input path, or '-' to read from stdin
-        #[arg(long)]
-        file: String,
-        /// Revision returned by `business show`; fail if the canvas has moved
-        #[arg(long)]
-        expected_revision: Option<String>,
-    },
-    /// Export the document as compact desktop-compatible JSON
-    Export {
-        /// Business workspace channel UUID returned by `business init`
-        #[arg(long)]
-        channel: String,
-        /// Write to this path instead of stdout
-        #[arg(long)]
-        output: Option<String>,
-    },
-    /// List, add, or remove source provenance records
-    #[command(subcommand)]
-    Source(BusinessSourceCmd),
-}
-
-/// Source operations on the current business workspace document.
-#[derive(Subcommand)]
-pub enum BusinessSourceCmd {
-    /// List sources in the current document
-    List {
-        /// Business workspace channel UUID returned by `business init`
-        #[arg(long)]
-        channel: String,
-    },
-    /// Add a source with a generated ID and current ISO-8601 timestamp
-    Add {
-        /// Business workspace channel UUID returned by `business init`
-        #[arg(long)]
-        channel: String,
-        /// Source title
-        #[arg(long)]
-        title: String,
-        /// Source kind
-        #[arg(long, value_enum)]
-        kind: BusinessSourceKind,
-        /// Source text, or '-' to read from stdin
-        #[arg(long)]
-        content: String,
-        /// Optional absolute HTTP or HTTPS source URL
-        #[arg(long)]
-        url: Option<String>,
-        /// Revision returned by `business show`; fail if the canvas has moved
-        #[arg(long)]
-        expected_revision: Option<String>,
-    },
-    /// Remove a source by its ID
-    Remove {
-        /// Business workspace channel UUID returned by `business init`
-        #[arg(long)]
-        channel: String,
-        /// Source ID
-        #[arg(long)]
-        id: String,
-        /// Revision returned by `business show`; fail if the canvas has moved
-        #[arg(long)]
-        expected_revision: Option<String>,
-    },
-}
-
-/// Source media values accepted by `buzz business source add`.
-#[derive(Clone, Copy, clap::ValueEnum)]
-pub enum BusinessSourceKind {
-    /// A manually supplied note.
-    Note,
-    /// A web page.
-    Url,
-    /// A file.
-    File,
 }
 
 #[derive(Subcommand)]
@@ -2684,7 +2563,10 @@ mod tests {
         );
         assert_eq!(
             names(&cmd, "business"),
-            vec!["export", "import", "init", "show", "source", "update"]
+            vec![
+                "adopt", "discover", "export", "import", "index", "init", "read", "search", "show",
+                "source", "update"
+            ]
         );
         let business = cmd
             .get_subcommands()
@@ -2794,7 +2676,7 @@ mod tests {
     fn subcommand_counts_are_stable() {
         let expected: Vec<(&str, usize)> = vec![
             ("agents", 5),
-            ("business", 6),
+            ("business", 11),
             ("canvas", 4),
             ("channels", 16),
             ("dms", 4),

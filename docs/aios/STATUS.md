@@ -143,8 +143,10 @@ Gustav clarified context loading: every workspace agent should have a short
 entrypoint to company knowledge, with selective retrieval as the default and
 full-document loading as an explicit agent setup option. The target contract
 and falsifiable prompt/read checks are in `FLOWS.md`. The lead has drafted a
-bounded index/search/read module in `buzz-business`, not yet compiled or wired
-into CLI/runtime; it is not an implemented agent capability yet.
+bounded index/search/read module in `buzz-business` and corresponding CLI
+commands. The first compile and focused tests pass; final source review and
+real typed-host proof remain pending. Automatic agent setup grants and the
+explicit full-context preference/runtime path are not implemented yet.
 
 Lead checkout still has pre-existing uncommitted browser-MCP repair/test and
 Rust formatting-only changes; they were deliberately excluded from `adf2ac0`.
@@ -799,4 +801,42 @@ with the current untyped relay. The new native projection has compiled in tests;
 the companion and user relay have not been replaced or migrated for this slice.
 Typed registration and its real multi-identity authorization/restore proof remain
 the backend worker's phase-two work. No ACL, stored document or credential was
-changed by this client patch. Independent source review is pending.
+changed by this client patch. Independent source review accepted the bounded
+metadata/navigation slice (`/tmp/aios-context-client-review.md`); it did not
+accept subsequent retrieval/runtime work.
+
+
+## Selective knowledge lookup — active verification
+
+The lead added `business discover`, `adopt`, `index`, `search` and `read`.
+Discovery returns only accessible context references; indexing omits text
+bodies. Search returns bounded literal excerpts and provenance; read returns
+one selected entry with Unicode character pagination. Every lookup reloads the
+current authorized snapshot. Continuation requires the exact revision so pages
+from different versions cannot silently mix. The document is still fetched
+internally in full under the agent identity; the CLI emits only selected output.
+
+Compiled proof: `buzz-business` 9/9, final focused CLI Business tests 23/23,
+Apps tests 7/7, help inventory 2/2 and actual binary help pass. Evidence is in
+`/tmp/aios-knowledge-business-tests.log`, `/tmp/aios-knowledge-cli-final.log`
+and `/tmp/aios-knowledge-cli-help.log`. Clippy exposed a pre-existing Apps helper
+with eight arguments; it now derives the duplicated app ID from its checked
+channel instead. A new CLI regression also rejects forum/ambiguous channel
+types. Final clippy is clean for both crates
+(`/tmp/aios-knowledge-clippy-final.log`) and the real CLI binary was rebuilt
+(`/tmp/aios-knowledge-cli-build-final.log`). The root file-size gate and scoped
+formatting pass. Independent CLI/retrieval source review is still running.
+
+`test_aios_business_cli_live.py` is a new unexecuted real-CLI fixture for a
+fresh disposable host: adoption preserves documents/membership, agent access
+is denied before a grant and after revocation, selected reads omit unrelated
+text, stale pagination conflicts, and generic Canvas writes cannot bypass the
+Business schema. The backend worker owns isolated PostgreSQL/relay setup.
+No new schema or access change has been applied to the user's host.
+
+Bundled agent guidance is being updated to use company discovery and selective
+reads from ordinary conversations; the nest skill version is bumped to refresh
+existing installs after a native build. This is drafted guidance, not proof that
+new running agents already receive it. Actual localhost agent creation was
+inspected without creating or changing an agent. Full-context opt-in and
+workspace agent provisioning remain the next implementation boundary.

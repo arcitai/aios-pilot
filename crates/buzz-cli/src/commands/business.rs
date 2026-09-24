@@ -1,10 +1,13 @@
 //! `buzz business` commands for the private AIOS business workspace canvas.
 
+mod knowledge;
+mod registration;
+
 use std::{collections::HashSet, fs::File, io::Read};
 
 use buzz_business::{
     parse_document, BusinessDocument, BusinessSource, ConnectionStatus, SourceKind,
-    MAX_DOCUMENT_BYTES,
+    BUSINESS_CONTEXT_RESOURCE_TYPE, MAX_DOCUMENT_BYTES,
 };
 use chrono::{SecondsFormat, Utc};
 use serde_json::{json, Value};
@@ -42,11 +45,52 @@ struct ChannelMetadata {
     is_private: bool,
     is_public: bool,
     archived: bool,
+    resource_type: Option<String>,
+    channel_type: String,
 }
 
 /// Dispatch one `buzz business` command, writing JSON to stdout.
 pub async fn dispatch(cmd: BusinessCmd, client: &BuzzClient) -> Result<(), CliError> {
     match cmd {
+        BusinessCmd::Discover => print_json(&registration::discover(client).await?),
+        BusinessCmd::Adopt { channel } => print_json(&registration::adopt(client, &channel).await?),
+        BusinessCmd::Index {
+            channel,
+            offset,
+            limit,
+            expected_revision,
+        } => print_json(
+            &knowledge::index(
+                client,
+                &channel,
+                offset,
+                limit,
+                expected_revision.as_deref(),
+            )
+            .await?,
+        ),
+        BusinessCmd::Search {
+            channel,
+            query,
+            limit,
+        } => print_json(&knowledge::search(client, &channel, &query, limit).await?),
+        BusinessCmd::Read {
+            channel,
+            entry,
+            offset,
+            limit,
+            expected_revision,
+        } => print_json(
+            &knowledge::read(
+                client,
+                &channel,
+                &entry,
+                offset,
+                limit,
+                expected_revision.as_deref(),
+            )
+            .await?,
+        ),
         BusinessCmd::Init {
             name,
             website,
@@ -407,6 +451,18 @@ async fn find_business_channel_for_company(
 ) -> Result<Option<BusinessChannel>, CliError> {
     let expected_name = workspace_channel_name(company_name);
     let (metadata, member_ids) = channel_catalog(client).await?;
+    let registered: Vec<_> = metadata
+        .iter()
+        .filter(|channel| channel.resource_type.as_deref() == Some(BUSINESS_CONTEXT_RESOURCE_TYPE))
+        .collect();
+    if registered.len() > 1 {
+        return Err(CliError::Other(
+            "host returned more than one canonical Business context".into(),
+        ));
+    }
+    if let Some(channel) = registered.first() {
+        return validate_business_channel(channel, &member_ids).map(Some);
+    }
     let named: Vec<&ChannelMetadata> = metadata
         .iter()
         .filter(|channel| channel.name.eq_ignore_ascii_case(&expected_name))
@@ -451,9 +507,20 @@ fn validate_business_channel(
     channel: &ChannelMetadata,
     member_ids: &HashSet<String>,
 ) -> Result<BusinessChannel, CliError> {
-    if channel.about.as_deref() != Some(BUSINESS_CHANNEL_MARKER) {
+    let is_business = match channel.resource_type.as_deref() {
+        Some(BUSINESS_CONTEXT_RESOURCE_TYPE) => true,
+        None => channel.about.as_deref() == Some(BUSINESS_CHANNEL_MARKER),
+        Some(_) => false,
+    };
+    if !is_business {
         return Err(CliError::Usage(format!(
             "channel {} is not marked as an AIOS business workspace; refusing to use its canvas",
+            channel.id
+        )));
+    }
+    if channel.channel_type != "stream" {
+        return Err(CliError::Usage(format!(
+            "Business context {} must be a stream resource",
             channel.id
         )));
     }
@@ -496,6 +563,8 @@ fn parse_channel_metadata(event: &Value) -> Result<Option<ChannelMetadata>, CliE
     let mut is_private = false;
     let mut is_public = false;
     let mut archived = false;
+    let mut resource_type = None;
+    let mut channel_type = None;
     for tag in tags {
         let Some(parts) = tag.as_array() else {
             continue;
@@ -511,6 +580,22 @@ fn parse_channel_metadata(event: &Value) -> Result<Option<ChannelMetadata>, CliE
             "private" => is_private = true,
             "public" => is_public = true,
             "archived" => archived = value != Some("false"),
+            "t" => {
+                if channel_type.is_some() || parts.len() != 2 || value.is_none_or(str::is_empty) {
+                    return Err(CliError::Other(
+                        "channel metadata has invalid type tags".into(),
+                    ));
+                }
+                channel_type = value.map(str::to_string);
+            }
+            "resource" => {
+                if resource_type.is_some() || parts.len() != 2 || value.is_none_or(str::is_empty) {
+                    return Err(CliError::Other(
+                        "channel metadata has invalid resource tags".into(),
+                    ));
+                }
+                resource_type = value.map(str::to_string);
+            }
             _ => {}
         }
     }
@@ -534,6 +619,8 @@ fn parse_channel_metadata(event: &Value) -> Result<Option<ChannelMetadata>, CliE
         is_private,
         is_public,
         archived,
+        resource_type,
+        channel_type: channel_type.unwrap_or_else(|| "stream".into()),
     }))
 }
 

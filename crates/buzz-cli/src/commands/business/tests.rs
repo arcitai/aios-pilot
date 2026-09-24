@@ -10,6 +10,9 @@ use buzz_business::BusinessConnection;
 use nostr::Keys;
 use std::sync::{Arc, Mutex};
 
+#[path = "knowledge_tests.rs"]
+mod knowledge_tests;
+
 #[derive(Clone, Default)]
 struct TestRelay {
     data: Arc<Mutex<TestRelayData>>,
@@ -24,6 +27,8 @@ struct TestRelayData {
     deny_queries: bool,
     conflict_canvas_writes: bool,
     fail_canvas_history_after_write: bool,
+    deny_registration: bool,
+    skip_registration_metadata: bool,
 }
 
 async fn start_test_relay() -> (BuzzClient, TestRelay, String, tokio::task::JoinHandle<()>) {
@@ -158,6 +163,31 @@ async fn test_event(State(relay): State<TestRelay>, Json(event): Json<Value>) ->
             "tags": [["d", channel_id], ["p", event["pubkey"].as_str().unwrap_or_default()]],
             "content": "",
         }));
+    } else if kind == 9002 {
+        if data.deny_registration {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(json!({"error": "community owner/admin required"})),
+            )
+                .into_response();
+        }
+        if !data.skip_registration_metadata {
+            let channel_id = event["tags"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tag| tag[0] == "h")
+                .unwrap()[1]
+                .as_str()
+                .unwrap();
+            for metadata in &mut data.metadata {
+                if extract_d_tag(metadata) == channel_id {
+                    let tags = metadata["tags"].as_array_mut().unwrap();
+                    tags.retain(|tag| tag[0] != "resource");
+                    tags.push(json!(["resource", BUSINESS_CONTEXT_RESOURCE_TYPE]));
+                }
+            }
+        }
     } else if kind == 40100 {
         data.canvases.push(event.clone());
     }

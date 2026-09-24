@@ -3,6 +3,8 @@
 //! This crate is deliberately independent of Buzz canvases and user interfaces.
 //! It accepts only the version-one JSON contract shared by the desktop and CLI.
 
+pub mod retrieval;
+
 use std::collections::HashSet;
 
 use chrono::{DateTime, NaiveDate};
