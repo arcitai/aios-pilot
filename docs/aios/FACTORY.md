@@ -23,8 +23,11 @@ in `TESTING.md`; never use a running personal workspace database as a fixture.
 
 `ops/factory.Dockerfile` builds the Linux toolchain image. The verification command
 creates writable Hermit, Cargo and Flutter caches in ignored `.factory-build/`.
-It also puts executable temporary build/test files there instead of the
-container's small, non-executable `/tmp` mount.
+During Factory verification, executable temporary files use the job's private
+home outside the checkout. This avoids the non-executable `/tmp` mount without
+letting isolated fixtures inherit the application's Git root or project hints.
+Other read-only containers must likewise provide an executable `TMPDIR` outside
+the checkout; ordinary host checks keep the operating system's temporary path.
 Factory 0.3.4 or newer supplies `FACTORY_BASE_REVISION`; the entrypoint passes
 that immutable candidate base to the existing file-size ratchet. It never uses
 the candidate head as a substitute for a missing comparison base.

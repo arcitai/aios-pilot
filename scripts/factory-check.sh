@@ -4,13 +4,13 @@ cd "$(dirname "$0")/.."
 export CI=true
 export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-4}"
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
-# Native tests and Just shebang recipes execute temporary programs. Factory's
-# small /tmp mount is intentionally noexec; use this disposable checkout.
-export TMPDIR="$PWD/.factory-build/tmp"
-mkdir -p "$TMPDIR"
 if [[ "${FACTORY_PHASE:-}" == verify ]]; then
   : "${FACTORY_BASE_REVISION:?Factory 0.3.4+ must provide the candidate base}"
   export CHECK_FILE_SIZES_BASE="$FACTORY_BASE_REVISION"
+  # Factory /tmp is noexec. Its private home is executable scratch outside Git;
+  # temp fixtures inside the checkout would inherit the real project hints.
+  export TMPDIR="${HOME:?Factory must provide a private home}/tmp"
+  mkdir -p "$TMPDIR"
 fi
 # Hermit and Flutter need writable SDK caches inside a read-only factory image.
 if [[ -d /opt/hermit-cache ]]; then
