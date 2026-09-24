@@ -34,6 +34,9 @@ import {
   useUpdatePersonaAndPublishMutation,
 } from "@/features/agents/lib/usePersonaCatalogRelay";
 import { personaSaveNotice } from "@/features/agents/lib/personaSaveNotice";
+import type { AgentKnowledgeSetup } from "./useCompanyKnowledgeDraft";
+import { usePreparedAgentDefinition } from "../usePreparedAgentDefinition";
+import { requireBusinessContextSupport } from "@/shared/api/tauriAgentBusinessContext";
 import { useCreatedAgentChannelAttachment } from "@/features/agents/useCreatedAgentChannelAttachment";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -84,6 +87,10 @@ export function usePersonaActions() {
   const createAgentMutation = useCreateManagedAgentMutation();
   const createPersonaMutation = useCreatePersonaMutation();
   const updatePersonaMutation = useUpdatePersonaMutation();
+  const preparedDefinition = usePreparedAgentDefinition(
+    createPersonaMutation.mutateAsync,
+    updatePersonaMutation.mutateAsync,
+  );
   const updatePersonaAndPublishMutation =
     useUpdatePersonaAndPublishMutation(communityId);
   const deletePersonaMutation = useDeletePersonaMutation();
@@ -178,6 +185,7 @@ export function usePersonaActions() {
     targetChannel?: Pick<Channel, "id" | "name"> | null,
     options?: { publishCatalogUpdates?: boolean },
     browserEnabled = false,
+    knowledge?: AgentKnowledgeSetup,
   ): Promise<boolean> {
     if (isPersonaSubmitPending) {
       return false;
@@ -206,6 +214,7 @@ export function usePersonaActions() {
           setPersonaNoticeMessage(personaSaveNotice(input.displayName, null));
         }
       } else {
+        if (knowledge?.businessContext) await requireBusinessContextSupport();
         const runtime = availableRuntimes.find(
           (candidate) => candidate.id === input.runtime,
         );
@@ -227,10 +236,14 @@ export function usePersonaActions() {
           undefined,
           runtime.avatarUrl,
         );
-        const persona = await createPersonaMutation.mutateAsync({
+        const definitionInput = {
           ...input,
           avatarUrl,
-        });
+        };
+        const persona =
+          resolveCreateIntent(intent) === "definition"
+            ? await createPersonaMutation.mutateAsync(definitionInput)
+            : await preparedDefinition.prepare(definitionInput);
 
         if (resolveCreateIntent(intent) === "definition") {
           setPersonaNoticeMessage(`Created ${persona.displayName}.`);
@@ -246,7 +259,10 @@ export function usePersonaActions() {
         );
 
         try {
-          const created = await createAgentMutation.mutateAsync(agentInput);
+          const created = await createAgentMutation.mutateAsync({
+            ...agentInput,
+            ...knowledge,
+          });
           await createdAgentAttachment.presentCreatedAgent(
             created,
             targetChannel,
@@ -267,9 +283,11 @@ export function usePersonaActions() {
               ? `${persona.displayName} was created, but the agent instance could not be created: ${error.message}`
               : `${persona.displayName} was created, but the agent instance could not be created.`,
           );
+          return false;
         }
       }
       setPersonaDialogState(null);
+      preparedDefinition.clear();
       return true;
     } catch (error) {
       setPersonaErrorMessage(
@@ -426,6 +444,7 @@ export function usePersonaActions() {
   }
 
   function prepareCreate() {
+    preparedDefinition.clear();
     clearFeedback("library");
     setShouldLoadAcpRuntimes(true);
   }

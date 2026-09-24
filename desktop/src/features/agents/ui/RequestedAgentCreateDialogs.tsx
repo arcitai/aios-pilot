@@ -38,9 +38,11 @@ export function RequestedAgentCreateDialogs() {
       {isOpen ? (
         <AgentDialog
           definitionError={
-            personas.createPersonaMutation.error instanceof Error
-              ? personas.createPersonaMutation.error
-              : null
+            personas.personaErrorMessage
+              ? new Error(personas.personaErrorMessage)
+              : personas.createPersonaMutation.error instanceof Error
+                ? personas.createPersonaMutation.error
+                : null
           }
           isDefinitionPending={personas.isPending}
           mode="definition"
@@ -50,7 +52,13 @@ export function RequestedAgentCreateDialogs() {
               setTargetChannel(null);
             }
           }}
-          onSubmitDefinition={(input, intent, backendIntent, browserEnabled) =>
+          onSubmitDefinition={(
+            input,
+            intent,
+            backendIntent,
+            browserEnabled,
+            knowledge,
+          ) =>
             personas.handleSubmit(
               input,
               intent,
@@ -58,6 +66,7 @@ export function RequestedAgentCreateDialogs() {
               targetChannel,
               undefined,
               browserEnabled,
+              knowledge,
             )
           }
           runtimes={personas.acpRuntimesQuery.data ?? []}

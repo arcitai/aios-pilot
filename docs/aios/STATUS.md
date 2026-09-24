@@ -66,16 +66,55 @@ Evidence: `/tmp/aios-agent-recovery-final.log` (9/9),
 `/tmp/aios-agent-recovery-tsc-final.log`,
 `/tmp/aios-agent-recovery-format-final.log`, and
 `/tmp/aios-agent-recovery-filesize.log`. These are controlled bridge fixtures,
-not real new agents or memberships on the user's relay. The private-context
-TypeScript wire adapter is still uncommitted pending native integration.
+not real new agents or memberships on the user's relay. This recovery slice is
+checkpointed in `bf43ebd`.
+
+The next frontend slice adds a private Company knowledge choice to new-agent
+creation, ahead of the Advanced section. It proposes only the host's canonical
+context, defaults to When needed and offers explicit Full company context.
+Legacy contexts require a deliberate choice; both modes disclose the real
+group/history access and require acknowledgement. Context IDs, mode and scope
+travel only to the private instance, never to a shared persona. The scope is
+captured before asynchronous avatar/definition work. Directory failure has
+retry and an explicit no-knowledge choice. If instance validation fails after
+saving a definition, the draft stays open and retry reuses that definition.
+
+The adapter requires native `managed_agent_business_context_protocol` = 1
+before context-bearing creation. This is essential because the older running
+companion silently ignores unknown create fields. Missing/malformed support
+fails before a definition or agent is created. The native worker owns that
+marker and the separate resolved ACP `capabilities --json` probe, whose
+`schemaVersion` and `business_context_protocol` must both be 1. A frontend
+selection or a marker does not itself establish a host grant.
+
+Ten controlled browser fixtures pass in
+`/tmp/aios-agent-knowledge-e2e-final.log`: selective/full wire payloads, no grant
+from legacy discovery, old-companion denial before creation, retry without
+duplicate definitions, prior start-failure recovery and onboarding. These
+tests simulate the native responses; they do not prove host grants or model
+loading. Real localhost readback opened the create form, listed Browser Studio
+as saved context, selected it with When needed and acknowledgement unchecked,
+then discarded the unsent draft. No real identity or membership changed.
+Lead visual review against `DESIGN.md` v2 uses the existing Buzz form controls,
+visible labels, one primary action and no added navigation. Screenshot:
+`/tmp/aios-agent-company-knowledge.png`. The full product design review is pending.
+The same explicit-choice flow also passes at 760×900 without page overflow
+(`/tmp/aios-agent-knowledge-narrow.log` and
+`/tmp/aios-agent-company-knowledge-narrow.png`). The test opens and closes
+Buzz's mobile sidebar before entering the form. Typecheck, scoped Biome and
+the file-size ratchet pass in `/tmp/aios-agent-knowledge-ui-tsc-final.log`,
+`/tmp/aios-agent-knowledge-format-final.log` and
+`/tmp/aios-agent-knowledge-filesize-final.log`.
 
 The current native companion is still the prior verified build. Lead reopened
 Fizz's definition editor on real localhost and cancelled without changing it;
 its shared instructions/skills are distinct from the private running instance.
 Native setup must cover start-from-definition as well as new create/edit.
 Draft prompt/nest guidance is still uncommitted pending runtime binding. The
-full-context option, native grant recovery and their integrated UI/model proof
-are not yet implemented. The wider 22-flow product remains incomplete.
+full-context frontend option is present; native grant recovery and integrated
+UI/model proof are still pending. Existing-agent edit/retry, start from a saved
+definition and first-agent context setup must use this same contract next.
+The wider 22-flow product remains incomplete.
 
 ## Pause, reassessment and revised plan — 24 September morning
 

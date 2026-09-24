@@ -33,6 +33,7 @@ export default defineConfig({
         "**/business-incoming-calls.spec.ts",
         "**/agent-permissions.spec.ts",
         "**/agent-creation-recovery.spec.ts",
+        "**/agent-company-knowledge.spec.ts",
         "**/aios-apps-access.spec.ts",
         "**/smoke.spec.ts",
         "**/mock-subscription-readiness.spec.ts",

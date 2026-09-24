@@ -369,6 +369,10 @@ export type ManagedAgent = {
   autoRestartOnConfigChange: boolean;
   /** Local per-instance opt-in to Buzz's isolated Playwright MCP server. */
   browserEnabled: boolean;
+  /** Missing on older companions. Shared persona edits never change this grant. */
+  businessContext?:
+    | import("./businessContextTypes").AgentBusinessContext
+    | null;
   backend: ManagedAgentBackend;
   backendAgentId: string | null;
   /** Who the agent should respond to. Maps to `buzz-acp --respond-to`. */
@@ -402,6 +406,8 @@ export type RelayMeshConfig = {
 
 export type CreateManagedAgentInput = {
   name: string;
+  /** Captured before async setup; request metadata, never part of the persona. */
+  requestScope?: import("./canvasTypes").CanvasScope;
   personaId?: string;
   /** Team this instance was deployed from; controls runtime team instructions. */
   teamId?: string;
@@ -430,6 +436,7 @@ export type CreateManagedAgentInput = {
   startOnAppLaunch?: boolean;
   /** Start a credential-scrubbed local Playwright MCP server with this agent. */
   browserEnabled?: boolean;
+  businessContext?: import("./businessContextTypes").CreateAgentBusinessContext;
   backend?: ManagedAgentBackend;
   /** Omitted uses the linked persona default, then `"owner-only"`. */
   respondTo?: RespondToMode;

@@ -429,7 +429,9 @@ export function AgentsView() {
           isSavePending={personas.isPending}
           open={personas.personaToExportSnapshot !== null}
           linkedAgentPubkey={personas.personaToExportSnapshot.linkedAgentPubkey}
-          skillCount={personas.personaToExportSnapshot.persona.agentSkills.length}
+          skillCount={
+            personas.personaToExportSnapshot.persona.agentSkills.length
+          }
           onSaveFile={(memoryLevel, format, includeSkills) => {
             if (personas.personaToExportSnapshot) {
               personas.handleExportSnapshot(
@@ -471,9 +473,11 @@ export function AgentsView() {
           createContent={({ onDirtyChange, onRequestClose }) => (
             <AgentDialog
               definitionError={
-                personas.createPersonaMutation.error instanceof Error
-                  ? personas.createPersonaMutation.error
-                  : null
+                personas.personaErrorMessage
+                  ? new Error(personas.personaErrorMessage)
+                  : personas.createPersonaMutation.error instanceof Error
+                    ? personas.createPersonaMutation.error
+                    : null
               }
               embedded
               isDefinitionPending={personas.isPending}
@@ -487,6 +491,7 @@ export function AgentsView() {
                 intent,
                 backendIntent,
                 browserEnabled,
+                knowledge,
               ) =>
                 personas.handleSubmit(
                   input,
@@ -495,6 +500,7 @@ export function AgentsView() {
                   null,
                   undefined,
                   browserEnabled,
+                  knowledge,
                 )
               }
               runtimes={personas.acpRuntimesQuery.data ?? []}

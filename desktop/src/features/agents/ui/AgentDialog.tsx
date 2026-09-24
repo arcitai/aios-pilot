@@ -22,6 +22,11 @@ import {
 } from "./AgentDefinitionDialog";
 import { WhereToRunSection } from "./WhereToRunSection";
 import { BrowserAccessField } from "./BrowserAccessField";
+import { CompanyKnowledgeField } from "./CompanyKnowledgeField";
+import {
+  useCompanyKnowledgeDraft,
+  type AgentKnowledgeSetup,
+} from "./useCompanyKnowledgeDraft";
 import {
   canSubmitWhereToRun,
   emptyWhereToRunDraft,
@@ -44,6 +49,7 @@ type AgentDialogCreateProps = {
     intent: AgentCreateIntent,
     backendIntent: BackendIntent | null,
     browserEnabled: boolean,
+    knowledge: AgentKnowledgeSetup,
   ) => Promise<boolean>;
 };
 
@@ -138,6 +144,8 @@ function AgentCreateDialogRouter({
 }: AgentDialogCreateProps) {
   const [runDraft, setRunDraft] = React.useState(emptyWhereToRunDraft);
   const [browserEnabled, setBrowserEnabled] = React.useState(false);
+  const local = resolveBackendIntent(runDraft) === null;
+  const knowledge = useCompanyKnowledgeDraft(local);
   const initialValues = React.useMemo(
     () => providedInitialValues ?? createPersonaDialogState().initialValues,
     [providedInitialValues],
@@ -172,6 +180,15 @@ function AgentCreateDialogRouter({
             />
           </>
         }
+        createAccessSection={
+          <CompanyKnowledgeField
+            draft={knowledge}
+            available={local}
+            disabled={isDefinitionPending}
+            onDirty={() => onDirtyChange?.(true)}
+          />
+        }
+        createAccessBlocked={!knowledge.ready}
         createSubmitBlocked={!canSubmitWhereToRun(runDraft)}
         description={copy.description}
         embedded={embedded}
@@ -186,6 +203,7 @@ function AgentCreateDialogRouter({
             "definition_start",
             resolveBackendIntent(runDraft),
             resolveBackendIntent(runDraft) === null && browserEnabled,
+            knowledge.capture(),
           );
           if (submitted) {
             onDirtyChange?.(false);

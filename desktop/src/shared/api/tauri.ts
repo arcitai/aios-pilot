@@ -109,6 +109,12 @@ type RawRelayAgent = {
   respond_to_allowlist?: string[];
 };
 import type { RestartDiffEntry as RawRestartDiffEntry } from "./restartDiff";
+import { requireBusinessContextSupport } from "./tauriAgentBusinessContext";
+import {
+  fromRawBusinessContext,
+  toRawCreateBusinessContext,
+  type RawAgentBusinessContext,
+} from "./businessContextWire";
 export type RawManagedAgent = {
   pubkey: string;
   name: string;
@@ -150,6 +156,7 @@ export type RawManagedAgent = {
   start_on_app_launch: boolean;
   auto_restart_on_config_change?: boolean;
   browser_enabled?: boolean;
+  business_context?: RawAgentBusinessContext | null;
   backend: ManagedAgentBackend;
   backend_agent_id: string | null;
   // Pre-feature fixtures may omit these; mapped to "owner-only"/[] in fromRawManagedAgent.
@@ -610,6 +617,7 @@ export function fromRawManagedAgent(agent: RawManagedAgent): ManagedAgent {
     startOnAppLaunch: agent.start_on_app_launch,
     autoRestartOnConfigChange: agent.auto_restart_on_config_change ?? true,
     browserEnabled: agent.browser_enabled ?? false,
+    businessContext: fromRawBusinessContext(agent.business_context),
     backend: agent.backend,
     backendAgentId: agent.backend_agent_id,
     respondTo: agent.respond_to ?? "owner-only",
@@ -731,11 +739,13 @@ export async function createManagedAgent(
   input: CreateManagedAgentInput,
   scope?: { expectedRelayUrl: string; expectedSignerPubkey: string },
 ) {
+  const requestScope = scope ?? input.requestScope;
+  if (input.businessContext) await requireBusinessContextSupport();
   const response = await invokeTauri<RawCreateManagedAgentResponse>(
     "create_managed_agent",
     {
-      expectedRelayUrl: scope?.expectedRelayUrl,
-      expectedSignerPubkey: scope?.expectedSignerPubkey,
+      expectedRelayUrl: requestScope?.expectedRelayUrl,
+      expectedSignerPubkey: requestScope?.expectedSignerPubkey,
       input: {
         name: input.name,
         personaId: input.personaId,
@@ -758,6 +768,9 @@ export async function createManagedAgent(
         spawnAfterCreate: input.spawnAfterCreate,
         startOnAppLaunch: input.startOnAppLaunch,
         browserEnabled: input.browserEnabled ?? false,
+        businessContext: input.businessContext
+          ? toRawCreateBusinessContext(input.businessContext)
+          : undefined,
         backend: input.backend,
         respondTo: input.respondTo,
         respondToAllowlist: input.respondToAllowlist,

@@ -28,6 +28,9 @@ import { classifyAgentManagementOrigin } from "./agentManagementBuffer";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { resolveManagedAgentAvatarUrl } from "./ui/managedAgentAvatar";
 import type { AgentCreateIntent } from "./ui/agentCreateIntent";
+import type { AgentKnowledgeSetup } from "./ui/useCompanyKnowledgeDraft";
+import { usePreparedAgentDefinition } from "./usePreparedAgentDefinition";
+import { requireBusinessContextSupport } from "@/shared/api/tauriAgentBusinessContext";
 import { editPersonaDialogState } from "./ui/personaDialogState";
 import type {
   CreatePersonaInput,
@@ -42,6 +45,10 @@ export function useAgentManagement() {
   const runtimesQuery = useAcpRuntimesQuery({ enabled: true });
   const createPersonaMutation = useCreatePersonaMutation();
   const updatePersonaMutation = useUpdatePersonaMutation();
+  const preparedDefinition = usePreparedAgentDefinition(
+    createPersonaMutation.mutateAsync,
+    updatePersonaMutation.mutateAsync,
+  );
   const createAgentMutation = useCreateManagedAgentMutation();
   const [request, setRequest] = React.useState<AgentManagementRequest | null>(
     null,
@@ -157,6 +164,7 @@ export function useAgentManagement() {
     intent: AgentCreateIntent,
     backendIntent: BackendIntent | null,
     browserEnabled: boolean,
+    knowledge?: AgentKnowledgeSetup,
   ): Promise<boolean> {
     if (request?.action !== "create" || "id" in input) {
       return false;
@@ -164,6 +172,7 @@ export function useAgentManagement() {
     setError(null);
     try {
       assertAgentCanActFromOrigin(request.request.channelId);
+      if (knowledge?.businessContext) await requireBusinessContextSupport();
       const runtimes = await availableRuntimesForStart(runtimesQuery);
       const runtime = runtimes.find(
         (candidate) => candidate.id === input.runtime,
@@ -177,21 +186,22 @@ export function useAgentManagement() {
         undefined,
         runtime.avatarUrl,
       );
-      const persona = await createPersonaMutation.mutateAsync({
+      const persona = await preparedDefinition.prepare({
         ...input,
         avatarUrl,
       });
 
       if (intent === "definition_start") {
-        const created = await createAgentMutation.mutateAsync(
-          await buildInstanceInputForDefinition(
+        const created = await createAgentMutation.mutateAsync({
+          ...(await buildInstanceInputForDefinition(
             persona,
             runtime,
             undefined,
             backendIntent ?? undefined,
             browserEnabled,
-          ),
-        );
+          )),
+          ...knowledge,
+        });
         // Creation is already durable even when setup/start fails. Close this
         // draft and recover on the saved instance instead of minting another.
         const targetChannel = (channelsQuery.data ?? []).find(
@@ -240,6 +250,7 @@ export function useAgentManagement() {
   }
 
   function dismiss() {
+    preparedDefinition.clear();
     pendingRequestId.current = null;
     sourceAgentPubkey.current = null;
     setRequest(null);

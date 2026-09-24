@@ -115,6 +115,9 @@ type AgentDefinitionDialogProps = {
   /** Publishes saved changes when the edited agent is shared in the catalog. */
   publishCatalogUpdatesOnSave?: boolean;
   createRunSection?: React.ReactNode;
+  /** Private instance permissions remain visible before the advanced controls. */
+  createAccessSection?: React.ReactNode;
+  createAccessBlocked?: boolean;
   /** Extra create-mode submit gate (e.g. incomplete provider config). */
   createSubmitBlocked?: boolean;
 };
@@ -139,6 +142,8 @@ export function AgentDefinitionDialog({
   onSubmit,
   publishCatalogUpdatesOnSave = false,
   createRunSection,
+  createAccessSection,
+  createAccessBlocked = false,
   createSubmitBlocked = false,
 }: AgentDefinitionDialogProps) {
   const runtimesLoading = runtimeCatalogStatus === "loading";
@@ -510,7 +515,7 @@ export function AgentDefinitionDialog({
     canSubmitPersonaDialog({ displayName, isPending }) &&
     (!isCreateMode || runtime.trim().length > 0) &&
     (!isCreateMode || selectedRuntimeIsAvailable) &&
-    (!isCreateMode || !createSubmitBlocked) &&
+    (!isCreateMode || (!createSubmitBlocked && !createAccessBlocked)) &&
     // Crash-loop guard, create AND edit: an empty allowlist would crash
     // every instance minted from this definition at startup.
     personaBehaviorDraftValid(behaviorDraft) &&
@@ -947,6 +952,8 @@ export function AgentDefinitionDialog({
           open={isAddHarnessOpen}
         />
 
+        {isCreateMode ? createAccessSection : null}
+
         <div className="space-y-3">
           <button
             aria-expanded={showAdvancedFields}
@@ -1014,7 +1021,9 @@ export function AgentDefinitionDialog({
         </div>
 
         {error ? (
-          <p className="text-sm text-destructive">{error.message}</p>
+          <p className="text-sm text-destructive" role="alert">
+            {error.message}
+          </p>
         ) : null}
       </div>
     </form>

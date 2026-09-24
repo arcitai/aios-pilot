@@ -164,6 +164,16 @@ failure retains the created agent and a clear retry state rather than creating
 another identity. Existing agents need an explicit selection; do not broaden
 legacy private conversation access through an unrelated edit.
 
+Frontend checkpoint: new-agent setup now contains the scoped selection and
+loading controls above Advanced. Controlled browser checks cover both modes,
+explicit legacy choice, absent native capability and retry of a denied
+instance without duplicating its saved definition. The private wire fields
+never enter the shared persona. The native adapter must advertise protocol 1
+before this UI can create a context-bearing instance; the older running
+companion fails visibly instead of silently ignoring the new fields. Native
+grants, existing-agent edit/retry, start from a saved definition, first-agent
+setup and actual prompt loading remain pending integration; see `STATUS.md`.
+
 At launch, bind non-secret context metadata to the actual agent/relay pair.
 Keep the owner signing secret out of the runner. The existing owner-signed
 agent attestation establishes identity; it does not grant company access.
