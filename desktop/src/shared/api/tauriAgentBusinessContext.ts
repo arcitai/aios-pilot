@@ -33,6 +33,7 @@ export async function setManagedAgentBusinessContext(
   acknowledgeChannelHistory: boolean,
   scope: CanvasScope,
 ) {
+  await requireBusinessContextSupport();
   return fromRawManagedAgent(
     await invokeTauri<RawManagedAgent>("set_managed_agent_business_context", {
       input: {
@@ -52,6 +53,7 @@ export async function retryManagedAgentBusinessContext(
   operationId: string,
   scope: CanvasScope,
 ) {
+  await requireBusinessContextSupport();
   return fromRawManagedAgent(
     await invokeTauri<RawManagedAgent>("retry_managed_agent_business_context", {
       input: {

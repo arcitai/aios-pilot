@@ -67,6 +67,8 @@ import {
   type RuntimeModelProviderSelection,
 } from "./runtimeModelProviderSelection";
 import { EditAgentIdentity } from "./EditAgentIdentity";
+import { EditAgentNameField } from "./EditAgentNameField";
+import { AgentCompanyKnowledgeSection } from "./AgentCompanyKnowledgeSection";
 import { OwnerOnlyAccessField } from "./OwnerOnlyAccessField";
 import type { EnvVarsValue } from "./EnvVarsEditor";
 import { useRequiredCredentialState } from "./useRequiredCredentialState";
@@ -963,33 +965,11 @@ export function AgentInstanceEditDialog({
             }
           />
           <div className="space-y-5">
-            <div className="space-y-1.5">
-              <label
-                className="text-sm font-medium text-foreground"
-                htmlFor="edit-agent-name"
-              >
-                Agent name
-              </label>
-              <div
-                className={cn(
-                  "flex min-h-11 items-center px-3",
-                  PERSONA_FIELD_SHELL_CLASS,
-                )}
-              >
-                <Input
-                  autoCorrect="off"
-                  className={cn(
-                    "h-8 px-0 py-0 leading-6",
-                    PERSONA_FIELD_CONTROL_CLASS,
-                  )}
-                  disabled={isSaving}
-                  id="edit-agent-name"
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Agent name"
-                  value={name}
-                />
-              </div>
-            </div>
+            <EditAgentNameField
+              name={name}
+              disabled={isSaving}
+              onChange={setName}
+            />
             <OwnerOnlyAccessField
               accessLocked={agentAccessOwnerOnly === true}
               allowlist={respondToAllowlist}
@@ -997,6 +977,11 @@ export function AgentInstanceEditDialog({
               mode={respondTo}
               onAllowlistChange={setRespondToAllowlist}
               onModeChange={setRespondTo}
+            />
+            <AgentCompanyKnowledgeSection
+              key={agent.pubkey}
+              agent={agent}
+              disabled={isSaving}
             />
             <RunOnSummarySection backend={agent.backend} />
 

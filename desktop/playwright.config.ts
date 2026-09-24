@@ -34,6 +34,7 @@ export default defineConfig({
         "**/agent-permissions.spec.ts",
         "**/agent-creation-recovery.spec.ts",
         "**/agent-company-knowledge.spec.ts",
+        "**/agent-knowledge-recovery.spec.ts",
         "**/aios-apps-access.spec.ts",
         "**/smoke.spec.ts",
         "**/mock-subscription-readiness.spec.ts",

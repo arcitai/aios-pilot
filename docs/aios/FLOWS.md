@@ -144,8 +144,9 @@ not silently widen access to legacy conversation history. Agents need the
 same authorized lookup behavior from Welcome, ordinary channels and CLI.
 Reference text is data, not authority to change tools or permissions. This is
 the accepted target. Checkpoint `21116f6` adds bounded CLI discovery/index/
-search/read; agent provisioning, the loading setting and runtime enforcement
-remain unimplemented. The CLI currently reads the complete bounded Canvas
+search/read; the loading setting and ACP prompt enforcement are now implemented and
+fixture-tested. Native provisioning/revocation remains in progress; live
+integrated grant/model proof is pending. The CLI currently reads the complete bounded Canvas
 internally and returns selected text, not lazy server-side source retrieval.
 
 Acceptance adds two distinctive checks: a source body with a unique sentinel
@@ -335,3 +336,10 @@ Plan review resolved: Plugins is a workspace-owned catalog; bundled skill
 selection does not assert runtime discovery or application. New resource grants
 explicitly supersede the upstream channel-only rule; current data retains its
 existing ACL during the navigation slice.
+
+F05 private-instance recovery now has a compact Company knowledge editor.
+Loading/access saves separately from an unsaved name/model draft. A durable
+operation can be retried or removed, including unknown grant delivery before
+any applied state exists. Removing access cannot recall previously read data.
+Eight final controlled UI checks cover these transitions and name persistence;
+see `STATUS.md` for logs and the distinction from native/host verification.

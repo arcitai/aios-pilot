@@ -24,7 +24,10 @@ type Draft = {
 };
 
 /** Pin a choice to the workspace and signer visible before asynchronous setup. */
-export function useCompanyKnowledgeDraft(available: boolean) {
+export function useCompanyKnowledgeDraft(
+  available: boolean,
+  initialSelection?: BusinessContextSelection | null,
+) {
   const { activeCommunity } = useCommunities();
   const identity = useIdentityQuery();
   const scope: CanvasScope = {
@@ -38,8 +41,11 @@ export function useCompanyKnowledgeDraft(available: boolean) {
       ? saved
       : {
           scopeKey,
-          contextId: undefined,
-          loading: "when_needed",
+          contextId:
+            initialSelection === undefined
+              ? undefined
+              : (initialSelection?.contextId ?? null),
+          loading: initialSelection?.loading ?? "when_needed",
           acknowledged: false,
         };
   const directory = useQuery({
@@ -88,6 +94,8 @@ export function useCompanyKnowledgeDraft(available: boolean) {
   }
 
   return {
+    scope,
+    scopeKey,
     directory,
     contextId,
     selected,

@@ -132,14 +132,36 @@ the file-size ratchet pass in `/tmp/aios-agent-knowledge-ui-tsc-final.log`,
 `/tmp/aios-agent-knowledge-format-final.log` and
 `/tmp/aios-agent-knowledge-filesize-final.log`.
 
+Private-instance editing now includes a compact Company knowledge row and a
+focused access dialog. Old agents start with no implicit grant; the dialog
+preserves the current loading mode and leaves unsaved name/model edits intact.
+Applied access and unresolved operations are distinguished. Retry uses the
+saved operation ID; removal works even when a grant's delivery was ambiguous
+and `applied` is still empty. Interrupted removal retries the same operation.
+Scope changes invalidate the open form, old companions fail before the write,
+and an unconfirmed native result cannot be presented as applied access.
+The native boundary remains responsible for real grants, stopping and readback.
+
+Eight final controlled browser checks pass: seven edit/recovery cases and
+ordinary name-edit persistence (`/tmp/aios-agent-knowledge-edit-final.log`).
+Twelve earlier adjacent creation/edit/recovery checks also pass; these counts
+overlap and are not an aggregate suite total
+(`/tmp/aios-agent-knowledge-edit-e2e-final.log`). Final typecheck, scoped Biome
+and file-size checks pass in `/tmp/aios-agent-knowledge-edit-{tsc,format,filesize}-final.log`.
+Lead reviewed the 760×900 recovery screenshot
+(`/tmp/aios-agent-knowledge-recovery.png`), including the unchanged outer draft.
+The fixture controls native responses; it proves UI/wire/recovery semantics,
+not real host access. Real localhost still lists only saved definitions; no
+real agent was created or granted access for this verification.
+
 The current native companion is still the prior verified build. Lead reopened
 Fizz's definition editor on real localhost and cancelled without changing it;
 its shared instructions/skills are distinct from the private running instance.
 Native setup must cover start-from-definition as well as new create/edit.
 Draft prompt/nest guidance is still uncommitted pending runtime binding. The
 full-context frontend and ACP prompt path are present; native grant recovery and integrated
-UI/model proof are still pending. Existing-agent edit/retry, start from a saved
-definition and first-agent context setup must use this same contract next.
+UI/model proof are still pending. Existing-agent edit/retry is now wired and fixture-tested; native integration,
+start from a saved definition and first-agent context setup remain next.
 The wider 22-flow product remains incomplete.
 
 ## Pause, reassessment and revised plan — 24 September morning
