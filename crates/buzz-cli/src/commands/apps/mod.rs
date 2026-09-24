@@ -1,7 +1,6 @@
 use std::io::{Read, Write};
 
-use chrono::{DateTime, SecondsFormat};
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::{
@@ -12,7 +11,7 @@ use crate::{
 
 const APP_CANVAS_KIND: &str = "aios.app-document";
 const APP_CANVAS_VERSION: u64 = 1;
-const MAX_APP_CANVAS_BYTES: usize = 240_000;
+const MAX_APP_CANVAS_BYTES: usize = buzz_apps::app_document::MAX_APP_CANVAS_BYTES;
 const MAX_INPUT_BYTES: usize = MAX_APP_CANVAS_BYTES + 1;
 const MAX_CHANNEL_DISCOVERY_RESULTS: usize = 100;
 
@@ -45,6 +44,16 @@ impl AppId {
             other => Err(CliError::Usage(format!(
                 "unknown app {other:?}; expected slides, calendar, or design"
             ))),
+        }
+    }
+}
+
+impl From<AppId> for buzz_apps::app_document::AppType {
+    fn from(app_id: AppId) -> Self {
+        match app_id {
+            AppId::Slides => Self::Slides,
+            AppId::Calendar => Self::Calendar,
+            AppId::Design => Self::Design,
         }
     }
 }
@@ -747,116 +756,7 @@ fn read_input(input: &str) -> Result<String, CliError> {
 }
 
 fn normalize_app_document(app_id: AppId, value: &Value) -> Result<Value, CliError> {
-    let object = value.as_object().ok_or_else(|| {
-        CliError::Usage(format!(
-            "{} document must be a JSON object",
-            app_id.as_str()
-        ))
-    })?;
-    if object.get("kind").and_then(Value::as_str) != Some(app_id.as_str())
-        || number_is_one(object.get("schemaVersion")) != Some(true)
-    {
-        return Err(invalid_document(app_id));
-    }
-    let id = required_string(object, "id").filter(|s| valid_id(s));
-    let updated_at = required_string(object, "updatedAt").filter(|s| valid_iso_timestamp(s));
-    let Some((id, updated_at)) = id.zip(updated_at) else {
-        return Err(invalid_document(app_id));
-    };
-
-    let mut result = Map::new();
-    result.insert("kind".into(), json!(app_id.as_str()));
-    result.insert("schemaVersion".into(), json!(1));
-    result.insert("id".into(), json!(id));
-    result.insert("updatedAt".into(), json!(updated_at));
-
-    match app_id {
-        AppId::Slides => {
-            let title = required_string(object, "title")
-                .filter(|value| utf16_len(value) <= 200)
-                .ok_or_else(|| invalid_document(app_id))?;
-            let slides = object
-                .get("slides")
-                .and_then(Value::as_array)
-                .filter(|items| (1..=20).contains(&items.len()))
-                .ok_or_else(|| invalid_document(app_id))?;
-            let mut normalized_slides = Vec::with_capacity(slides.len());
-            for slide in slides {
-                let slide = slide.as_object().ok_or_else(|| invalid_document(app_id))?;
-                let slide_id = required_string(slide, "id")
-                    .filter(|value| valid_id(value))
-                    .ok_or_else(|| invalid_document(app_id))?;
-                let slide_title = required_string(slide, "title")
-                    .filter(|value| utf16_len(value) <= 500)
-                    .ok_or_else(|| invalid_document(app_id))?;
-                let body = required_string(slide, "body")
-                    .filter(|value| utf16_len(value) <= 8_000)
-                    .ok_or_else(|| invalid_document(app_id))?;
-                normalized_slides.push(json!({
-                    "id": slide_id,
-                    "title": slide_title,
-                    "body": body,
-                }));
-            }
-            result.insert("title".into(), json!(title));
-            result.insert("slides".into(), json!(normalized_slides));
-        }
-        AppId::Calendar => {
-            if object.get("googleCalendarStatus").and_then(Value::as_str) != Some("not_connected") {
-                return Err(invalid_document(app_id));
-            }
-            let events = object
-                .get("events")
-                .and_then(Value::as_array)
-                .filter(|items| items.len() <= 100)
-                .ok_or_else(|| invalid_document(app_id))?;
-            let mut normalized_events = Vec::with_capacity(events.len());
-            for event in events {
-                let event = event.as_object().ok_or_else(|| invalid_document(app_id))?;
-                let event_id = required_string(event, "id")
-                    .filter(|value| valid_id(value))
-                    .ok_or_else(|| invalid_document(app_id))?;
-                let title = required_string(event, "title")
-                    .filter(|value| !value.trim().is_empty() && utf16_len(value) <= 200)
-                    .ok_or_else(|| invalid_document(app_id))?;
-                let description = required_string(event, "description")
-                    .filter(|value| utf16_len(value) <= 1_000)
-                    .ok_or_else(|| invalid_document(app_id))?;
-                let starts_at = required_string(event, "startsAt")
-                    .filter(|value| valid_iso_timestamp(value))
-                    .ok_or_else(|| invalid_document(app_id))?;
-                let ends_at = required_string(event, "endsAt")
-                    .filter(|value| valid_iso_timestamp(value))
-                    .ok_or_else(|| invalid_document(app_id))?;
-                let starts =
-                    parse_iso_timestamp(starts_at).ok_or_else(|| invalid_document(app_id))?;
-                let ends = parse_iso_timestamp(ends_at).ok_or_else(|| invalid_document(app_id))?;
-                if ends <= starts {
-                    return Err(invalid_document(app_id));
-                }
-                normalized_events.push(json!({
-                    "id": event_id,
-                    "title": title,
-                    "description": description,
-                    "startsAt": starts_at,
-                    "endsAt": ends_at,
-                }));
-            }
-            result.insert("events".into(), json!(normalized_events));
-            result.insert("googleCalendarStatus".into(), json!("not_connected"));
-        }
-        AppId::Design => {
-            let title = required_string(object, "title")
-                .filter(|value| utf16_len(value) <= 200)
-                .ok_or_else(|| invalid_document(app_id))?;
-            let html = required_string(object, "html")
-                .filter(|value| utf16_len(value) <= 100_000)
-                .ok_or_else(|| invalid_document(app_id))?;
-            result.insert("title".into(), json!(title));
-            result.insert("html".into(), json!(html));
-        }
-    }
-    Ok(Value::Object(result))
+    buzz_apps::app_document::normalize_app_document(app_id.into(), value).map_err(CliError::Usage)
 }
 
 fn serialize_app_envelope(
@@ -1024,38 +924,8 @@ fn event_string<'a>(event: &'a Value, key: &str, error: &str) -> Result<&'a str,
         .ok_or_else(|| CliError::Other(error.to_string()))
 }
 
-fn required_string<'a>(object: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
-    object.get(key).and_then(Value::as_str)
-}
-
 fn number_is_one(value: Option<&Value>) -> Option<bool> {
     value.and_then(Value::as_f64).map(|number| number == 1.0)
-}
-
-fn valid_id(value: &str) -> bool {
-    !value.is_empty() && utf16_len(value) <= 160
-}
-
-fn utf16_len(value: &str) -> usize {
-    value.encode_utf16().count()
-}
-
-fn parse_iso_timestamp(value: &str) -> Option<i64> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|date| date.timestamp_millis())
-}
-
-fn valid_iso_timestamp(value: &str) -> bool {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .is_some_and(|date| date.to_utc().to_rfc3339_opts(SecondsFormat::Millis, true) == value)
-}
-
-fn invalid_document(app_id: AppId) -> CliError {
-    CliError::Usage(format!(
-        "the {app_id} document does not match schema version 1"
-    ))
 }
 
 fn invalid_remote_envelope(app_id: AppId) -> CliError {

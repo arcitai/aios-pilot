@@ -1,0 +1,97 @@
+{
+  "contractVersion": 1,
+  "fieldLengthUnit": "UTF-16 code units",
+  "serializedLengthUnit": "UTF-8 bytes",
+  "limits": {
+    "id": 160,
+    "slides": 20,
+    "slideTitle": 500,
+    "slideBody": 8000,
+    "documentTitle": 200,
+    "calendarEvents": 100,
+    "eventDescription": 1000,
+    "designHtml": 100000,
+    "appCanvasBytes": 240000
+  },
+  "unicode": {
+    "sample": "😀",
+    "utf16CodeUnits": 2,
+    "utf8Bytes": 4
+  },
+  "timestamps": {
+    "canonical": "2026-09-24T12:00:00.000Z",
+    "equivalentNoncanonicalOffset": "2026-09-24T14:00:00.000+02:00"
+  },
+  "normalization": {
+    "input": {
+      "kind": "slides",
+      "schemaVersion": 1,
+      "id": "deck-1",
+      "updatedAt": "2026-09-24T12:00:00.000Z",
+      "title": "A short deck",
+      "slides": [
+        {
+          "id": "slide-1",
+          "title": "Welcome",
+          "body": "Shared fixture body",
+          "discardedSlideField": true
+        }
+      ],
+      "discardedDocumentField": true
+    },
+    "expected": {
+      "kind": "slides",
+      "schemaVersion": 1,
+      "id": "deck-1",
+      "updatedAt": "2026-09-24T12:00:00.000Z",
+      "title": "A short deck",
+      "slides": [
+        {
+          "id": "slide-1",
+          "title": "Welcome",
+          "body": "Shared fixture body"
+        }
+      ]
+    }
+  },
+  "validDocuments": {
+    "slides": {
+      "kind": "slides",
+      "schemaVersion": 1,
+      "id": "deck-1",
+      "updatedAt": "2026-09-24T12:00:00.000Z",
+      "title": "A short deck",
+      "slides": [
+        { "id": "slide-1", "title": "Welcome", "body": "Shared fixture body" }
+      ]
+    },
+    "calendar": {
+      "kind": "calendar",
+      "schemaVersion": 1,
+      "id": "calendar-1",
+      "updatedAt": "2026-09-24T12:00:00.000Z",
+      "events": [
+        {
+          "id": "event-1",
+          "title": "Planning",
+          "description": "",
+          "startsAt": "2026-09-24T13:00:00.000Z",
+          "endsAt": "2026-09-24T14:00:00.000Z"
+        }
+      ],
+      "googleCalendarStatus": "not_connected"
+    },
+    "design": {
+      "kind": "design",
+      "schemaVersion": 1,
+      "id": "design-1",
+      "updatedAt": "2026-09-24T12:00:00.000Z",
+      "title": "Landing page",
+      "html": "<main>Welcome</main>"
+    }
+  },
+  "byteBoundary": {
+    "designHtmlNulsWithin": 39000,
+    "designHtmlNulsOver": 40000
+  }
+}

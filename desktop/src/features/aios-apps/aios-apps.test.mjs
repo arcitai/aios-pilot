@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
   createCalendarEvent,
   createInitialAppsWorkspace,
   deserializeAppsWorkspaceDocument,
+  MAX_APP_CANVAS_DOCUMENT_BYTES,
   MAX_CALENDAR_EVENTS,
+  MAX_DESIGN_HTML_LENGTH,
   MAX_EVENT_DESCRIPTION_LENGTH,
   MAX_SLIDES,
+  parseAppDocument,
   parseAppsWorkspaceDocument,
   serializeAppsWorkspaceDocument,
   sortCalendarEvents,
@@ -28,6 +32,15 @@ import {
 
 const CHANNEL_ID = "business-channel-17";
 const FIXED_TIME = "2026-09-23T12:00:00.000Z";
+const APP_DOCUMENT_CONTRACT = JSON.parse(
+  readFileSync(
+    new URL(
+      "../../../../fixtures/aios-apps/app-document-v1-contract.json",
+      import.meta.url,
+    ),
+    "utf8",
+  ),
+);
 const SCOPE = {
   communityId: "community-a",
   expectedRelayUrl: "wss://relay-a.example",
@@ -242,6 +255,102 @@ test("private Canvas envelope marker is exact to app and business channel", () =
   assert.equal(
     parseAppCanvasEnvelope(content, CHANNEL_ID, "calendar").ok,
     false,
+  );
+});
+
+test("shared Rust app-schema fixture matches desktop normalization and limits", () => {
+  assert.equal(
+    APP_DOCUMENT_CONTRACT.limits.appCanvasBytes,
+    MAX_APP_CANVAS_DOCUMENT_BYTES,
+  );
+  assert.equal(APP_DOCUMENT_CONTRACT.limits.slides, MAX_SLIDES);
+  assert.equal(APP_DOCUMENT_CONTRACT.limits.calendarEvents, MAX_CALENDAR_EVENTS);
+  assert.equal(
+    APP_DOCUMENT_CONTRACT.limits.eventDescription,
+    MAX_EVENT_DESCRIPTION_LENGTH,
+  );
+  assert.equal(APP_DOCUMENT_CONTRACT.limits.designHtml, MAX_DESIGN_HTML_LENGTH);
+
+  for (const appId of ["slides", "calendar", "design"]) {
+    assert.deepEqual(
+      parseAppDocument(appId, APP_DOCUMENT_CONTRACT.validDocuments[appId]),
+      APP_DOCUMENT_CONTRACT.validDocuments[appId],
+    );
+  }
+  assert.deepEqual(
+    parseAppDocument("slides", APP_DOCUMENT_CONTRACT.normalization.input),
+    APP_DOCUMENT_CONTRACT.normalization.expected,
+  );
+
+  const sample = APP_DOCUMENT_CONTRACT.unicode.sample;
+  assert.equal(sample.length, APP_DOCUMENT_CONTRACT.unicode.utf16CodeUnits);
+  assert.equal(
+    new TextEncoder().encode(sample).byteLength,
+    APP_DOCUMENT_CONTRACT.unicode.utf8Bytes,
+  );
+  const maxId = {
+    ...APP_DOCUMENT_CONTRACT.validDocuments.slides,
+    id: sample.repeat(80),
+  };
+  assert.notEqual(parseAppDocument("slides", maxId), null);
+  assert.equal(
+    parseAppDocument("slides", { ...maxId, id: sample.repeat(81) }),
+    null,
+  );
+  const maxTitle = {
+    ...APP_DOCUMENT_CONTRACT.validDocuments.slides,
+    title: sample.repeat(100),
+  };
+  assert.notEqual(parseAppDocument("slides", maxTitle), null);
+  assert.equal(
+    parseAppDocument("slides", { ...maxTitle, title: sample.repeat(101) }),
+    null,
+  );
+
+  const canonical = {
+    ...APP_DOCUMENT_CONTRACT.validDocuments.slides,
+    updatedAt: APP_DOCUMENT_CONTRACT.timestamps.canonical,
+  };
+  assert.notEqual(parseAppDocument("slides", canonical), null);
+  assert.equal(
+    parseAppDocument("slides", {
+      ...canonical,
+      updatedAt: APP_DOCUMENT_CONTRACT.timestamps.equivalentNoncanonicalOffset,
+    }),
+    null,
+  );
+  assert.equal(
+    parseAppDocument("slides", { ...canonical, schemaVersion: 2 }),
+    null,
+  );
+  assert.equal(
+    parseAppDocument("slides", { ...canonical, kind: "calendar" }),
+    null,
+  );
+});
+
+test("app Canvas size limit counts serialized UTF-8 bytes", () => {
+  const within = {
+    ...APP_DOCUMENT_CONTRACT.validDocuments.design,
+    html: "\0".repeat(APP_DOCUMENT_CONTRACT.byteBoundary.designHtmlNulsWithin),
+  };
+  const serializedWithin = serializeAppCanvasEnvelope(
+    CHANNEL_ID,
+    "design",
+    within,
+  );
+  assert.ok(
+    new TextEncoder().encode(serializedWithin).byteLength <=
+      APP_DOCUMENT_CONTRACT.limits.appCanvasBytes,
+  );
+
+  const over = {
+    ...APP_DOCUMENT_CONTRACT.validDocuments.design,
+    html: "\0".repeat(APP_DOCUMENT_CONTRACT.byteBoundary.designHtmlNulsOver),
+  };
+  assert.throws(
+    () => serializeAppCanvasEnvelope(CHANNEL_ID, "design", over),
+    /240 KB Canvas limit/,
   );
 });
 

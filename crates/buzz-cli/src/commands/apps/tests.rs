@@ -534,6 +534,75 @@ fn app_documents_validate_bounded_schema_and_canonical_timestamps() {
 }
 
 #[test]
+fn extracted_app_validation_preserves_cli_error_messages() {
+    let invalid_object = json!(null);
+    assert!(matches!(
+        normalize_app_document(AppId::Slides, &invalid_object),
+        Err(CliError::Usage(message)) if message == "slides document must be a JSON object"
+    ));
+
+    let invalid_schema = json!({
+        "kind": "slides",
+        "schemaVersion": 2,
+    });
+    assert!(matches!(
+        normalize_app_document(AppId::Slides, &invalid_schema),
+        Err(CliError::Usage(message)) if message == "the slides document does not match schema version 1"
+    ));
+}
+
+#[test]
+fn shared_app_document_fixture_matches_cli_normalization() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../../fixtures/aios-apps/app-document-v1-contract.json"
+    ))
+    .expect("valid shared app schema fixture");
+    let input = &fixture["normalization"]["input"];
+    let expected = &fixture["normalization"]["expected"];
+    assert_eq!(
+        normalize_app_document(AppId::Slides, input).unwrap(),
+        expected.clone()
+    );
+
+    for app_id in AppId::ALL {
+        let document = &fixture["validDocuments"][app_id.as_str()];
+        assert!(normalize_app_document(app_id, document).is_ok());
+    }
+}
+
+#[test]
+fn app_canvas_limit_is_measured_in_utf8_bytes() {
+    let fixture: Value = serde_json::from_str(include_str!(
+        "../../../../../fixtures/aios-apps/app-document-v1-contract.json"
+    ))
+    .expect("valid shared app schema fixture");
+    assert_eq!(
+        fixture["limits"]["appCanvasBytes"],
+        super::MAX_APP_CANVAS_BYTES
+    );
+
+    let html = |key: &str| {
+        let count = fixture["byteBoundary"][key]
+            .as_u64()
+            .expect("byte fixture count") as usize;
+        "\0".repeat(count)
+    };
+    let mut within = fixture["validDocuments"]["design"].clone();
+    within["html"] = json!(html("designHtmlNulsWithin"));
+    let normalized = normalize_app_document(AppId::Design, &within).unwrap();
+    let envelope = super::serialize_app_envelope(BUSINESS_CHANNEL, AppId::Design, normalized)
+        .expect("within-limit app envelope serializes");
+    assert!(envelope.len() <= super::MAX_APP_CANVAS_BYTES);
+
+    let mut over = fixture["validDocuments"]["design"].clone();
+    over["html"] = json!(html("designHtmlNulsOver"));
+    let normalized = normalize_app_document(AppId::Design, &over).unwrap();
+    let error = super::serialize_app_envelope(BUSINESS_CHANNEL, AppId::Design, normalized)
+        .expect_err("over-limit app envelope is rejected");
+    assert!(matches!(error, CliError::Usage(_)));
+}
+
+#[test]
 fn app_channel_security_requires_private_stream() {
     let private_stream = channel_event(
         "1".repeat(64),

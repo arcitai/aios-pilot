@@ -21,6 +21,7 @@ members = [
     "crates/buzz-media",
     "crates/buzz-cli",
     "crates/buzz-business",
+    "crates/buzz-apps",
     "crates/buzz-pairing-cli",
     "crates/buzz-sdk",
     "crates/buzz-persona",
@@ -150,6 +151,7 @@ buzz-workflow = { path = "crates/buzz-workflow" }
 buzz-media = { path = "crates/buzz-media" }
 buzz-sdk = { path = "crates/buzz-sdk" }
 buzz-business = { path = "crates/buzz-business" }
+buzz-apps = { path = "crates/buzz-apps" }
 buzz-ws-client = { path = "crates/buzz-ws-client" }
 buzz-relay-mesh = { path = "crates/buzz-relay-mesh" }
 buzz-datastore-tracing = { path = "crates/buzz-datastore-tracing" }

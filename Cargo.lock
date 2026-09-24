@@ -980,6 +980,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "buzz-apps"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "buzz-audit"
 version = "0.1.0"
 dependencies = [
@@ -1060,6 +1069,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
+ "buzz-apps",
  "buzz-business",
  "buzz-core",
  "buzz-persona",
