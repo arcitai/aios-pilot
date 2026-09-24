@@ -246,6 +246,23 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_RELAY_URL", default_value = "ws://localhost:3000")]
     pub relay_url: String,
 
+    /// Selected private Business context UUID. Hidden for managed instance config.
+    #[arg(long, env = "BUZZ_ACP_BUSINESS_CONTEXT_ID", hide = true)]
+    pub business_context_id: Option<String>,
+
+    /// Relay URL that hosts the selected Business context.
+    #[arg(long, env = "BUZZ_ACP_BUSINESS_CONTEXT_RELAY", hide = true)]
+    pub business_context_relay: Option<String>,
+
+    /// Prompt loading policy for the selected Business context.
+    #[arg(
+        long,
+        env = "BUZZ_ACP_BUSINESS_CONTEXT_LOADING",
+        default_value = "when_needed",
+        hide = true
+    )]
+    pub business_context_loading: String,
+
     #[arg(long, env = "BUZZ_PRIVATE_KEY", hide_env_values = true)]
     pub private_key: String,
 
@@ -551,6 +568,8 @@ pub struct ChannelFilter {
 pub struct Config {
     pub keys: Keys,
     pub relay_url: String,
+    /// Freshly authorized Business context selection, if configured.
+    pub business_context: Option<crate::business_context::BusinessContextSelection>,
     pub agent_command: String,
     pub agent_args: Vec<String>,
     pub mcp_command: String,
@@ -944,6 +963,13 @@ impl Config {
     /// tests can construct `CliArgs` via `CliArgs::try_parse_from` and exercise the full
     /// validation path without going through process args.
     pub fn from_args(mut args: CliArgs) -> Result<Self, ConfigError> {
+        let business_context = crate::business_context::parse_selection(
+            args.business_context_id.as_deref(),
+            args.business_context_relay.as_deref(),
+            &args.business_context_loading,
+            &args.relay_url,
+        )
+        .map_err(ConfigError::ConfigFile)?;
         let keys = Keys::parse(&args.private_key)?;
         // Best-effort zeroize: overwrite the raw private key string to reduce
         // exposure via core dumps or heap inspection (#41). Without the `zeroize`
@@ -1167,6 +1193,7 @@ impl Config {
         let config = Config {
             keys,
             relay_url: args.relay_url,
+            business_context,
             agent_command,
             agent_args,
             mcp_command: args.mcp_command,
@@ -1554,6 +1581,7 @@ mod tests {
         Config {
             keys: nostr::Keys::generate(),
             relay_url: "ws://localhost:3000".into(),
+            business_context: None,
             agent_command: "goose".into(),
             agent_args: vec!["acp".into()],
             mcp_command: "".into(),
@@ -2967,6 +2995,100 @@ channels = "ALL"
     // A minimal valid private key for test use (secp256k1 scalar = 1).
     const TEST_PRIVATE_KEY: &str =
         "0000000000000000000000000000000000000000000000000000000000000001";
+
+    fn business_context_test_config(flags: &[&str]) -> Result<Config, String> {
+        let mut argv = vec![
+            "buzz-acp".to_string(),
+            "--private-key".to_string(),
+            TEST_PRIVATE_KEY.to_string(),
+            "--relay-url".to_string(),
+            "wss://relay.example.test/nostr".to_string(),
+        ];
+        argv.extend(flags.iter().map(|flag| (*flag).to_string()));
+        let args = CliArgs::try_parse_from(argv).map_err(|error| error.to_string())?;
+        Config::from_args(args).map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn business_context_absent_keeps_default_configuration_unselected() {
+        let config = business_context_test_config(&[]).expect("default configuration");
+        assert!(config.business_context.is_none());
+    }
+
+    #[test]
+    fn business_context_selection_defaults_to_when_needed_and_normalizes_urls() {
+        let config = business_context_test_config(&[
+            "--business-context-id",
+            "4f09e0c7-4d32-4b1b-b53a-2d1f21eb50a9",
+            "--business-context-relay",
+            "wss://RELAY.example.test/nostr/",
+        ])
+        .expect("matching selection");
+        let selection = config.business_context.expect("selected context");
+        assert_eq!(
+            selection.id.to_string(),
+            "4f09e0c7-4d32-4b1b-b53a-2d1f21eb50a9"
+        );
+        assert_eq!(selection.relay_url, "wss://relay.example.test/nostr");
+        assert_eq!(
+            selection.loading,
+            crate::business_context::BusinessContextLoading::WhenNeeded
+        );
+    }
+
+    #[test]
+    fn business_context_full_mode_requires_selection() {
+        let error = business_context_test_config(&["--business-context-loading", "full"])
+            .expect_err("full mode without a context");
+        assert!(
+            error.contains("requires a selected context ID and relay"),
+            "{error}"
+        );
+    }
+
+    #[test]
+    fn business_context_rejects_partial_malformed_and_cross_relay_selection() {
+        for flags in [
+            vec![
+                "--business-context-id",
+                "4f09e0c7-4d32-4b1b-b53a-2d1f21eb50a9",
+            ],
+            vec!["--business-context-relay", "wss://relay.example.test/nostr"],
+            vec![
+                "--business-context-id",
+                "not-a-uuid",
+                "--business-context-relay",
+                "wss://relay.example.test/nostr",
+            ],
+            vec![
+                "--business-context-id",
+                "4f09e0c7-4d32-4b1b-b53a-2d1f21eb50a9",
+                "--business-context-relay",
+                "https://relay.example.test/nostr",
+            ],
+            vec![
+                "--business-context-id",
+                "4f09e0c7-4d32-4b1b-b53a-2d1f21eb50a9",
+                "--business-context-relay",
+                "not a relay URL",
+            ],
+            vec![
+                "--business-context-id",
+                "4f09e0c7-4d32-4b1b-b53a-2d1f21eb50a9",
+                "--business-context-relay",
+                "wss://other.example.test/nostr",
+            ],
+        ] {
+            assert!(
+                business_context_test_config(&flags).is_err(),
+                "accepted invalid selection flags: {flags:?}"
+            );
+        }
+
+        assert!(
+            business_context_test_config(&["--business-context-loading", "selective"]).is_err()
+        );
+    }
 
     #[test]
     fn allowed_respond_to_full_path_rejects_disallowed_mode() {

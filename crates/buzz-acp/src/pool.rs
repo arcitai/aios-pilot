@@ -638,6 +638,8 @@ pub enum PromptOutcome {
     /// Local relay state could not establish project authority. The ACP
     /// process is healthy; preserve the batch for bounded retry.
     ProjectContextIndeterminate(String),
+    /// The selected Business context could not be freshly validated or read.
+    BusinessContextUnavailable(String),
     AgentExited,
     Timeout(TimeoutKind),
     /// Intentional cancel via `!cancel` command or interrupt mode.
@@ -833,6 +835,8 @@ pub struct PromptContext {
     pub cwd: String,
     /// REST client for pre-prompt context fetches (thread/DM history).
     pub rest_client: RestClient,
+    /// Agent-scoped Business context selection; every user prompt revalidates it.
+    pub business_context: Option<crate::business_context::BusinessContextSelection>,
     /// Shared channel metadata for startup-known and dynamically joined channels.
     pub channel_info: ChannelInfoResolver,
     /// Max messages to include in thread/DM context. 0 = disabled.
@@ -3001,6 +3005,30 @@ pub async fn run_prompt_task(
                 target: "pool::session",
                 "sending initial_message to session {session_id} for channel {cid}"
             );
+            let business_context_section = match crate::business_context::load_prompt_section(
+                &ctx.rest_client,
+                &ctx.agent_keys,
+                ctx.business_context.as_ref(),
+            )
+            .await
+            {
+                Ok(section) => section,
+                Err(reason) => {
+                    send_prompt_result(
+                        &result_tx,
+                        &turn_id,
+                        agent,
+                        source,
+                        PromptOutcome::BusinessContextUnavailable(reason),
+                        requeue_batch_if_queue(&ctx, batch),
+                    );
+                    return;
+                }
+            };
+            let initial_prompt = crate::business_context::append_prompt_section(
+                initial_msg,
+                business_context_section.as_deref(),
+            );
             let init_msg = prepend_standing_for_legacy(
                 if agent.has_system_prompt_support() {
                     2
@@ -3008,7 +3036,7 @@ pub async fn run_prompt_task(
                     1
                 },
                 &standing,
-                initial_msg,
+                &initial_prompt,
             );
             let init_result = agent
                 .acp
@@ -3162,7 +3190,27 @@ pub async fn run_prompt_task(
     // failed or cancelled first turn must not make its retry assume that the
     // provider retained any of that thread's context.
     let mut pending_hydrated_thread_roots = HashSet::new();
-    let prompt_sections: Vec<String> = if let Some(text) = prompt_text {
+    let business_context_section = match crate::business_context::load_prompt_section(
+        &ctx.rest_client,
+        &ctx.agent_keys,
+        ctx.business_context.as_ref(),
+    )
+    .await
+    {
+        Ok(section) => section,
+        Err(reason) => {
+            send_prompt_result(
+                &result_tx,
+                &turn_id,
+                agent,
+                source,
+                PromptOutcome::BusinessContextUnavailable(reason),
+                requeue_batch_if_queue(&ctx, batch),
+            );
+            return;
+        }
+    };
+    let mut prompt_sections: Vec<String> = if let Some(text) = prompt_text {
         // Heartbeats create their session before this point, so a Goose method-not-found
         // probe has already selected the correct framing for this process.
         //
@@ -3299,6 +3347,10 @@ pub async fn run_prompt_task(
         );
         return;
     };
+
+    if let Some(section) = business_context_section {
+        prompt_sections.push(section);
+    }
 
     // 💬 — fire-and-forget so the prompt fires immediately.
     // The guard's cleanup (spawned on drop) removes 💬 after the turn completes.
@@ -9257,6 +9309,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             PromptOutcome::CancelDrainTimeout(_) => "CancelDrainTimeout",
             PromptOutcome::Error(_) => "Error",
             PromptOutcome::ProjectContextIndeterminate(_) => "ProjectContextIndeterminate",
+            PromptOutcome::BusinessContextUnavailable(_) => "BusinessContextUnavailable",
             PromptOutcome::Cancelled => "Cancelled",
             PromptOutcome::Ok(_) => "Ok",
         };
@@ -10256,7 +10309,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
         make_prompt_context_impl(agent_keys, Some(owner_pubkey))
     }
 
-    fn make_prompt_context_impl(
+    pub(super) fn make_prompt_context_impl(
         agent_keys: &nostr::Keys,
         owner_pubkey: Option<nostr::PublicKey>,
     ) -> PromptContext {
@@ -10280,6 +10333,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
                 keys: agent_keys.clone(),
                 auth_tag_json: None,
             },
+            business_context: None,
             channel_info: ChannelInfoResolver::new(
                 std::collections::HashMap::new(),
                 RestClient {
@@ -11298,6 +11352,10 @@ done"#
         server.abort();
     }
 }
+
+#[cfg(test)]
+#[path = "pool/business_context_tests.rs"]
+mod business_context_tests;
 
 #[cfg(test)]
 mod startup_effort_tests {

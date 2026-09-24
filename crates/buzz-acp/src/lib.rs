@@ -6,6 +6,7 @@ mod git_runtime_tests;
 
 mod acp;
 mod browser_mcp;
+mod business_context;
 mod config;
 mod engram_fetch;
 mod filter;
@@ -68,6 +69,39 @@ use uuid::Uuid;
 /// name (e.g., `buzz-acp --verbose models`) are not supported.
 fn is_subcommand(name: &str) -> bool {
     std::env::args().nth(1).map(|a| a == name).unwrap_or(false)
+}
+
+const BUSINESS_CONTEXT_PROTOCOL_VERSION: u64 = 1;
+
+#[derive(Debug, clap::Parser)]
+#[command(
+    name = "buzz-acp capabilities",
+    about = "Report runtime capabilities for managed-agent compatibility checks"
+)]
+struct RuntimeCapabilitiesArgs {
+    /// Emit the stable JSON descriptor used by managed-agent launchers.
+    #[arg(long, required = true)]
+    json: bool,
+}
+
+fn runtime_capability_descriptor() -> serde_json::Value {
+    serde_json::json!({
+        "schemaVersion": 1,
+        "binaryVersion": env!("CARGO_PKG_VERSION"),
+        "business_context_protocol": BUSINESS_CONTEXT_PROTOCOL_VERSION,
+    })
+}
+
+fn run_capabilities() -> Result<()> {
+    let filtered = std::env::args_os()
+        .enumerate()
+        .filter(|(index, _)| *index != 1)
+        .map(|(_, argument)| argument);
+    let args = RuntimeCapabilitiesArgs::try_parse_from(filtered)?;
+    if args.json {
+        println!("{}", runtime_capability_descriptor());
+    }
+    Ok(())
 }
 
 /// Timeout for lightweight helper subcommands (spawn + initialize + model/method probes).
@@ -2581,8 +2615,27 @@ pub fn run() -> Result<()> {
             .map(|(_, arg)| arg);
         return browser_mcp::run_cli(filtered);
     }
+    if is_subcommand("capabilities") {
+        return run_capabilities();
+    }
     config::propagate_legacy_env_vars();
     tokio_main()
+}
+
+#[cfg(test)]
+mod runtime_capability_tests {
+    use super::*;
+
+    #[test]
+    fn descriptor_advertises_versioned_business_context_prompt_enforcement() {
+        let descriptor = runtime_capability_descriptor();
+        assert_eq!(descriptor["schemaVersion"], 1);
+        assert_eq!(
+            descriptor["business_context_protocol"],
+            BUSINESS_CONTEXT_PROTOCOL_VERSION
+        );
+        assert!(RuntimeCapabilitiesArgs::try_parse_from(["buzz-acp", "--json"]).is_ok());
+    }
 }
 
 #[tokio::main]
@@ -2984,6 +3037,7 @@ async fn run_harness(
         heartbeat_prompt: config.heartbeat_prompt.clone(),
         cwd,
         rest_client: relay.rest_client(),
+        business_context: config.business_context.clone(),
         channel_info: pool::ChannelInfoResolver::new(channel_info_map, relay.rest_client()),
         context_message_limit: config.context_message_limit,
         max_turns_per_session: config.max_turns_per_session,
@@ -4973,6 +5027,7 @@ fn handle_prompt_result(
                     PromptOutcome::AgentExited => "the agent process exited".to_string(),
                     PromptOutcome::Error(e) => format!("{e}"),
                     PromptOutcome::ProjectContextIndeterminate(reason) => reason.clone(),
+                    PromptOutcome::BusinessContextUnavailable(reason) => reason.clone(),
                     _ => "repeated failures".to_string(),
                 };
                 let content = format!(
@@ -5006,6 +5061,7 @@ fn handle_prompt_result(
         PromptOutcome::Ok(_) => "ok",
         PromptOutcome::Error(_) => "error",
         PromptOutcome::ProjectContextIndeterminate(_) => "project_context_indeterminate",
+        PromptOutcome::BusinessContextUnavailable(_) => "business_context_unavailable",
         PromptOutcome::Timeout(TimeoutKind::Idle) => "idle_timeout",
         PromptOutcome::Timeout(TimeoutKind::Hard { .. }) => "hard_timeout",
         PromptOutcome::AgentExited => "exited",
@@ -5164,12 +5220,13 @@ fn handle_prompt_result(
             );
             pool.return_agent(result.agent);
         }
-        PromptOutcome::ProjectContextIndeterminate(reason) => {
+        PromptOutcome::ProjectContextIndeterminate(reason)
+        | PromptOutcome::BusinessContextUnavailable(reason) => {
             tracing::warn!(
                 agent = agent_index,
                 outcome = outcome_label,
                 reason,
-                "agent_returned (local project context indeterminate — pipe intact)"
+                "agent_returned (local context unavailable — pipe intact)"
             );
             emit_turn_error(&reason, None);
             pool.return_agent(result.agent);
@@ -9608,6 +9665,7 @@ mod build_mcp_servers_tests {
         Config {
             keys: nostr::Keys::generate(),
             relay_url: "ws://localhost:3000".into(),
+            business_context: None,
             agent_command: "goose".into(),
             agent_args: vec!["acp".into()],
             mcp_command: "test-mcp-server".into(),
@@ -9901,6 +9959,7 @@ mod error_outcome_emission_tests {
         Config {
             keys: nostr::Keys::generate(),
             relay_url: "ws://localhost:3000".into(),
+            business_context: None,
             // `true` exits cleanly, so the async respawn fails fast and
             // harmlessly off the JoinSet — irrelevant to the synchronous
             // feed emission under test.

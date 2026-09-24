@@ -30,8 +30,25 @@ package serially also avoids scheduling flakes in existing short-deadline tests.
 env -u BUZZ_ACP_ALLOWED_RESPOND_TO \
   -u BUZZ_ACP_LAZY_POOL \
   -u BUZZ_ACP_IDLE_POOL_SLEEP \
+  -u BUZZ_ACP_BUSINESS_CONTEXT_ID \
+  -u BUZZ_ACP_BUSINESS_CONTEXT_RELAY \
+  -u BUZZ_ACP_BUSINESS_CONTEXT_LOADING \
   cargo test -p buzz-acp -- --test-threads=1
 ```
+
+## Business-context prompt enforcement
+
+The `business_context` tests use a synthetic loopback HTTP relay and a fake ACP
+stdio provider. They verify authenticated reads under the agent key, default
+route-only framing, full-document revision framing, fresh membership checks on
+reused sessions, malformed/empty/oversized document failures, provider-error
+propagation, and the whole-read deadline. They do not connect to a user relay or
+a live model provider. Run them with the package's serial test command above.
+
+Managed launchers can confirm the ACP binary enforces this contract with
+`buzz-acp capabilities --json`; accept only JSON with `schemaVersion: 1` and
+`business_context_protocol: 1`. An older or custom binary that cannot answer
+that probe is unsupported for selected Business-context settings.
 
 The ignored permission relay fixture exercises an encrypted ACP permission
 request through the local relay, an owner decision back to the agent, and one

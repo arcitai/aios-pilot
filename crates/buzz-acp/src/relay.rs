@@ -256,6 +256,38 @@ pub struct RestClient {
     pub auth_tag_json: Option<String>,
 }
 
+/// Read a streamed HTTP response without buffering beyond an explicit cap.
+async fn read_response_bounded(
+    response: reqwest::Response,
+    max_response_bytes: usize,
+) -> Result<Vec<u8>, RelayError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > max_response_bytes as u64)
+    {
+        return Err(RelayError::Http(format!(
+            "HTTP response exceeds the {max_response_bytes}-byte limit"
+        )));
+    }
+    let mut body = Vec::with_capacity(
+        response
+            .content_length()
+            .unwrap_or_default()
+            .min(max_response_bytes as u64) as usize,
+    );
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|error| RelayError::Http(error.to_string()))?;
+        if body.len().saturating_add(chunk.len()) > max_response_bytes {
+            return Err(RelayError::Http(format!(
+                "HTTP response exceeds the {max_response_bytes}-byte limit"
+            )));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 /// Whether an HTTP status code is retriable (transient server/rate-limit errors).
 fn is_retriable_status(status: reqwest::StatusCode) -> bool {
     matches!(status.as_u16(), 429 | 502 | 503 | 504)
@@ -285,6 +317,25 @@ impl RestClient {
     /// at the relay root; `/info` remains a compatibility fallback for relays
     /// that expose the document through Buzz's explicit alias.
     pub async fn relay_self(&self) -> Result<Option<String>, RelayError> {
+        self.relay_self_with_response_limit(None).await
+    }
+
+    /// Fetch and validate the relay signing identity with a response-size cap.
+    ///
+    /// Prompt-time authorization checks use this bounded form so relay identity
+    /// discovery remains inside the caller's bounded read budget.
+    pub async fn relay_self_bounded(
+        &self,
+        max_response_bytes: usize,
+    ) -> Result<Option<String>, RelayError> {
+        self.relay_self_with_response_limit(Some(max_response_bytes))
+            .await
+    }
+
+    async fn relay_self_with_response_limit(
+        &self,
+        max_response_bytes: Option<usize>,
+    ) -> Result<Option<String>, RelayError> {
         let mut failures = Vec::new();
         let mut saw_document_without_self = false;
 
@@ -309,12 +360,33 @@ impl RestClient {
                 continue;
             }
 
-            let document: serde_json::Value = match response.json().await {
-                Ok(document) => document,
-                Err(error) => {
-                    failures.push(format!("GET {path} returned invalid NIP-11 JSON: {error}"));
-                    continue;
+            let document: serde_json::Value = match max_response_bytes {
+                Some(limit) => {
+                    let bytes = match read_response_bounded(response, limit).await {
+                        Ok(bytes) => bytes,
+                        Err(error) => {
+                            failures.push(format!(
+                                "GET {path} returned an invalid NIP-11 response: {error}"
+                            ));
+                            continue;
+                        }
+                    };
+                    match serde_json::from_slice(&bytes) {
+                        Ok(document) => document,
+                        Err(error) => {
+                            failures
+                                .push(format!("GET {path} returned invalid NIP-11 JSON: {error}"));
+                            continue;
+                        }
+                    }
                 }
+                None => match response.json().await {
+                    Ok(document) => document,
+                    Err(error) => {
+                        failures.push(format!("GET {path} returned invalid NIP-11 JSON: {error}"));
+                        continue;
+                    }
+                },
             };
             let Some(relay_self) = document.get("self") else {
                 saw_document_without_self = true;
@@ -503,6 +575,23 @@ impl RestClient {
         resp.json()
             .await
             .map_err(|e| RelayError::Http(e.to_string()))
+    }
+
+    /// Query events through the authenticated HTTP bridge with a response cap.
+    ///
+    /// Use this for prompt-time context reads where a relay response must not
+    /// allocate an unbounded body before the caller can validate it.
+    pub async fn query_raw_bounded(
+        &self,
+        filters: &[Value],
+        max_response_bytes: usize,
+    ) -> Result<Value, RelayError> {
+        let body_bytes = serde_json::to_vec(filters)
+            .map_err(|e| RelayError::Http(format!("filter serialize error: {e}")))?;
+        let response = self.bridge_post("/query", &body_bytes).await?;
+        let bytes = read_response_bounded(response, max_response_bytes).await?;
+        serde_json::from_slice(&bytes)
+            .map_err(|error| RelayError::Http(format!("invalid JSON query response: {error}")))
     }
 
     /// Query every historical event matching one raw filter across bounded pages.
