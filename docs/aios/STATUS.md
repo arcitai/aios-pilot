@@ -2,7 +2,7 @@
 
 Updated 24 September 2026 (Europe/Copenhagen).
 
-## Current integration checkpoint — 24 September, midday
+## Current integration checkpoint — 24 September, afternoon
 
 The host-context backend is integrated at `8b00b84` (worker `cce82b9`). Lead
 reviewed the transaction/authority changes and the recorded real CLI, signed
@@ -59,19 +59,43 @@ reports `schemaVersion: 1` and `business_context_protocol: 1`. Logs are
 `/tmp/aios-acp-context-browser-cleanup-final.log` and
 `/tmp/aios-acp-context-fmt-clean-final.log`.
 
-The sole heavy Cargo slot has been explicitly transferred to the native
-worker (jobs=1); lead runs no Cargo. The worker is implementing and verifying
-private instance/grant/revocation/retry in
-`/Users/gustavanderson/Documents/Codex/2026-09-24/aios-native-agent-context`,
-branch `native-agent-context-setup`, from clean `19c8063`. The ACP worker now
-completed the read-only F10 design handback at
-`/tmp/aios-channel-app-proposal.md`; lead read its source map and adopted the
-bounded direction in `AIOS_PILOT.md`. It now owns source-only extraction of
-existing app/Sites validators into shared `buzz-apps`, with no Cargo/build until
-the native slot is explicitly released. New event kinds, per-instance CAS,
-open-parent membership enforcement and media association remain later work.
-Lead owns React
-and integration; no third worker or concurrent heavy build. Non-secret runtime
+The sole heavy Cargo slot is assigned to the native worker (jobs=1); lead
+runs no Cargo. Its first uncommitted handback passed its reported check and
+focused tests, but source review found missing all-pair stop-before-change,
+keyed-instance validation and handling of missing membership snapshots. These
+are being repaired before acceptance in
+`/Users/gustavanderson/Documents/Codex/2026-09-24/aios-native-agent-context`.
+The worker must retain raw verification logs and prove the browser command
+allowlist; no new native code is integrated or running yet.
+
+Shared app/Sites schemas are integrated at `a6ea2f8` (worker `ea52037`). CLI
+adapters retain their legacy storage, envelopes and error behavior. Lead read
+the final source, shared Unicode/byte fixtures and retained results: shared
+crate 8/8, CLI 532 unit + 56 integration, desktop app-schema 11/11, affected
+all-target Clippy with warnings denied, scoped fmt and file-size checks pass.
+One relay-dependent integration test and one documentation test are ignored.
+Evidence: `/tmp/aios-app-schema-cargo-test-{buzz-apps,buzz-cli}-final.log`,
+`/tmp/aios-app-schema-cargo-clippy-final.log`,
+`/tmp/aios-app-schema-cargo-fmt-check-final.log`,
+`/tmp/aios-app-schema-desktop-app-schema-final.log`, and
+`/tmp/aios-app-schema-file-size-final.log`. The extra full desktop suite reports
+6,755/6,761 pass; its six failures concern existing browser/skills fixture
+expectations and snapshot previews, outside the schema extraction. They are
+tracked in `/tmp/aios-app-schema-desktop-test-final.log`. Lead corrected the
+fixture expectations against the implemented Browser/Skills contract and added
+a real preview assertion for disclosed skill instructions. The four affected
+files pass 40 tests; the full desktop suite then passes 6,766/6,766 with test
+concurrency capped at two (`/tmp/aios-desktop-unit-regression-final.log`).
+The subsequent scoped-avatar changes have separate affected checks below.
+The apps worker now owns only native scoped-media implementation while the
+context worker retains the sole heavy build slot; shared command registration
+waits for that worker's handback to preserve one writer.
+
+F10 relay kinds 40101/39004 remain candidates in
+`/tmp/aios-app-schema-handback.md`, not an implemented protocol. Parent
+membership on open channels, atomic revision/snapshot writes and app-media
+association remain required. Lead owns React and integration; no third worker
+or concurrent heavy build. Non-secret runtime
 selection uses `BUZZ_ACP_BUSINESS_CONTEXT_ID`,
 `BUZZ_ACP_BUSINESS_CONTEXT_RELAY`, and
 `BUZZ_ACP_BUSINESS_CONTEXT_LOADING` (`when_needed` or explicit `full`). These
@@ -155,8 +179,9 @@ and file-size checks pass in `/tmp/aios-agent-knowledge-edit-{tsc,format,filesiz
 Lead reviewed the 760×900 recovery screenshot
 (`/tmp/aios-agent-knowledge-recovery.png`), including the unchanged outer draft.
 The fixture controls native responses; it proves UI/wire/recovery semantics,
-not real host access. Real localhost still lists only saved definitions; no
-real agent was created or granted access for this verification.
+not real host access. The earlier card-only inspection misidentified the three
+local records as definitions; native readback below corrects that observation.
+No context access was granted for these UI checks.
 
 A further real UI path check found that a persona-linked instance's quick Edit
 opens its definition, so private settings needed a direct entry. The profile's
@@ -168,15 +193,87 @@ then both private-entry and existing definition-edit routing checks passed in
 `/tmp/aios-agent-private-entry-final.log`. Scoped format, typecheck and file-size
 results are in `/tmp/aios-agent-private-entry-{format-final,tsc-final,filesize}.log`.
 
-The current native companion is still the prior verified build. Lead reopened
-Fizz's definition editor on real localhost and cancelled without changing it;
-its shared instructions/skills are distinct from the private running instance.
-Native setup must cover start-from-definition as well as new create/edit.
-Draft prompt/nest guidance is still uncommitted pending runtime binding. The
-full-context frontend and ACP prompt path are present; native grant recovery and integrated
-UI/model proof are still pending. Existing-agent edit/retry is now wired and fixture-tested; native integration,
-start from a saved definition and first-agent context setup remain next.
-The wider 22-flow product remains incomplete.
+The current native companion is still the prior verified build. Draft prompt/
+nest guidance remains uncommitted pending accepted native runtime binding.
+The wider 22-flow product remains incomplete; first-agent setup, native grants
+and integrated model proof are still pending.
+
+### Saved definitions and stopped-create boundary — 24 September, afternoon
+
+Saved-definition starts from agent cards, profiles and profile duplication now
+converge on one compact private Company knowledge form. Cancelling creates no
+instance. Canonical knowledge is proposed with When needed; shared definitions
+never receive the private selection. Profile duplication saves the definition
+once, then enters this same access choice. Existing keyed instances keep their
+ordinary start action and edit access through Agent settings.
+
+Source review found that scoped frontend creation requested an immediate spawn,
+while the native contract only permits stopped local creation. The API now
+sends stopped creation, verifies the returned desired/applied selection, then
+starts the saved identity separately with the same relay and signer. An
+unconfirmed grant, profile-sync error or failed start stays recoverable on that
+identity. Missing native capability still blocks before mint. A profile already
+open on this agent could consume the recovery event just before navigation
+unmounted it; waiting for navigation before dispatch fixes that observed race.
+
+Five API regressions plus adjacent runtime/card checks pass (19 total) in
+`/tmp/aios-agent-saved-start-unit-final.log`. Typecheck, scoped Biome and the
+file-size gate pass. Seventeen development-mode browser scenarios pass in
+`/tmp/aios-agent-saved-start-browser-final.log`, including duplicate-profile
+creation followed by private access selection. The frontend bundle passed
+before the recovery-navigation fix; a final production bundle remains pending
+the exclusive build slot. Eight earlier browser tests passed in
+`/tmp/aios-agent-saved-start-browser-dev.log`.
+The first profile-recovery regression failed in
+`/tmp/aios-agent-saved-start-browser.log`. The 760×900 screenshot
+`/tmp/aios-saved-agent-start.png` was visually reviewed. These are controlled
+native-bridge fixtures, not proof of real grants or model loading.
+
+Real localhost readback on 24 September at approximately 14:51 confirms three
+pre-existing keyed instances, Fizz/Honey/Pollen, all created at 08:48 local.
+Fizz was briefly started by a mistaken card inspection and then confirmed
+stopped; no new identity, grant, deletion or saved settings change resulted.
+`/tmp/aios-verify-local-agents.log` records stopped/null PID for all three and
+zero runtime pairs. An initial stop-cleanup script deliberately refused to
+modify anything when it found existing records instead of a newly created
+identity (`/tmp/aios-stop-accidental-start.log`). The agent-created browser tab
+with a stuck JavaScript confirmation was closed. A fresh tab read Fizz's Agent
+settings → Company knowledge: No company knowledge selected, Browser Studio
+available as saved context, Save disabled. Both dialogs were cancelled. The
+new saved-definition start form remains fixture-tested because these real
+cards already have instances; do not mint another user identity just to test it.
+
+Independent frontend review in `/tmp/aios-saved-agent-review.md` found a
+base64-avatar upload that could follow a workspace switch before creation.
+The renderer now resolves these uploads through the dedicated
+`upload_media_bytes_scoped` command with the captured relay and signer, checks
+scope before and after asynchronous setup, and aborts after component teardown.
+Scoped errors propagate; they never fall back to an unscoped upload. The same
+resolver is used by ordinary scoped creation before saving its definition.
+Its native implementation is still in progress: old companions reject this
+command, so a base64-avatar start remains blocked rather than uploading to an
+unverified destination. Existing hosted and inline emoji avatars need no upload.
+
+Thirty affected avatar/mapping/creation unit checks pass in
+`/tmp/aios-avatar-scope-unit.log`; typecheck, scoped formatting and repository
+file-size checks pass. Seventeen adjacent browser scenarios also pass after
+this change (`/tmp/aios-avatar-scope-browser.log`). The two new workspace-switch
+fixtures initially included unrelated built-in provisioning in their assertion;
+after narrowing to the selected agent, both pass in
+`/tmp/aios-avatar-scope-browser-targeted.log`. They drive the real community
+provider during pre-upload setup and an in-flight upload, then verify no new
+selected instance/start and the original upload scope. These remain controlled
+bridge fixtures; native upload binding requires separate HTTP proof.
+Removing the production before/after scope checks makes both new browser
+regressions fail (`/tmp/aios-avatar-scope-mutation.log`); the exact original
+source was restored afterwards. The fixture intentionally ignores unrelated
+automatic Welcome-team provisioning and asserts this selected agent's effects.
+
+Next dependency: accept native stop/grant/recovery and scoped-upload proof,
+register the media command and rebuild the companion in the exclusive build
+slot, then verify controlled native creation, revocation and prompt dispatch
+before wiring the first ordinary Welcome agent.
+The self-host/browser, channel-app and remaining F01–F22 work stays in scope.
 
 ## Pause, reassessment and revised plan — 24 September morning
 

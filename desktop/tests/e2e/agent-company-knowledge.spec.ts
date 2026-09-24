@@ -1,3 +1,4 @@
+import { installCompanyKnowledgeCreation } from "../helpers/companyKnowledgeCreation";
 import { expect, test, type Page } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
 import { waitForAnimations } from "../helpers/animations";
@@ -14,42 +15,7 @@ async function openCreate(page: Page, canonical: boolean) {
       .click();
   }
   await expect(page.getByTestId("open-agents-view")).toBeVisible();
-  const contextId = await page.evaluate(async (canonical) => {
-    const native = (
-      window as unknown as {
-        __TAURI_INTERNALS__: {
-          invoke: (
-            command: string,
-            args?: Record<string, unknown>,
-          ) => Promise<unknown>;
-        };
-      }
-    ).__TAURI_INTERNALS__;
-    const invoke = native.invoke;
-    const channel = (await invoke("create_channel", {
-      name: "Studio knowledge",
-      channelType: "stream",
-      visibility: "private",
-      description:
-        "AIOS business workspace · private company context and main-agent conversation. [aios.business-workspace:v1]",
-    })) as { id: string };
-    native.invoke = async (command, args) => {
-      if (command === "managed_agent_business_context_protocol") return 1;
-      const result = await invoke(command, args);
-      if (command !== "get_channels" || !canonical) return result;
-      const data = result as { channels: { id: string }[] | null };
-      return {
-        ...data,
-        channels:
-          data.channels?.map((entry) =>
-            entry.id === channel.id
-              ? { ...entry, resource_type: "aios.business-context:v1" }
-              : entry,
-          ) ?? null,
-      };
-    };
-    return channel.id;
-  }, canonical);
+  const contextId = await installCompanyKnowledgeCreation(page, canonical);
   await page.getByTestId("open-agents-view").click();
   const mobileSidebar = page.locator(
     '[data-sidebar="sidebar"][data-mobile="true"][data-state="open"]',

@@ -1,11 +1,8 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 
 import {
   type AttachManagedAgentToChannelResult,
-  useAvailableAcpRuntimes,
-  useCreateManagedAgentMutation,
   useManagedAgentLogQuery,
   useManagedAgentsQuery,
   useRelayAgentsQuery,
@@ -18,7 +15,7 @@ import {
   agentPresenceStartBlockReason,
   useAgentAvailabilityLookup,
 } from "../lib/useAgentAvailability";
-import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
+import { requestOpenCreateAgent } from "../openCreateAgentEvent";
 import { useChannelsQuery } from "@/features/channels/hooks";
 import { invalidateChannelMembersRosters } from "@/features/channels/rosterFreshness";
 import type { AgentPersona, Channel, ManagedAgent } from "@/shared/api/types";
@@ -32,15 +29,9 @@ import {
   stopManagedAgentWithRules,
 } from "../lib/managedAgentControlActions";
 import { clearActiveTurnsForAgentOnStop } from "../managedAgentRuntimeHooks";
-import {
-  availableRuntimesForStart,
-  buildInstanceInputForDefinition,
-  resolveStartRuntimeForDefinition,
-} from "../lib/instanceInputForDefinition";
 
 export function useManagedAgentActions() {
   const queryClient = useQueryClient();
-  const { globalConfig } = useGlobalAgentConfig();
   const relayAgentsQuery = useRelayAgentsQuery();
   const managedAgentsQuery = useManagedAgentsQuery();
   const [shouldLoadChannels, setShouldLoadChannels] = React.useState(false);
@@ -48,16 +39,10 @@ export function useManagedAgentActions() {
   const startMutation = useStartManagedAgentMutation();
   const stopMutation = useStopManagedAgentMutation();
   const deleteMutation = useDeleteManagedAgentMutation();
-  const createAgentMutation = useCreateManagedAgentMutation();
-  const availableRuntimesQuery = useAvailableAcpRuntimes();
   const startOnLaunchMutation = useSetManagedAgentStartOnAppLaunchMutation();
   const [isCreateOpen, setIsCreateOpen] = React.useState(false);
   const [agentToAddToChannel, setAgentToAddToChannel] =
     React.useState<ManagedAgent | null>(null);
-  const [startingPersonaIds, setStartingPersonaIds] = React.useState<
-    ReadonlySet<string>
-  >(() => new Set());
-  const startingPersonaIdsRef = React.useRef(new Set<string>());
   const [restartingAgentPubkey, setRestartingAgentPubkey] = React.useState<
     string | null
   >(null);
@@ -213,56 +198,9 @@ export function useManagedAgentActions() {
     }
   }
 
-  function setPersonaStartPending(personaId: string, pending: boolean) {
-    const next = new Set(startingPersonaIdsRef.current);
-    if (pending) {
-      next.add(personaId);
-    } else {
-      next.delete(personaId);
-    }
-    startingPersonaIdsRef.current = next;
-    setStartingPersonaIds(next);
-  }
-
-  async function handleStartPersona(persona: AgentPersona) {
-    if (startingPersonaIdsRef.current.has(persona.id)) {
-      return;
-    }
-    setPersonaStartPending(persona.id, true);
+  function handleStartPersona(persona: AgentPersona) {
     clearFeedback();
-    try {
-      const runtimes = await availableRuntimesForStart(availableRuntimesQuery);
-      const { runtime, warnings } = resolveStartRuntimeForDefinition(
-        persona,
-        runtimes,
-        globalConfig.preferred_runtime,
-      );
-      const input = await buildInstanceInputForDefinition(persona, runtime);
-
-      const created = await createAgentMutation.mutateAsync(input);
-      toast.success("Agent created");
-      const notices = [...warnings];
-
-      if (created.spawnError) {
-        setActionErrorMessage(created.spawnError);
-      }
-
-      if (created.profileSyncError) {
-        notices.push(created.profileSyncError);
-      }
-      if (notices.length > 0) {
-        setActionNoticeMessage(notices.join(" "));
-      }
-
-      void managedAgentsQuery.refetch();
-      void relayAgentsQuery.refetch();
-    } catch (error) {
-      setActionErrorMessage(
-        error instanceof Error ? error.message : "Failed to start agent.",
-      );
-    } finally {
-      setPersonaStartPending(persona.id, false);
-    }
+    requestOpenCreateAgent({ persona });
   }
 
   async function getChannelsForAction() {
@@ -428,7 +366,6 @@ export function useManagedAgentActions() {
 
   const isPending =
     restartingAgentPubkey !== null ||
-    createAgentMutation.isPending ||
     startMutation.isPending ||
     stopMutation.isPending ||
     startOnLaunchMutation.isPending ||
@@ -461,7 +398,6 @@ export function useManagedAgentActions() {
     setActionErrorMessage,
     startingAgentPubkey,
     restartingAgentPubkey,
-    startingPersonaIds,
     handleStart,
     handleRestart,
     handleStartPersona,

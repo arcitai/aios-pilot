@@ -88,7 +88,6 @@ function baseProps(overrides = {}) {
     isAgentsLoading: false,
     restartingAgentPubkey: null,
     startingAgentPubkey: null,
-    startingPersonaIds: new Set(),
     onOpenAgentProfile: () => {},
     onOpenPersonaProfile: () => {},
     onRestartAgent: () => {},

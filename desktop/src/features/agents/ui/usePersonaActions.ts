@@ -61,7 +61,10 @@ import {
   resolveCreateIntent,
   type AgentCreateIntent,
 } from "./agentCreateIntent";
-import { resolveManagedAgentAvatarUrl } from "./managedAgentAvatar";
+import {
+  resolveManagedAgentAvatarUrl,
+  resolveScopedManagedAgentAvatarUrl,
+} from "./managedAgentAvatar";
 import {
   buildInstanceInputForDefinition,
   type BackendIntent,
@@ -231,11 +234,16 @@ export function usePersonaActions() {
             ? (backendIntent ?? null)
             : null;
 
-        const avatarUrl = await resolveManagedAgentAvatarUrl(
-          input.avatarUrl,
-          undefined,
-          runtime.avatarUrl,
-        );
+        const avatarUrl = knowledge
+          ? await resolveScopedManagedAgentAvatarUrl(
+              input.avatarUrl,
+              knowledge.requestScope,
+            )
+          : await resolveManagedAgentAvatarUrl(
+              input.avatarUrl,
+              undefined,
+              runtime.avatarUrl,
+            );
         const definitionInput = {
           ...input,
           avatarUrl,

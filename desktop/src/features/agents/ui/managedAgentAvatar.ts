@@ -1,4 +1,5 @@
 import { squareEmojiAvatarDataUrl } from "@/features/profile/ui/ProfileAvatarEditor.utils";
+import type { CanvasScope } from "@/shared/api/canvasTypes";
 
 type BlobDescriptor = {
   url: string;
@@ -18,6 +19,33 @@ export async function resolveManagedAgentAvatarUrl(
   upload: UploadMediaBytes = defaultUploadMediaBytes,
   fallbackAvatarUrl?: string | null,
 ): Promise<string | undefined> {
+  try {
+    return await resolveAvatar(avatarUrl, upload);
+  } catch {
+    return safeFallbackAvatarUrl(fallbackAvatarUrl);
+  }
+}
+
+/** Scope-bound setup must surface upload failure before creating an identity. */
+export async function resolveScopedManagedAgentAvatarUrl(
+  avatarUrl: string | null | undefined,
+  scope: CanvasScope,
+): Promise<string | undefined> {
+  const captured = { ...scope };
+  return resolveAvatar(avatarUrl, async (data, filename) => {
+    const { invokeTauri } = await import("@/shared/api/tauri");
+    return invokeTauri<BlobDescriptor>("upload_media_bytes_scoped", {
+      data,
+      filename,
+      ...captured,
+    });
+  });
+}
+
+async function resolveAvatar(
+  avatarUrl: string | null | undefined,
+  upload: UploadMediaBytes,
+): Promise<string | undefined> {
   const resolvedAvatarUrl = avatarUrl?.trim() || undefined;
   if (!resolvedAvatarUrl?.startsWith("data:image/")) {
     return resolvedAvatarUrl;
@@ -32,17 +60,13 @@ export async function resolveManagedAgentAvatarUrl(
     return squareEmojiAvatarDataUrl(resolvedAvatarUrl);
   }
 
-  try {
-    const [, b64] = resolvedAvatarUrl.split(",", 2);
-    if (!b64) {
-      throw new Error("empty data URI payload");
-    }
-    const bytes = Array.from(atob(b64), (char) => char.charCodeAt(0));
-    const blob = await upload(bytes);
-    return blob.url;
-  } catch {
-    return safeFallbackAvatarUrl(fallbackAvatarUrl);
+  const [, b64] = resolvedAvatarUrl.split(",", 2);
+  if (!b64) {
+    throw new Error("empty data URI payload");
   }
+  const bytes = Array.from(atob(b64), (char) => char.charCodeAt(0));
+  const blob = await upload(bytes);
+  return blob.url;
 }
 
 async function defaultUploadMediaBytes(data: number[], filename?: string) {

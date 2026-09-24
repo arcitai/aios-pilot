@@ -9,7 +9,7 @@ export function AppProfilePanelProvider({
   const { goProfile } = useAppNavigation();
   const handleOpenProfilePanel = React.useCallback(
     (pubkey: string) => {
-      void goProfile(pubkey);
+      return goProfile(pubkey);
     },
     [goProfile],
   );

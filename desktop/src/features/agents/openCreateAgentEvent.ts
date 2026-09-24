@@ -1,6 +1,9 @@
+import type { AgentPersona } from "@/shared/api/types";
 const OPEN_CREATE_AGENT_EVENT = "buzz:open-create-agent";
 
 export type OpenCreateAgentOptions = {
+  /** Review private access before instantiating an existing definition. */
+  persona?: AgentPersona;
   channelId?: string;
   channelName?: string;
 };

@@ -67,8 +67,11 @@ export function useCreatedAgentChannelAttachment() {
         action: openProfilePanel
           ? {
               label: "Review agent",
-              onClick: () => {
-                openProfilePanel(created.agent.pubkey);
+              onClick: async () => {
+                // Navigation can replace a panel that already resolves this
+                // identity. Dispatch after it settles so that old panel cannot
+                // consume the request immediately before it unmounts.
+                await openProfilePanel(created.agent.pubkey);
                 requestOpenEditAgent(created.agent.pubkey);
               },
             }

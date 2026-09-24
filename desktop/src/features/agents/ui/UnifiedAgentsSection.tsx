@@ -39,7 +39,6 @@ type UnifiedAgentsSectionProps = {
   isAgentsLoading: boolean;
   restartingAgentPubkey: string | null;
   startingAgentPubkey: string | null;
-  startingPersonaIds: ReadonlySet<string>;
   onOpenAgentProfile: (
     pubkey: string,
     options?: ProfilePanelOpenOptions,
@@ -83,7 +82,6 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
     isAgentsLoading,
     restartingAgentPubkey,
     startingAgentPubkey,
-    startingPersonaIds,
     onOpenAgentProfile,
     onOpenPersonaProfile,
     onRestartAgent,
@@ -168,7 +166,6 @@ export function UnifiedAgentsSection(props: UnifiedAgentsSectionProps) {
                   persona={group.persona}
                   restartingAgentPubkey={restartingAgentPubkey}
                   startingAgentPubkey={startingAgentPubkey}
-                  startingPersonaIds={startingPersonaIds}
                   onOpenAgentProfile={onOpenAgentProfile}
                   onOpenPersonaProfile={onOpenPersonaProfile}
                   onRestartAgent={onRestartAgent}
@@ -243,7 +240,6 @@ function AgentPersonaCard({
   persona,
   restartingAgentPubkey,
   startingAgentPubkey,
-  startingPersonaIds,
   onOpenAgentProfile,
   onOpenPersonaProfile,
   onRestartAgent,
@@ -261,7 +257,6 @@ function AgentPersonaCard({
   persona: AgentPersona;
   restartingAgentPubkey: string | null;
   startingAgentPubkey: string | null;
-  startingPersonaIds: ReadonlySet<string>;
   onOpenAgentProfile: (
     pubkey: string,
     options?: ProfilePanelOpenOptions,
@@ -327,7 +322,7 @@ function AgentPersonaCard({
             activeTestId={`persona-runtime-active-${persona.id}`}
             avatarUrl={avatarUrl}
             isActive={false}
-            isStarting={startingPersonaIds.has(persona.id)}
+            isStarting={false}
             label={title}
             startTestId={`persona-runtime-start-${persona.id}`}
             onStart={() => onStartPersona(persona)}

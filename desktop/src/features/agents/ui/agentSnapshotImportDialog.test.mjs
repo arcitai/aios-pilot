@@ -75,6 +75,7 @@ function makePreview(overrides = {}) {
   return {
     displayName: "TestBot",
     systemPrompt: "Inspect every boundary before changing code.",
+    agentSkills: [],
     avatarUrl: null,
     memoryLevel: "none",
     memoryEntryCount: 0,
@@ -89,8 +90,12 @@ function makePreview(overrides = {}) {
 
 // ── preview transparency ──────────────────────────────────────────────────────
 
-test("preview_body_discloses_prompt_allowlist_and_full_manifest", () => {
-  const preview = makePreview();
+test("preview_body_discloses_prompt_skills_allowlist_and_full_manifest", () => {
+  const preview = makePreview({
+    agentSkills: [
+      { skillMd: "Review sources before making a claim.", assets: [] },
+    ],
+  });
   const element = PreviewBody({
     preview,
     hasMemory: false,
@@ -101,6 +106,7 @@ test("preview_body_discloses_prompt_allowlist_and_full_manifest", () => {
   const allText = collectText(element).join(" ");
 
   assert.ok(allText.includes(preview.systemPrompt));
+  assert.ok(allText.includes(preview.agentSkills[0].skillMd));
   for (const pubkey of preview.sourceAllowlist) {
     assert.ok(allText.includes(pubkey), `missing allowlist pubkey ${pubkey}`);
   }

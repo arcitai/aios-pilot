@@ -4,7 +4,6 @@ import { personaManagedAgentUpdate } from "@/features/profile/ui/UserProfilePane
 import type {
   AcpRuntimeCatalogEntry,
   AgentPersona,
-  CreateManagedAgentResponse,
   CreatePersonaInput,
   ManagedAgent,
   UpdateManagedAgentInput,
@@ -12,9 +11,7 @@ import type {
 } from "@/shared/api/types";
 
 type SubmitProfilePersonaDialogOptions = {
-  createManagedAgentForPersona: (
-    persona: AgentPersona,
-  ) => Promise<CreateManagedAgentResponse>;
+  onStartPersona: (persona: AgentPersona) => void;
   createPersona: (input: CreatePersonaInput) => Promise<AgentPersona>;
   input: CreatePersonaInput | UpdatePersonaInput;
   managedAgent: ManagedAgent | undefined;
@@ -64,7 +61,7 @@ export function validateLinkedAgentRuntimeEdit({
 }
 
 export async function submitProfilePersonaDialog({
-  createManagedAgentForPersona,
+  onStartPersona,
   createPersona,
   input,
   managedAgent,
@@ -103,27 +100,9 @@ export async function submitProfilePersonaDialog({
       toast.success(`Updated ${input.displayName}.`);
     } else {
       const persona = await createPersona(input);
-      try {
-        const created = await createManagedAgentForPersona(persona);
-        if (created.spawnError) {
-          toast.error(
-            `${persona.displayName} was created, but it did not start: ${created.spawnError}`,
-          );
-        } else {
-          toast.success(`Created and started ${created.agent.name}.`);
-        }
-        if (created.profileSyncError) {
-          toast.warning(
-            `${created.agent.name} was created, but profile sync failed: ${created.profileSyncError}`,
-          );
-        }
-      } catch (error) {
-        toast.error(
-          error instanceof Error
-            ? `${persona.displayName} was created, but the agent instance could not be created: ${error.message}`
-            : `${persona.displayName} was created, but the agent instance could not be created.`,
-        );
-      }
+      onDone();
+      onStartPersona(persona);
+      return;
     }
 
     onDone();

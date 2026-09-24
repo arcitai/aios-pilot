@@ -61,7 +61,10 @@ flowchart LR
 ## Connected target flows
 
 Every flow must retain workspace/actor/resource scope across navigation,
-retries and reconnects. UI and CLI operate on the same durable objects. A
+retries and reconnects.
+Auxiliary effects such as agent-avatar uploads carry the same captured scope;
+a switch during setup must not upload to the newly active workspace. Scoped
+upload support must fail explicitly on an older native companion. UI and CLI operate on the same durable objects. A
 configuration save is distinct from a runner actually applying it.
 
 | ID | Entry and main sequence | Durable result and access | Failure / recovery acceptance |
@@ -124,6 +127,14 @@ Eight final controlled UI checks cover these transitions and name persistence;
 see `STATUS.md` for logs and the distinction from native/host verification.
 Persona-linked instances expose this through the profile's Agent settings
 management entry; the quick Edit action continues to edit the definition.
+
+Saved-definition starts from cards, profiles and profile duplication now enter
+the same private knowledge setup form before creating an instance. Existing
+instances retain their ordinary Start action. Scoped creation first persists a
+stopped agent, confirms the desired/applied selection, then starts that same
+identity with the captured relay and signer. A later failure is recovered in
+its settings rather than retrying creation. These paths have controlled
+frontend evidence; real native grant/start proof remains pending in `STATUS.md`.
 
 ### Company knowledge in agent work — clarified 24 September
 

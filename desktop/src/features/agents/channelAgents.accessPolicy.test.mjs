@@ -112,6 +112,7 @@ test("a diverging access policy reports the write and returns the updated agent"
       {
         input: {
           pubkey: AGENT_PUBKEY,
+          browserEnabled: undefined,
           respondTo: "allowlist",
           respondToAllowlist: [ALLOWED_PUBKEY],
         },

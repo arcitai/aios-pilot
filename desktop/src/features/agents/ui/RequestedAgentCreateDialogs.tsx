@@ -5,12 +5,17 @@ import {
   subscribeOpenCreateAgent,
   type OpenCreateAgentOptions,
 } from "@/features/agents/openCreateAgentEvent";
+import type { AgentPersona } from "@/shared/api/types";
+import { StartSavedAgentDialog } from "./StartSavedAgentDialog";
 import { AgentDialog } from "./AgentDialog";
 import { usePersonaActions } from "./usePersonaActions";
 
 /** App-level create flow so contextual entry points do not navigate away. */
 export function RequestedAgentCreateDialogs() {
   const personas = usePersonaActions();
+  const [startPersona, setStartPersona] = React.useState<AgentPersona | null>(
+    null,
+  );
   const [targetChannel, setTargetChannel] = React.useState<{
     id: string;
     name: string;
@@ -18,6 +23,11 @@ export function RequestedAgentCreateDialogs() {
   const [isOpen, setIsOpen] = React.useState(false);
 
   const openCreate = React.useEffectEvent((options: OpenCreateAgentOptions) => {
+    if (isOpen || startPersona) return;
+    if (options.persona) {
+      setStartPersona(options.persona);
+      return;
+    }
     personas.prepareCreate();
     setTargetChannel(
       options.channelId && options.channelName
@@ -35,6 +45,12 @@ export function RequestedAgentCreateDialogs() {
 
   return (
     <>
+      {startPersona ? (
+        <StartSavedAgentDialog
+          persona={startPersona}
+          onClose={() => setStartPersona(null)}
+        />
+      ) : null}
       {isOpen ? (
         <AgentDialog
           definitionError={

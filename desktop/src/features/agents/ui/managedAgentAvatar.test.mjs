@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveManagedAgentAvatarUrl } from "./managedAgentAvatar.ts";
+import {
+  resolveManagedAgentAvatarUrl,
+  resolveScopedManagedAgentAvatarUrl,
+} from "./managedAgentAvatar.ts";
 
 test("resolveManagedAgentAvatarUrl uploads data image URIs", async () => {
   const uploaded = await resolveManagedAgentAvatarUrl(
@@ -83,4 +86,65 @@ test("resolveManagedAgentAvatarUrl ignores data URI fallbacks", async () => {
   );
 
   assert.equal(uploaded, undefined);
+});
+
+test("scoped avatar upload carries a snapshot of its relay and signer", async (t) => {
+  const previous = globalThis.window;
+  const calls = [];
+  globalThis.window = {
+    __TAURI_INTERNALS__: {
+      invoke: async (command, args) => {
+        calls.push({ command, args });
+        return { url: "https://alpha.invalid/avatar.png" };
+      },
+    },
+  };
+  t.after(() => {
+    globalThis.window = previous;
+  });
+  const scope = {
+    expectedRelayUrl: "wss://alpha.invalid",
+    expectedSignerPubkey: "a".repeat(64),
+  };
+  const upload = resolveScopedManagedAgentAvatarUrl(
+    "data:image/png;base64,YQ==",
+    scope,
+  );
+  scope.expectedRelayUrl = "wss://bravo.invalid";
+  assert.equal(await upload, "https://alpha.invalid/avatar.png");
+  assert.deepEqual(calls, [
+    {
+      command: "upload_media_bytes_scoped",
+      args: {
+        data: [97],
+        filename: undefined,
+        expectedRelayUrl: "wss://alpha.invalid",
+        expectedSignerPubkey: "a".repeat(64),
+      },
+    },
+  ]);
+});
+
+test("scoped avatar failure propagates without an unscoped fallback", async (t) => {
+  const previous = globalThis.window;
+  const calls = [];
+  globalThis.window = {
+    __TAURI_INTERNALS__: {
+      invoke: async (command) => {
+        calls.push(command);
+        throw new Error("Workspace changed or scoped upload unsupported");
+      },
+    },
+  };
+  t.after(() => {
+    globalThis.window = previous;
+  });
+  await assert.rejects(
+    resolveScopedManagedAgentAvatarUrl("data:image/png;base64,YQ==", {
+      expectedRelayUrl: "wss://alpha.invalid",
+      expectedSignerPubkey: "a".repeat(64),
+    }),
+    /Workspace changed or scoped upload unsupported/,
+  );
+  assert.deepEqual(calls, ["upload_media_bytes_scoped"]);
 });

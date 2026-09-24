@@ -6,8 +6,6 @@ import { useIsManagedAgent } from "@/features/agent-memory/hooks";
 import {
   type AttachManagedAgentToChannelResult,
   useAcpRuntimesQuery,
-  useAvailableAcpRuntimes,
-  useCreateManagedAgentMutation,
   useCreatePersonaMutation,
   useDeleteManagedAgentMutation,
   useDeletePersonaMutation,
@@ -22,13 +20,8 @@ import {
   useUpdateManagedAgentMutation,
   useUpdatePersonaMutation,
 } from "@/features/agents/hooks";
-import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
+import { requestOpenCreateAgent } from "@/features/agents/openCreateAgentEvent";
 import { AddAgentToChannelDialog } from "@/features/agents/ui/AddAgentToChannelDialog";
-import {
-  availableRuntimesForStart,
-  buildInstanceInputForDefinition,
-  resolveStartRuntimeForDefinition,
-} from "@/features/agents/lib/instanceInputForDefinition";
 import { describeLogFile } from "@/features/agents/ui/agentUi";
 import { useAgentLifecycleActions } from "@/features/profile/ui/useAgentLifecycleActions";
 import {
@@ -121,7 +114,6 @@ export function UserProfilePanel({
   widthPx,
   transparentChrome = false,
 }: UserProfilePanelProps) {
-  const { globalConfig } = useGlobalAgentConfig();
   const isOverlay = useIsThreadPanelOverlay();
   const isSplitLayout = layout === "split";
   useEscapeKey(onClose, isOverlay || isSinglePanelView);
@@ -235,9 +227,7 @@ export function UserProfilePanel({
   }, [effectivePubkey, profileQuery.refetch]);
 
   const relayAgentsQuery = useRelayAgentsQuery({ enabled: true });
-  const availableRuntimesQuery = useAvailableAcpRuntimes();
   const acpRuntimesQuery = useAcpRuntimesQuery();
-  const createAgentMutation = useCreateManagedAgentMutation();
   const updateManagedAgentMutation = useUpdateManagedAgentMutation();
   const startAgentMutation = useStartManagedAgentMutation();
   const stopAgentMutation = useStopManagedAgentMutation();
@@ -333,7 +323,6 @@ export function UserProfilePanel({
     resolvedPersona !== undefined &&
     managedAgent === undefined;
   const isAgentActionPending =
-    createAgentMutation.isPending ||
     updateManagedAgentMutation.isPending ||
     startAgentMutation.isPending ||
     stopAgentMutation.isPending ||
@@ -417,38 +406,6 @@ export function UserProfilePanel({
       relayAgents: relayAgentsQuery.data,
     });
 
-  const createManagedAgentForPersona = React.useCallback(
-    async (personaToStart: AgentPersona) => {
-      const runtimes = await availableRuntimesForStart(availableRuntimesQuery);
-      const { runtime, warnings } = resolveStartRuntimeForDefinition(
-        personaToStart,
-        runtimes,
-        globalConfig.preferred_runtime,
-      );
-
-      for (const warning of warnings) {
-        toast.warning(warning);
-      }
-
-      const input = await buildInstanceInputForDefinition(
-        personaToStart,
-        runtime,
-      );
-
-      const created = await createAgentMutation.mutateAsync(input);
-      void managedAgentsQuery.refetch();
-      void relayAgentsQuery.refetch();
-      return created;
-    },
-    [
-      availableRuntimesQuery,
-      createAgentMutation.mutateAsync,
-      globalConfig.preferred_runtime,
-      managedAgentsQuery.refetch,
-      relayAgentsQuery.refetch,
-    ],
-  );
-
   const { handleAgentPrimaryAction, handleAgentRestart } =
     useAgentLifecycleActions({
       availability: presenceStatus,
@@ -459,25 +416,9 @@ export function UserProfilePanel({
       stopManagedAgent: stopAgentMutation.mutateAsync,
     });
 
-  const handleInstantiateAgent = React.useCallback(async () => {
-    if (!resolvedPersona) return;
-
-    try {
-      const created = await createManagedAgentForPersona(resolvedPersona);
-      if (created.spawnError) {
-        toast.error(created.spawnError);
-      } else {
-        toast.success(`Started ${created.agent.name}.`);
-      }
-      if (created.profileSyncError) {
-        toast.warning(created.profileSyncError);
-      }
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to start agent.",
-      );
-    }
-  }, [createManagedAgentForPersona, resolvedPersona]);
+  const handleInstantiateAgent = React.useCallback(() => {
+    if (resolvedPersona) requestOpenCreateAgent({ persona: resolvedPersona });
+  }, [resolvedPersona]);
 
   const handleToggleAgentAutoStart = React.useCallback(async () => {
     if (managedAgent?.backend.type !== "local") return;
@@ -520,7 +461,7 @@ export function UserProfilePanel({
   const handleSubmitPersona = React.useCallback(
     async (input: CreatePersonaInput | UpdatePersonaInput) => {
       await submitProfilePersonaDialog({
-        createManagedAgentForPersona,
+        onStartPersona: (persona) => requestOpenCreateAgent({ persona }),
         createPersona: createPersonaMutation.mutateAsync,
         input,
         managedAgent,
@@ -536,7 +477,6 @@ export function UserProfilePanel({
     },
     [
       createPersonaMutation.mutateAsync,
-      createManagedAgentForPersona,
       managedAgent,
       personasQuery.refetch,
       resolvedPersona,
@@ -944,8 +884,7 @@ export function UserProfilePanel({
         isPending={
           createPersonaMutation.isPending ||
           updatePersonaMutation.isPending ||
-          updateManagedAgentMutation.isPending ||
-          createAgentMutation.isPending
+          updateManagedAgentMutation.isPending
         }
         linkedAgentPubkey={managedAgent?.pubkey ?? null}
         personaDialogState={personaDialogState}
