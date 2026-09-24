@@ -1,4 +1,5 @@
 pub mod agents;
+pub mod apps;
 pub mod business;
 pub mod calls;
 pub mod channel_templates;

@@ -225,6 +225,9 @@ enum Cmd {
     /// Read and manage the AIOS business workspace document
     #[command(subcommand)]
     Business(BusinessCmd),
+    /// Create and update private Slides, Calendar and Design app documents
+    #[command(subcommand)]
+    Apps(commands::apps::AppsCmd),
     /// Read and update private Sites documents in a business workspace
     #[command(subcommand)]
     Sites(commands::sites::SitesCmd),
@@ -2343,6 +2346,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Channels(sub) => commands::channels::dispatch(sub, &client, &cli.format).await,
         Cmd::Canvas(sub) => commands::channels::dispatch_canvas(sub, &client).await,
         Cmd::Business(sub) => commands::business::dispatch(sub, &client).await,
+        Cmd::Apps(sub) => commands::apps::dispatch(sub, &client).await,
         Cmd::Sites(sub) => commands::sites::dispatch_sites(sub, &client).await,
         Cmd::Calls(CallsCmd::Request {
             channel,

@@ -606,6 +606,15 @@ async fn ensure_business_membership(
             "business channel {business_channel_id} was not found"
         )));
     }
+    if !has_single_tag_value(&metadata, "about", super::business::BUSINESS_CHANNEL_MARKER)
+        || !is_private_channel(&metadata)
+        || !is_stream_channel(&metadata)
+        || event_has_tag_value(&metadata, "archived", "true")
+    {
+        return Err(CliError::Usage(
+            "Apps must be created in an active private AIOS business workspace.".into(),
+        ));
+    }
     let Some(members) = fetch_members(client, business_channel_id).await? else {
         return Err(CliError::NotFound(format!(
             "the current identity is not a member of business channel {business_channel_id}"
@@ -691,7 +700,9 @@ async fn fetch_canvas_revision(
 }
 
 async fn query_events(client: &BuzzClient, filter: &Value) -> Result<Vec<Value>, CliError> {
-    let response = client.query(filter).await?;
+    let mut filter = filter.clone();
+    filter["consistency"] = json!("strong");
+    let response = client.query(&filter).await?;
     serde_json::from_str::<Vec<Value>>(&response).map_err(|error| {
         CliError::Other(format!("malformed relay response for app query: {error}"))
     })

@@ -35,7 +35,7 @@ async fn relay(keys: &Keys) -> (String, RelayState, tokio::task::JoinHandle<()>)
             "Pilot business",
             Some("private"),
             Some("stream"),
-            "",
+            crate::commands::business::BUSINESS_CHANNEL_MARKER,
         ),
         member_event("e".repeat(64), BUSINESS_CHANNEL, &signer),
     ]));
