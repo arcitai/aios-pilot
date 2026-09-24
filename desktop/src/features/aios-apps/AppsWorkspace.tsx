@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   AlertCircle,
   Check,
@@ -16,6 +17,7 @@ import { CalendarEditor } from "./apps/CalendarEditor";
 import { DesignEditor } from "./apps/DesignEditor";
 import { SlidesEditor } from "./apps/SlidesEditor";
 import { AppAccessPanel } from "./AppAccessPanel";
+import { AppMainAgentPanel } from "./AppMainAgentPanel";
 import { AIOS_APP_REGISTRY } from "./registry";
 import { canvasAppDocumentStore } from "./canvasStore";
 import {
@@ -47,6 +49,8 @@ export type AppsWorkspaceProps = {
   embedded?: boolean;
   /** Optional independent apps hosted inside the existing Apps rail. */
   extensionApps?: readonly AppsExtensionApp[];
+  /** Render the conversation for a private app channel after an agent request. */
+  renderConversation?: (channelId: string) => ReactNode;
 };
 
 /** Structural match for the CanvasScope consumed by the native API. */
@@ -107,6 +111,7 @@ export function AppsWorkspaceView({
   onDirtyChange,
   embedded = false,
   extensionApps = [],
+  renderConversation,
 }: AppsWorkspaceProps) {
   const scope = useMemo<AppDocumentScope | null>(() => {
     const expectedRelayUrl = nativeScope.expectedRelayUrl.trim();
@@ -552,30 +557,68 @@ export function AppsWorkspaceView({
           {workspace.document &&
           workspace.phase !== "loading" &&
           workspace.phase !== "blocked" ? (
-            <div className="aios-app-editor-shell" hidden={!activeEntry}>
-              <div hidden={selectedApp !== "slides"}>
-                <SlidesEditor
-                  document={workspace.document.documents.slides}
-                  companyName={companyName}
-                  onChange={(next) => workspace.updateDocument("slides", next)}
-                />
+            <>
+              <div className="aios-app-editor-shell" hidden={!activeEntry}>
+                <div hidden={selectedApp !== "slides"}>
+                  <SlidesEditor
+                    document={workspace.document.documents.slides}
+                    companyName={companyName}
+                    onChange={(next) =>
+                      workspace.updateDocument("slides", next)
+                    }
+                  />
+                </div>
+                <div hidden={selectedApp !== "calendar"}>
+                  <CalendarEditor
+                    document={workspace.document.documents.calendar}
+                    onChange={(next) =>
+                      workspace.updateDocument("calendar", next)
+                    }
+                    onDraftDirtyChange={setCalendarDraftDirty}
+                  />
+                </div>
+                <div hidden={selectedApp !== "design"}>
+                  <DesignEditor
+                    document={workspace.document.documents.design}
+                    onChange={(next) =>
+                      workspace.updateDocument("design", next)
+                    }
+                  />
+                </div>
               </div>
-              <div hidden={selectedApp !== "calendar"}>
-                <CalendarEditor
-                  document={workspace.document.documents.calendar}
-                  onChange={(next) =>
-                    workspace.updateDocument("calendar", next)
-                  }
-                  onDraftDirtyChange={setCalendarDraftDirty}
-                />
+              <div hidden={!activeEntry}>
+                {AIOS_APP_REGISTRY.map(({ id, title }) => (
+                  <div hidden={selectedApp !== id} key={id}>
+                    <AppMainAgentPanel
+                      key={`${channelId}:${scope?.expectedRelayUrl ?? ""}:${scope?.expectedSignerPubkey ?? ""}:${id}`}
+                      appId={id}
+                      appTitle={title}
+                      businessChannelId={channelId}
+                      disabled={
+                        workspace.phase === "error" &&
+                        workspace.errorStage === "load"
+                      }
+                      isDirty={dirty}
+                      onLoadLatest={() => {
+                        if (!dirty) workspace.reload();
+                      }}
+                      renderConversation={renderConversation}
+                      scope={
+                        scope
+                          ? {
+                              expectedRelayUrl: scope.expectedRelayUrl,
+                              expectedSignerPubkey: scope.expectedSignerPubkey,
+                            }
+                          : null
+                      }
+                      sharedStorageActive={
+                        appDocumentStore === canvasAppDocumentStore
+                      }
+                    />
+                  </div>
+                ))}
               </div>
-              <div hidden={selectedApp !== "design"}>
-                <DesignEditor
-                  document={workspace.document.documents.design}
-                  onChange={(next) => workspace.updateDocument("design", next)}
-                />
-              </div>
-            </div>
+            </>
           ) : null}
           {uniqueExtensionApps
             .filter(({ id }) => visitedExtensions.has(id))
