@@ -20,8 +20,10 @@ use crate::{
     BusinessCmd, BusinessSourceCmd, BusinessSourceKind,
 };
 
-/// Exact channel description shared with the desktop business-workspace discovery.
-pub const BUSINESS_CHANNEL_MARKER: &str = "AIOS business workspace · private company context and main-agent conversation. [aios.business-workspace:v1]";
+pub use buzz_business::context::BUSINESS_CHANNEL_MARKER;
+use buzz_business::context::{
+    parse_channel_metadata, validate_context_access, ChannelMetadata, ContextError,
+};
 
 const CHANNEL_SCAN_LIMIT: u32 = 10_000;
 
@@ -35,18 +37,6 @@ struct CanvasSnapshot {
     revision: String,
     created_at: u64,
     content: String,
-}
-
-#[derive(Debug)]
-struct ChannelMetadata {
-    id: String,
-    name: String,
-    about: Option<String>,
-    is_private: bool,
-    is_public: bool,
-    archived: bool,
-    resource_type: Option<String>,
-    channel_type: String,
 }
 
 /// Dispatch one `buzz business` command, writing JSON to stdout.
@@ -438,7 +428,7 @@ async fn channel_catalog(
         .await?;
     let mut metadata = Vec::new();
     for event in &metadata_events {
-        if let Some(channel) = parse_channel_metadata(event)? {
+        if let Some(channel) = parse_channel_metadata(event).map_err(map_context_error)? {
             metadata.push(channel);
         }
     }
@@ -507,121 +497,18 @@ fn validate_business_channel(
     channel: &ChannelMetadata,
     member_ids: &HashSet<String>,
 ) -> Result<BusinessChannel, CliError> {
-    let is_business = match channel.resource_type.as_deref() {
-        Some(BUSINESS_CONTEXT_RESOURCE_TYPE) => true,
-        None => channel.about.as_deref() == Some(BUSINESS_CHANNEL_MARKER),
-        Some(_) => false,
-    };
-    if !is_business {
-        return Err(CliError::Usage(format!(
-            "channel {} is not marked as an AIOS business workspace; refusing to use its canvas",
-            channel.id
-        )));
-    }
-    if channel.channel_type != "stream" {
-        return Err(CliError::Usage(format!(
-            "Business context {} must be a stream resource",
-            channel.id
-        )));
-    }
-    if channel.is_private == channel.is_public {
-        return Err(CliError::Usage(format!(
-            "marked channel {} does not have an unambiguous private visibility",
-            channel.id
-        )));
-    }
-    if !channel.is_private {
-        return Err(CliError::Usage(format!(
-            "marked channel {} is not private; refusing to use its canvas",
-            channel.id
-        )));
-    }
-    if channel.archived {
-        return Err(CliError::Usage(format!(
-            "marked business workspace {} is archived",
-            channel.id
-        )));
-    }
-    if !member_ids.contains(&channel.id.to_ascii_lowercase()) {
-        return Err(CliError::Auth(format!(
-            "the current signer is not a member of business workspace {}",
-            channel.id
-        )));
-    }
+    validate_context_access(channel, member_ids).map_err(map_context_error)?;
     Ok(BusinessChannel {
         id: channel.id.clone(),
     })
 }
 
-fn parse_channel_metadata(event: &Value) -> Result<Option<ChannelMetadata>, CliError> {
-    let Some(tags) = event.get("tags").and_then(Value::as_array) else {
-        return Ok(None);
-    };
-    let mut id = None;
-    let mut name = None;
-    let mut about = None;
-    let mut is_private = false;
-    let mut is_public = false;
-    let mut archived = false;
-    let mut resource_type = None;
-    let mut channel_type = None;
-    for tag in tags {
-        let Some(parts) = tag.as_array() else {
-            continue;
-        };
-        let Some(key) = parts.first().and_then(Value::as_str) else {
-            continue;
-        };
-        let value = parts.get(1).and_then(Value::as_str);
-        match key {
-            "d" => id = value.map(str::to_string),
-            "name" => name = value.map(str::to_string),
-            "about" => about = value.map(str::to_string),
-            "private" => is_private = true,
-            "public" => is_public = true,
-            "archived" => archived = value != Some("false"),
-            "t" => {
-                if channel_type.is_some() || parts.len() != 2 || value.is_none_or(str::is_empty) {
-                    return Err(CliError::Other(
-                        "channel metadata has invalid type tags".into(),
-                    ));
-                }
-                channel_type = value.map(str::to_string);
-            }
-            "resource" => {
-                if resource_type.is_some() || parts.len() != 2 || value.is_none_or(str::is_empty) {
-                    return Err(CliError::Other(
-                        "channel metadata has invalid resource tags".into(),
-                    ));
-                }
-                resource_type = value.map(str::to_string);
-            }
-            _ => {}
-        }
+fn map_context_error(error: ContextError) -> CliError {
+    match error {
+        ContextError::InvalidMetadata(message) => CliError::Other(message),
+        ContextError::InvalidContext(message) => CliError::Usage(message),
+        ContextError::AccessDenied(message) => CliError::Auth(message),
     }
-    let marked = about.as_deref() == Some(BUSINESS_CHANNEL_MARKER);
-    let id = id.ok_or_else(|| CliError::Other("channel metadata is missing its d tag".into()))?;
-    let id = Uuid::parse_str(&id)
-        .map_err(|_| CliError::Other("channel metadata has an invalid d tag".into()))?
-        .to_string();
-    let name = name
-        .ok_or_else(|| CliError::Other("channel metadata is missing its name tag".into()))?
-        .to_string();
-    if marked && name.trim().is_empty() {
-        return Err(CliError::Other(
-            "marked business channel has an empty name".into(),
-        ));
-    }
-    Ok(Some(ChannelMetadata {
-        id,
-        name,
-        about,
-        is_private,
-        is_public,
-        archived,
-        resource_type,
-        channel_type: channel_type.unwrap_or_else(|| "stream".into()),
-    }))
 }
 
 async fn create_business_channel(

@@ -2449,7 +2449,9 @@ mod tests {
     fn command_inventory_is_stable() {
         let expected_groups: Vec<&str> = vec![
             "agents",
+            "apps",
             "business",
+            "calls",
             "canvas",
             "channels",
             "dms",
@@ -2468,6 +2470,7 @@ mod tests {
             "projects",
             "reactions",
             "repos",
+            "sites",
             "social",
             "upload",
             "users",

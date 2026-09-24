@@ -1,8 +1,11 @@
 //! Shared types and validation for the AIOS business workspace document.
 //!
-//! This crate is deliberately independent of Buzz canvases and user interfaces.
-//! It accepts only the version-one JSON contract shared by the desktop and CLI.
+//! Document validation and retrieval are independent of transport and user
+//! interfaces. The context module shares interpretation of the host's resource
+//! metadata; authenticated adapters remain responsible for obtaining it fresh.
+//! Only the version-one document contract is accepted.
 
+pub mod context;
 pub mod retrieval;
 
 use std::collections::HashSet;
