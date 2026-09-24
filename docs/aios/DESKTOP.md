@@ -1,5 +1,9 @@
 # Local desktop pilot
 
+Development now uses the [localhost app](BROWSER.md). Packaging is deferred
+until the product is ready, per the owner’s 24 September instruction. The
+commands below remain an operational reference, not the current next step.
+
 The pilot uses Buzz's native desktop with a separate app identity, keyring,
 agent workspace and deep-link scheme. It connects to the self-hosted relay at
 `ws://127.0.0.1:3341`. The existing Buzz installation is independent.

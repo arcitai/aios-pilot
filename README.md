@@ -2,7 +2,8 @@
 > with conversational onboarding, company context, connections, modular apps and
 > self-hosted collaboration. Start with the [product contract](AIOS_PILOT.md),
 > [capability map](docs/aios/FEATURES.md) and [verified development status](docs/aios/STATUS.md).
-> Local launch and packaging: [Desktop](docs/aios/DESKTOP.md).
+> Develop and test on [localhost](docs/aios/BROWSER.md).
+> Desktop packaging is deferred until the product is ready; [desktop notes](docs/aios/DESKTOP.md).
 > The upstream Buzz documentation and attribution are retained below; its feature
 > descriptions are not a claim that every path has been verified in this pilot.
 

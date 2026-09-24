@@ -131,6 +131,12 @@ async function bootstrap() {
   initializeConversationDensityPreference();
   initializeFontSizePreference();
   startLocalStorageSweep();
+  if (import.meta.env.MODE === "browser") {
+    const { installLocalBrowserBridge } = await import(
+      "@/shared/browser/localBrowser"
+    );
+    await installLocalBrowserBridge();
+  }
   await installE2eBridgeIfConfigured();
   await migrateLegacyCommunityStorageBeforeRender();
   renderApp();

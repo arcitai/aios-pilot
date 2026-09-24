@@ -93,6 +93,17 @@ may overwrite another task's files without coordinating with the lead.
 3. Self-hosting: reproducible private relay setup, operational CLI/scripts,
    backup/restore and a verified development path. No business or app UI edits.
 
+## Browser development surface
+
+On 24 September Gustav requested the same application at localhost so it can
+be developed, debugged and tested in Codex's browser. This must use the actual
+native backend and saved relay data, not the E2E mock bridge. Keep the Tauri
+backend as a local development companion initially, with the UI served by Vite.
+A debug-only authenticated loopback transport can reuse the registered native
+commands and event delivery; production desktop builds must not expose it.
+The localhost launcher owns process cleanup and uses the existing isolated
+pilot identity. Desktop packaging is deferred until the product is ready.
+
 ## Acceptance and delivery
 
 Start from the real Buzz interface. A new user can find the main agent, describe

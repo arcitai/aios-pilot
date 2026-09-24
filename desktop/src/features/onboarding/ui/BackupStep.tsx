@@ -25,7 +25,7 @@ import {
   type OnboardingTransitionDirection,
   OnboardingSlideTransition,
 } from "./OnboardingSlideTransition";
-import { ONBOARDING_KEY_TEXT_CLASS } from "./NsecMaskedDisplay";
+import { NsecMaskedDisplay } from "./NsecMaskedDisplay";
 import { ONBOARDING_CARD_NEUTRAL_SURFACE_CLASS } from "./onboardingCardStyles";
 
 /**
@@ -63,11 +63,8 @@ type BackupStepProps = {
 };
 
 /**
- * Onboarding identity-key step — shows the freshly created key, then opens a
- * dark backup-options state. The new key is visible by default; hovering or
- * focusing the key well blurs it and replaces the key with an explicit copy
- * action. Password backup opens the separate security flow.
- * Neither method blocks Next.
+ * Onboarding recovery step. The private key stays masked until explicitly
+ * revealed; backup remains available without blocking continuation.
  */
 export function BackupStep({
   direction,
@@ -370,44 +367,25 @@ export function BackupStep({
           )}
         >
           <div className="w-full">
-            <div
-              className="group/key relative flex h-[7.625rem] w-full items-center justify-center overflow-hidden rounded-xl border border-[#e5e5e5] bg-[#f5f5f5] px-4 py-6"
-              data-testid="backup-key-well"
-            >
-              <p
-                className={cn(
-                  ONBOARDING_KEY_TEXT_CLASS,
-                  "buzz-onboarding-key-text-v3 select-text break-all transition-[filter] duration-150 ease-out group-hover/key:select-none group-hover/key:blur-[4px] group-focus-within/key:select-none group-focus-within/key:blur-[4px] motion-reduce:transition-none",
-                )}
-                data-testid="backup-key-value"
-              >
-                {nsec}
-              </p>
-              <div
-                aria-hidden
-                className="pointer-events-none absolute inset-px rounded-[11px] bg-white/60 opacity-0 transition-opacity duration-150 ease-out group-hover/key:opacity-100 group-focus-within/key:opacity-100 motion-reduce:transition-none"
-              />
-              <Button
-                className="pointer-events-none absolute left-1/2 top-1/2 z-10 h-8 -translate-x-1/2 -translate-y-1/2 gap-2 rounded-full bg-primary px-4 text-sm text-primary-foreground opacity-0 shadow-none transition-opacity duration-150 ease-out group-hover/key:pointer-events-auto group-hover/key:opacity-100 group-focus-within/key:pointer-events-auto group-focus-within/key:opacity-100 hover:bg-primary/90 hover:text-primary-foreground motion-reduce:transition-none"
-                data-testid="backup-copy-key"
-                disabled={copyState === "copying"}
-                onClick={() => void copyKeyToClipboard()}
-                type="button"
-                variant="ghost"
-              >
-                {copyState === "copying" ? (
-                  <Spinner className="h-4 w-4 border-2" />
-                ) : copyState === "copied" ? (
-                  <Check aria-hidden className="h-4 w-4" />
-                ) : (
-                  <Copy aria-hidden className="h-4 w-4" />
-                )}
-                {copyState === "copying"
-                  ? "Copying…"
-                  : copyState === "copied"
-                    ? "Copied to clipboard"
-                    : "Copy to clipboard"}
-              </Button>
+            <div data-testid="backup-key-well">
+              {nsec ? (
+                <NsecMaskedDisplay nsec={nsec} />
+              ) : (
+                <div className="py-4 text-sm text-muted-foreground">
+                  {copyError ? (
+                    <Button
+                      variant="outline"
+                      disabled={copyState === "copying"}
+                      data-testid="backup-copy-key"
+                      onClick={() => void copyKeyToClipboard()}
+                    >
+                      Retry and copy recovery key
+                    </Button>
+                  ) : (
+                    <p>Loading your recovery key…</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <Button

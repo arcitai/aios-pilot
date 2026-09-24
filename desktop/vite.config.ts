@@ -1,6 +1,7 @@
 import path from "node:path";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import { localBrowserProxy } from "./scripts/local-browser-proxy.mjs";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -13,6 +14,7 @@ export default defineConfig(async ({ mode }) => {
 
   return {
     plugins: [
+      ...(mode === "browser" ? [localBrowserProxy()] : []),
       tanstackRouter({
         target: "react",
         routesDirectory: "./src/app/routes",
@@ -60,7 +62,11 @@ export default defineConfig(async ({ mode }) => {
     server: {
       port: parseInt(process.env.VITE_PORT || "1420", 10),
       strictPort: true,
-      host: host || false,
+      host: mode === "browser" ? "127.0.0.1" : host || false,
+      headers:
+        mode === "browser"
+          ? { "X-Frame-Options": "DENY", "Referrer-Policy": "no-referrer" }
+          : undefined,
       hmr: host
         ? {
             protocol: "ws",

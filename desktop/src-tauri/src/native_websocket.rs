@@ -120,7 +120,8 @@ impl WebSocketManager {
         }
     }
 
-    async fn disconnect(&self, id: Id) {
+    /// Close one caller-owned connection and await bounded task cleanup.
+    pub(crate) async fn disconnect(&self, id: Id) {
         if let Some(handle) = self.remove(id).await {
             Self::disconnect_handle(handle).await;
         }

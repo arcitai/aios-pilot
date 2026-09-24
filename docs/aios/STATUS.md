@@ -48,8 +48,10 @@ the same worker for revisions. They return isolated commits; lead integrates.
 2. Finish Drive credential-generation fencing, then rerun its native checks.
 3. Verify Publisher hosting/restore against real Docker volumes and finish
    durable workflow approvals, isolated browser use and private typed tables.
-4. Continue multi-computer operation and data-backed app contracts, then refresh
-   the packaged desktop and installation/recovery evidence.
+4. Make the actual app available at localhost for development and browser testing.
+   Continue multi-computer operation and data-backed app contracts. Review the
+   whole UI for minimal Buzz-style presentation. Desktop packaging is deferred
+   until the product is ready, per the owner's 24 September instruction.
 
 ## Proof
 
@@ -478,3 +480,57 @@ inspected. This does not prove live relay persistence or model execution.
 - The owner reaffirmed minimal UI and asked for a final design pass. Design
   and Review design skills are selected; final product-wide review remains
   open. No public release or updated desktop package is claimed.
+
+
+## Lead checkpoint — 09:00 local: real browser development
+
+- Added the real localhost path at `http://127.0.0.1:1437/#/business`, using Vite
+  plus a hidden native companion. See BROWSER.md. No new desktop package.
+- Browser development now owns a separate `aios-browser-local` profile. The
+  earlier attempt to reuse the packaged pilot hit OS keyring access. A real
+  startup race was found and fixed: the transport now starts only after native
+  setup/identity resolution, never against the temporary AppState identity.
+  The pre-fix local fixture is not persistence evidence.
+- Actual Codex browser interaction in the new profile created Browser Studio,
+  saved company summary/priorities and read both back after reload. Slides title
+  and headline were saved and read back after reload. A new Calendar event
+  reached Saved privately. No mock bridge or private provider account was used.
+- Real Apps editing exposed metadata-only create-channel replies and the native
+  empty/no-event Canvas representation. The Apps adapter now reads scoped
+  membership before accepting a created channel and treats only empty content
+  with no event as absent. Existing malformed events still fail. Dedicated
+  native-shape regression tests cover these contracts.
+- The recovery key is now masked using the existing shared component; explicit
+  reveal/copy and optional backup remain available. The full onboarding still
+  needs the planned simplification. The main-agent panel incorrectly labels a
+  setup-listener Fizz as running/ready, and app navigation can reset during
+  initial business load; both remain product fixes to address.
+- Native transport unit tests, final socket cleanup smoke and affected browser
+  regressions are being finalized. Do not infer completion from first render.
+- Workflow approvals worker committed dbd08cb; isolated browser-MCP worker
+  committed ed20c998. Both await lead integration/review. Guided Apps remains
+  active. At most two lightweight workers plus one heavy check are scheduled.
+
+
+### 09:07 verification checkpoint
+
+Six native browser-transport tests, three Apps native-response contract tests,
+TypeScript and the E2E frontend build pass. Seventeen affected browser tests
+pass (five Apps flows and twelve recovery/onboarding cases). The updated
+recovery screen was also inspected in the real localhost UI and its private
+key stayed masked. Logs: `/tmp/aios-browser-native-tests-final.log`,
+`/tmp/aios-apps-native-contract-tests.log`, `/tmp/aios-browser-typecheck-final.log`,
+`/tmp/aios-browser-regression-e2e.log`.
+
+The final native development build compiles. Its restart is waiting in macOS
+keyring access while the Mac is locked (confirmed by native process sample and
+computer-use inventory). The transport correctly remains unavailable until
+setup finishes. The launcher was stopped, preserving all profile/relay data;
+there is no currently ready localhost server. Final native event/socket smoke
+and full-process restart readback remain unverified until keyring access is
+available. Browser-only reload persistence above was observed before restart.
+No OS security prompt was accepted and no existing credentials were changed.
+
+Guided Apps fbcf80f is also ready for lead integration. Broader platform work,
+minimal onboarding, Tables and full UI review continue; this is a checkpoint,
+not completion of the AIOS product.

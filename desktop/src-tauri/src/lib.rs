@@ -2,6 +2,8 @@
 mod app_menu;
 mod app_state;
 mod archive;
+#[cfg(debug_assertions)]
+mod browser_dev;
 mod build_identity;
 mod builderlab;
 mod channel_head_cache;
@@ -120,8 +122,10 @@ pub fn run() {
             eprintln!("buzz-mesh: failed to build big-stack tokio runtime, using default: {error}");
         }
     }
-    let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+    let builder = tauri::Builder::default();
+    #[cfg(debug_assertions)]
+    let builder = builder.channel_interceptor(browser_dev::intercept_channel);
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             // Focus the existing window when a duplicate instance launches.
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_focus();
@@ -146,6 +150,10 @@ pub fn run() {
         .plugin(
             tauri::plugin::Builder::<_, ()>::new("initial-window-reveal")
                 .on_webview_ready(|webview| {
+                    #[cfg(debug_assertions)]
+                    if browser_dev::enabled() {
+                        return;
+                    }
                     if webview.label() != "main" {
                         return;
                     }
@@ -518,9 +526,18 @@ pub fn run() {
                     }
                 });
             }
+            // Never expose IPC before persisted identity resolution and setup.
+            // Otherwise a blocked keyring could leave callers using AppState's
+            // temporary startup identity.
+            #[cfg(debug_assertions)]
+            browser_dev::start(app.handle()).map_err(std::io::Error::other)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(debug_assertions)]
+            browser_dev::browser_dev_channel_end,
+            #[cfg(debug_assertions)]
+            browser_dev::browser_dev_host_ready,
             terminal_runtime::terminal_attach,
             terminal_runtime::terminal_detach,
             terminal_runtime::terminal_close,

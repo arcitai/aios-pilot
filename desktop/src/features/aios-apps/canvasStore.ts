@@ -210,7 +210,10 @@ export class CanvasAppDocumentStore implements AppDocumentStore {
     const channel = this.findAppChannel(channels, scope, appId);
     if (!channel) return { channel: null, members: [] };
 
-    const members = await getChannelMembers(channel.id);
+    const members = await getChannelMembers(channel.id, {
+      expectedRelayUrl: scope.expectedRelayUrl,
+      expectedSignerPubkey: scope.expectedSignerPubkey,
+    });
     await this.assertActiveScope(scope);
     this.assertPrivateMembership(channel, scope);
     if (
@@ -359,8 +362,24 @@ export class CanvasAppDocumentStore implements AppDocumentStore {
         "The relay returned an app channel with the wrong marker.",
       );
     }
-    this.assertPrivateMembership(created, scope);
-    return created;
+    // Creation returns metadata; membership lives in a separate signed event.
+    // Read it in the captured scope before accepting the new document channel.
+    const members = await getChannelMembers(created.id, {
+      expectedRelayUrl: scope.expectedRelayUrl,
+      expectedSignerPubkey: scope.expectedSignerPubkey,
+    });
+    await this.assertActiveScope(scope);
+    const verified = {
+      ...created,
+      memberPubkeys: members.map((member) => member.pubkey),
+      isMember: members.some(
+        (member) =>
+          member.pubkey.toLowerCase() ===
+          scope.expectedSignerPubkey.trim().toLowerCase(),
+      ),
+    };
+    this.assertPrivateMembership(verified, scope);
+    return verified;
   }
 
   private assertPrivateMembership(
@@ -390,10 +409,15 @@ export class CanvasAppDocumentStore implements AppDocumentStore {
       channelId: string,
       scope: CanvasScope,
     ) => Promise<CanvasResponse>;
-    return scopedGetCanvas(channelId, {
+    const canvas = await scopedGetCanvas(channelId, {
       expectedRelayUrl: scope.expectedRelayUrl,
       expectedSignerPubkey: scope.expectedSignerPubkey,
     });
+    // The native API represents an absent Canvas as empty text and no event.
+    // Empty content on an existing event is malformed and must still fail.
+    return canvas.eventId === null && canvas.content === ""
+      ? { ...canvas, content: null }
+      : canvas;
   }
 
   private async writeCanvas(

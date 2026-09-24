@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Real localhost UI backed by the isolated native pilot. No desktop packaging.
+set -euo pipefail
+AIOS_BROWSER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$AIOS_BROWSER_ROOT"
+if [[ "${1:-}" == --help || "${1:-}" == -h ]]; then
+  echo "Usage: scripts/aios-browser"
+  echo "Open the real AIOS app at http://127.0.0.1:1437/#/business."
+  echo "Uses a separate browser-development identity and the relay on port 3341. No desktop package."
+  exit 0
+fi
+if [[ $# -ne 0 ]]; then echo "Usage: scripts/aios-browser" >&2; exit 2; fi
+source "$AIOS_BROWSER_ROOT/bin/activate-hermit"
+exec node "$AIOS_BROWSER_ROOT/desktop/scripts/browser-dev.mjs"

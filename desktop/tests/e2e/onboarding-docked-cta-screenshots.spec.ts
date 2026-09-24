@@ -305,51 +305,10 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
     "forward",
   );
   await expectSharedCardGeometry(page);
-  const keyGeometry = await page.evaluate(() => {
-    const keyWell = document
-      .querySelector('[data-testid="backup-key-well"]')
-      ?.getBoundingClientRect();
-    const keyWellStyles = window.getComputedStyle(
-      document.querySelector('[data-testid="backup-key-well"]') ??
-        document.documentElement,
-    );
-    const backupRow = document
-      .querySelector('[data-testid="backup-option-password"]')
-      ?.getBoundingClientRect();
-    const copyButton = document
-      .querySelector('[data-testid="backup-copy-key"]')
-      ?.getBoundingClientRect();
-    const keyValue = document.querySelector('[data-testid="backup-key-value"]');
-    const keyRows = keyValue
-      ? (() => {
-          const range = document.createRange();
-          range.selectNodeContents(keyValue);
-          return new Set(
-            Array.from(range.getClientRects()).map((rect) =>
-              Math.round(rect.top),
-            ),
-          ).size;
-        })()
-      : 0;
-    return {
-      backupRowHeight: backupRow?.height ?? 0,
-      backupRowWidth: backupRow?.width ?? 0,
-      copyButtonHeight: copyButton?.height ?? 0,
-      keyRows,
-      keyWellPaddingLeft: keyWellStyles.paddingLeft,
-      keyWellPaddingRight: keyWellStyles.paddingRight,
-      keyWellHeight: keyWell?.height ?? 0,
-      keyWellWidth: keyWell?.width ?? 0,
-    };
-  });
-  expect(keyGeometry.keyWellWidth).toBeCloseTo(512, 0);
-  expect(keyGeometry.keyWellHeight).toBeCloseTo(122, 0);
-  expect(keyGeometry.keyRows).toBe(2);
-  expect(keyGeometry.keyWellPaddingLeft).toBe("16px");
-  expect(keyGeometry.keyWellPaddingRight).toBe("16px");
-  expect(keyGeometry.copyButtonHeight).toBeCloseTo(32, 0);
-  expect(keyGeometry.backupRowWidth).toBeCloseTo(512, 0);
-  expect(keyGeometry.backupRowHeight).toBeCloseTo(48, 0);
+  await expect(page.getByTestId("nsec-value")).not.toContainText("nsec1mock");
+  await expect(
+    page.getByRole("button", { name: "Reveal private key", exact: true }),
+  ).toBeVisible();
   await waitForAnimations(page);
   await page.screenshot({ path: `${SHOT_DIR}/02-backup.png` });
 
@@ -362,22 +321,11 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
   await waitForAnimations(page);
   await page.screenshot({ path: `${SHOT_DIR}/02a-backup-option-hover.png` });
 
-  // The generated key is readable at rest. Hovering the well blurs it and
-  // replaces the key with the copy action; the reveal eye is intentionally gone.
-  const keyValue = page.getByTestId("backup-key-value");
-  const keyWell = page.getByTestId("backup-key-well");
-  const copyButton = page.getByTestId("backup-copy-key");
-  await expect(keyValue).toBeVisible();
-  await expect(keyValue).toContainText("nsec1mock");
-  await expect(page.getByTestId("backup-reveal-key")).toHaveCount(0);
-  await expect(copyButton).toHaveCSS("opacity", "0");
-  await keyWell.hover();
-  await expect(keyValue).toHaveCSS("filter", /blur\(4px\)/);
-  await expect(copyButton).toHaveCSS("opacity", "1");
-  await expect(copyButton).toBeEnabled();
-  await copyButton.click();
-  await expect(copyButton).toContainText("Copied to clipboard");
-  await expect(keyValue).toContainText("nsec1mock");
+  // Recovery remains available without exposing the key in a screenshot.
+  await page
+    .getByRole("button", { name: "Copy private key", exact: true })
+    .click();
+  await expect(page.getByTestId("nsec-value")).not.toContainText("nsec1mock");
   await waitForAnimations(page);
   await page.screenshot({ path: `${SHOT_DIR}/02b-backup-copy.png` });
 

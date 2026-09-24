@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:browser": "node ./scripts/browser-dev.mjs",
     "build": "tsc && node ./scripts/build-protected-feature-artifacts.mjs",
     "build:e2e": "tsc && vite build --mode e2e",
     "typecheck": "tsc --noEmit",
