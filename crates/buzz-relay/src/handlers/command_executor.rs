@@ -20,14 +20,14 @@ use uuid::Uuid;
 use buzz_core::kind::*;
 use buzz_core::tenant::{CommunityId, TenantContext};
 use buzz_datastore_tracing::datastore_span;
-use buzz_db::workflow::{ApprovalStatus, RunStatus};
 use buzz_db::DbError;
+use buzz_db::workflow::{ApprovalStatus, RunStatus};
 use buzz_workflow::executor::TriggerContext;
 
 use crate::state::AppState;
 use crate::webhook_secret;
 
-use super::ingest::{extract_channel_id, IngestAuth, IngestError, IngestResult};
+use super::ingest::{IngestAuth, IngestError, IngestResult, extract_channel_id};
 use super::side_effects::{
     emit_group_discovery_events, emit_membership_notification, emit_system_message,
     publish_dm_visibility_snapshot,
@@ -985,36 +985,64 @@ async fn handle_workflow_trigger(
     })
 }
 
-/// Enforce the approver_spec field against the requesting pubkey.
-///
-/// Accepted specs:
-/// - `""` or `"any"` — any authenticated user may approve.
-/// - 64-char lowercase hex string — only that exact pubkey may approve.
-///
-/// All other formats are rejected (fail-closed).
-fn check_approver_spec(approver_spec: &str, requester_hex: &str) -> Result<(), IngestError> {
+/// Enforce the saved approval policy after the actor's channel membership was
+/// checked and locked in the command transaction.
+fn check_approver_spec(
+    approver_spec: &str,
+    approver_pubkeys: &[Vec<u8>],
+    requester_pubkey: &[u8],
+    requester_role: &str,
+) -> Result<(), IngestError> {
     let spec = approver_spec.trim();
-
-    // Empty or "any" — anyone may approve
-    if spec.is_empty() || spec == "any" {
+    if spec.eq_ignore_ascii_case("any") {
         return Ok(());
     }
-
-    // Exact pubkey match (64-char hex, case-insensitive)
-    if spec.len() == 64 && spec.chars().all(|c| c.is_ascii_hexdigit()) {
-        if requester_hex.to_lowercase() == spec.to_lowercase() {
+    let role_spec = spec.strip_prefix("role:").unwrap_or(spec);
+    if ["owner", "admin", "member", "guest", "bot"]
+        .iter()
+        .any(|role| role.eq_ignore_ascii_case(role_spec))
+    {
+        if requester_role.eq_ignore_ascii_case(role_spec) {
             return Ok(());
         }
         return Err(IngestError::Rejected(
-            "forbidden: not the designated approver for this request".into(),
+            "forbidden: actor does not hold the required channel role".into(),
         ));
     }
+    if approver_pubkeys
+        .iter()
+        .any(|pubkey| pubkey.as_slice() == requester_pubkey)
+    {
+        return Ok(());
+    }
+    Err(IngestError::Rejected(
+        "forbidden: not the designated approver for this request".into(),
+    ))
+}
 
-    // Role-based or unrecognised — fail closed
-    Err(IngestError::Rejected(format!(
-        "forbidden: approver spec '{}' is not yet supported",
-        spec
-    )))
+async fn approval_actor_role(
+    tx: &mut sqlx::Transaction<'static, sqlx::Postgres>,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    pubkey: &[u8],
+) -> Result<Option<String>, IngestError> {
+    sqlx::query_scalar::<_, String>(
+        r#"
+        SELECT cm.role::text
+        FROM channel_members cm
+        JOIN channels c
+          ON c.community_id = cm.community_id AND c.id = cm.channel_id
+        WHERE cm.community_id = $1 AND cm.channel_id = $2 AND cm.pubkey = $3
+          AND cm.removed_at IS NULL AND c.deleted_at IS NULL
+        FOR SHARE OF cm
+        "#,
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .bind(pubkey)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|error| IngestError::Internal(format!("error: approval member lookup: {error}")))
 }
 
 async fn handle_approval_grant(
@@ -1024,7 +1052,6 @@ async fn handle_approval_grant(
     auth: &IngestAuth,
 ) -> Result<IngestResult, IngestError> {
     let self_bytes = auth.pubkey().to_bytes().to_vec();
-    let self_hex = hex::encode(&self_bytes);
 
     // 1. Extract approval reference from `e` tag (references the approval-requested event)
     //    or `d` tag (contains the token hash hex)
@@ -1037,14 +1064,24 @@ async fn handle_approval_grant(
     let token_hash = hex::decode(&token_hash_hex)
         .map_err(|_| IngestError::Rejected("invalid: bad approval token hash hex".into()))?;
 
-    // 2. Look up the approval record
+    // Persist first so an exact retry remains idempotent even after its
+    // successful decision changes the approval status.
+    let mut tx = match persist_command_event(&state.db, tenant, event, None).await? {
+        PersistResult::Duplicate => {
+            return Ok(IngestResult {
+                event_id: event.id.to_hex(),
+                accepted: true,
+                message: "duplicate: already processed".into(),
+            });
+        }
+        PersistResult::Inserted(tx) => tx,
+    };
+
     let approval = state
         .db
         .get_approval_by_stored_hash(tenant.community(), &token_hash)
         .await
         .map_err(|_| IngestError::Rejected("invalid: approval not found".into()))?;
-
-    // 3. Validate approval is pending and not expired
     if approval.status != ApprovalStatus::Pending {
         return Err(IngestError::Rejected(format!(
             "invalid: approval already {}",
@@ -1057,20 +1094,20 @@ async fn handle_approval_grant(
         ));
     }
 
-    // 4. Validate caller is authorized approver
-    check_approver_spec(&approval.approver_spec, &self_hex)?;
-
-    // Persist the command event — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
-        PersistResult::Duplicate => {
-            return Ok(IngestResult {
-                event_id: event.id.to_hex(),
-                accepted: true,
-                message: "duplicate: already processed".into(),
-            });
-        }
-        PersistResult::Inserted(tx) => tx,
-    };
+    let channel_id = approval.channel_id.ok_or_else(|| {
+        IngestError::Rejected("forbidden: approval has no channel authorization scope".into())
+    })?;
+    let role = approval_actor_role(&mut tx, tenant.community(), channel_id, &self_bytes)
+        .await?
+        .ok_or_else(|| {
+            IngestError::Rejected("forbidden: actor is not an active member of this channel".into())
+        })?;
+    check_approver_spec(
+        &approval.approver_spec,
+        &approval.approver_pubkeys,
+        &self_bytes,
+        &role,
+    )?;
 
     // 5. Execute: update approval status to granted
     let note = if event.content.is_empty() {
@@ -1079,17 +1116,16 @@ async fn handle_approval_grant(
         Some(event.content.as_str())
     };
 
-    let updated = state
-        .db
-        .update_approval_by_stored_hash(
-            tenant.community(),
-            &token_hash,
-            ApprovalStatus::Granted,
-            Some(&self_bytes),
-            note,
-        )
-        .await
-        .map_err(|e| IngestError::Internal(format!("error: db update_approval: {e}")))?;
+    let updated = buzz_db::workflow::decide_approval_in_transaction(
+        &mut tx,
+        tenant.community(),
+        &token_hash,
+        ApprovalStatus::Granted,
+        &self_bytes,
+        note,
+    )
+    .await
+    .map_err(|e| IngestError::Internal(format!("error: db decide approval: {e}")))?;
 
     if !updated {
         return Err(IngestError::Rejected(
@@ -1097,7 +1133,6 @@ async fn handle_approval_grant(
         ));
     }
 
-    // Finalize the idempotency record after the separate approval update succeeds.
     tx.commit()
         .await
         .map_err(|e| IngestError::Internal(format!("error: commit transaction: {e}")))?;
@@ -1105,13 +1140,12 @@ async fn handle_approval_grant(
     // 6. Resume workflow execution (post-commit, async)
     let community_id = tenant.community();
     let run_id = approval.run_id;
-    let workflow_id = approval.workflow_id;
-    let resume_index = approval.step_index as usize + 1;
+    let token_hash = approval.token;
     let engine = Arc::clone(&state.workflow_engine);
-    let db = state.db.clone();
 
     tokio::spawn(async move {
-        resume_workflow_after_approval(engine, db, community_id, run_id, workflow_id, resume_index)
+        engine
+            .resume_granted_approval(community_id, token_hash)
             .await;
     });
 
@@ -1136,7 +1170,6 @@ async fn handle_approval_deny(
     auth: &IngestAuth,
 ) -> Result<IngestResult, IngestError> {
     let self_bytes = auth.pubkey().to_bytes().to_vec();
-    let self_hex = hex::encode(&self_bytes);
 
     // 1. Extract approval reference
     let token_hash_hex = extract_d_tag(event)
@@ -1148,14 +1181,24 @@ async fn handle_approval_deny(
     let token_hash = hex::decode(&token_hash_hex)
         .map_err(|_| IngestError::Rejected("invalid: bad approval token hash hex".into()))?;
 
-    // 2. Look up the approval record
+    // Persist first so an exact retry remains idempotent even after its
+    // successful decision changes the approval status.
+    let mut tx = match persist_command_event(&state.db, tenant, event, None).await? {
+        PersistResult::Duplicate => {
+            return Ok(IngestResult {
+                event_id: event.id.to_hex(),
+                accepted: true,
+                message: "duplicate: already processed".into(),
+            });
+        }
+        PersistResult::Inserted(tx) => tx,
+    };
+
     let approval = state
         .db
         .get_approval_by_stored_hash(tenant.community(), &token_hash)
         .await
         .map_err(|_| IngestError::Rejected("invalid: approval not found".into()))?;
-
-    // 3. Validate approval is pending and not expired
     if approval.status != ApprovalStatus::Pending {
         return Err(IngestError::Rejected(format!(
             "invalid: approval already {}",
@@ -1168,20 +1211,20 @@ async fn handle_approval_deny(
         ));
     }
 
-    // 4. Validate caller is authorized approver
-    check_approver_spec(&approval.approver_spec, &self_hex)?;
-
-    // Persist the command event — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
-        PersistResult::Duplicate => {
-            return Ok(IngestResult {
-                event_id: event.id.to_hex(),
-                accepted: true,
-                message: "duplicate: already processed".into(),
-            });
-        }
-        PersistResult::Inserted(tx) => tx,
-    };
+    let channel_id = approval.channel_id.ok_or_else(|| {
+        IngestError::Rejected("forbidden: approval has no channel authorization scope".into())
+    })?;
+    let role = approval_actor_role(&mut tx, tenant.community(), channel_id, &self_bytes)
+        .await?
+        .ok_or_else(|| {
+            IngestError::Rejected("forbidden: actor is not an active member of this channel".into())
+        })?;
+    check_approver_spec(
+        &approval.approver_spec,
+        &approval.approver_pubkeys,
+        &self_bytes,
+        &role,
+    )?;
 
     // 5. Execute: update approval status to denied
     let note = if event.content.is_empty() {
@@ -1190,17 +1233,16 @@ async fn handle_approval_deny(
         Some(event.content.as_str())
     };
 
-    let updated = state
-        .db
-        .update_approval_by_stored_hash(
-            tenant.community(),
-            &token_hash,
-            ApprovalStatus::Denied,
-            Some(&self_bytes),
-            note,
-        )
-        .await
-        .map_err(|e| IngestError::Internal(format!("error: db update_approval: {e}")))?;
+    let updated = buzz_db::workflow::decide_approval_in_transaction(
+        &mut tx,
+        tenant.community(),
+        &token_hash,
+        ApprovalStatus::Denied,
+        &self_bytes,
+        note,
+    )
+    .await
+    .map_err(|e| IngestError::Internal(format!("error: db decide approval: {e}")))?;
 
     if !updated {
         return Err(IngestError::Rejected(
@@ -1208,53 +1250,11 @@ async fn handle_approval_deny(
         ));
     }
 
-    // Finalize the idempotency record after the separate approval denial succeeds.
     tx.commit()
         .await
         .map_err(|e| IngestError::Internal(format!("error: commit transaction: {e}")))?;
 
-    // 6. Cancel the workflow run (post-commit, async)
-    let community_id = tenant.community();
     let run_id = approval.run_id;
-    let pubkey_hex = self_hex.clone();
-    let db = state.db.clone();
-
-    tokio::spawn(async move {
-        let run = match db.get_workflow_run(community_id, run_id).await {
-            Ok(r) => r,
-            Err(e) => {
-                tracing::error!("approval_deny: failed to fetch run {run_id}: {e}");
-                return;
-            }
-        };
-
-        if run.status != RunStatus::WaitingApproval {
-            tracing::warn!(
-                "approval_deny: run {run_id} has status '{}', expected 'waiting_approval'",
-                run.status
-            );
-            return;
-        }
-
-        let cancel_msg = format!("workflow cancelled: approval denied by {pubkey_hex}");
-        if let Err(e) = db
-            .update_workflow_run(
-                community_id,
-                run_id,
-                RunStatus::Cancelled,
-                run.current_step,
-                &run.execution_trace,
-                Some(buzz_db::workflow::WorkflowRunFailure {
-                    code: "approval_denied",
-                    message: &cancel_msg,
-                }),
-            )
-            .await
-        {
-            tracing::error!("approval_deny: failed to cancel run {run_id}: {e}");
-        }
-    });
-
     // 7. Return response
     Ok(IngestResult {
         event_id: event.id.to_hex(),
@@ -1269,101 +1269,28 @@ async fn handle_approval_deny(
     })
 }
 
-/// Resume a suspended workflow run after an approval gate has been granted.
-async fn resume_workflow_after_approval(
-    engine: Arc<buzz_workflow::WorkflowEngine>,
-    db: buzz_db::Db,
-    community_id: CommunityId,
-    run_id: Uuid,
-    workflow_id: Uuid,
-    resume_index: usize,
-) {
-    let run = match db.get_workflow_run(community_id, run_id).await {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!("resume_workflow: failed to fetch run {run_id}: {e}");
-            return;
-        }
-    };
+#[cfg(test)]
+mod approval_policy_tests {
+    use super::*;
 
-    // Guard: only resume runs that are actually waiting for approval
-    if run.status != RunStatus::WaitingApproval {
-        tracing::warn!(
-            "resume_workflow: run {run_id} has status '{}', expected 'waiting_approval'",
-            run.status
+    #[test]
+    fn approval_policy_requires_bound_member_key_or_exact_role() {
+        let designated = vec![0x11; 32];
+        let other = vec![0x22; 32];
+        assert!(
+            check_approver_spec(
+                "@Release Manager",
+                &[designated.clone()],
+                &designated,
+                "member"
+            )
+            .is_ok()
         );
-        return;
+        assert!(check_approver_spec("@Release Manager", &[designated], &other, "member").is_err());
+        assert!(check_approver_spec("role:admin", &[], &other, "admin").is_ok());
+        assert!(check_approver_spec("admin", &[], &other, "owner").is_err());
+        assert!(check_approver_spec("any", &[], &other, "guest").is_ok());
     }
-
-    let workflow = match db.get_workflow(community_id, workflow_id).await {
-        Ok(w) => w,
-        Err(e) => {
-            tracing::error!("resume_workflow: failed to fetch workflow {workflow_id}: {e}");
-            return;
-        }
-    };
-
-    let def: buzz_workflow::WorkflowDef = match serde_json::from_value(workflow.definition.clone())
-    {
-        Ok(d) => d,
-        Err(e) => {
-            tracing::error!("resume_workflow: failed to parse workflow definition: {e}");
-            if let Err(db_err) = db
-                .update_workflow_run(
-                    community_id,
-                    run_id,
-                    RunStatus::Failed,
-                    run.current_step,
-                    &run.execution_trace,
-                    Some(buzz_db::workflow::WorkflowRunFailure {
-                        code: "invalid_definition",
-                        message: &format!("definition parse error: {e}"),
-                    }),
-                )
-                .await
-            {
-                tracing::error!("resume_workflow: failed to mark run as failed: {db_err}");
-            }
-            return;
-        }
-    };
-
-    // Reconstruct step_outputs from execution trace for template resolution
-    let mut initial_outputs: std::collections::HashMap<String, serde_json::Value> =
-        std::collections::HashMap::new();
-    if let Some(trace_arr) = run.execution_trace.as_array() {
-        for entry in trace_arr {
-            if let (Some(step_id), Some(output)) = (
-                entry.get("step_id").and_then(|v| v.as_str()),
-                entry.get("output"),
-            ) {
-                initial_outputs.insert(step_id.to_string(), output.clone());
-            }
-        }
-    }
-
-    // Restore trigger context for {{trigger.*}} templates
-    let trigger_ctx: TriggerContext = run
-        .trigger_context
-        .as_ref()
-        .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .unwrap_or_default();
-
-    // Execute remaining steps
-    let existing_trace = run.execution_trace.as_array().cloned();
-    let result = buzz_workflow::executor::execute_from_step(
-        &engine,
-        community_id,
-        run_id,
-        &def,
-        &trigger_ctx,
-        resume_index,
-        Some(initial_outputs),
-    )
-    .await;
-    engine
-        .finalize_run(community_id, run_id, result, existing_trace)
-        .await;
 }
 
 #[cfg(test)]

@@ -44,10 +44,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-use buzz_core::kind::{event_kind_u32, is_workflow_execution_kind, KIND_REACTION};
+use buzz_core::kind::{KIND_REACTION, event_kind_u32, is_workflow_execution_kind};
 use buzz_core::tenant::CommunityId;
-use buzz_db::workflow::RunStatus;
 use buzz_db::Db;
+use buzz_db::workflow::RunStatus;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use tokio::sync::Semaphore;
@@ -226,33 +226,35 @@ impl WorkflowEngine {
                 let trace_json = serde_json::Value::Array(full_trace);
                 let step_count = result.step_index as i32;
 
-                if result.approval_token.is_some() {
-                    // Approval gates are not yet implemented (WF-08).
-                    // Fail explicitly rather than creating unreachable WaitingApproval rows.
-                    tracing::warn!(
-                        run_id = %run_id,
-                        step_index = result.step_index,
-                        "Workflow hit approval gate — not yet implemented, marking as failed"
-                    );
-                    if let Err(e) = self
-                        .db
-                        .update_workflow_run(
+                if let Some(approval) = result.approval {
+                    if let Err((code, message)) = self
+                        .persist_approval_request(
                             community_id,
                             run_id,
-                            RunStatus::Failed,
                             step_count,
+                            approval,
                             &trace_json,
-                            Some(buzz_db::workflow::WorkflowRunFailure {
-                                code: "approval_not_supported",
-                                message: "approval gates not yet implemented — see WF-08",
-                            }),
                         )
                         .await
                     {
-                        tracing::error!(
-                            run_id = %run_id,
-                            "Failed to update run to Failed (approval gate): {e}"
-                        );
+                        tracing::error!(run_id = %run_id, %code, "Could not persist approval request: {message}");
+                        if let Err(e) = self
+                            .db
+                            .update_workflow_run(
+                                community_id,
+                                run_id,
+                                RunStatus::Failed,
+                                step_count,
+                                &trace_json,
+                                Some(buzz_db::workflow::WorkflowRunFailure {
+                                    code,
+                                    message: &message,
+                                }),
+                            )
+                            .await
+                        {
+                            tracing::error!(run_id = %run_id, "Failed to persist approval setup failure: {e}");
+                        }
                     }
                 } else {
                     tracing::info!(run_id = %run_id, "Workflow run completed");
@@ -301,6 +303,386 @@ impl WorkflowEngine {
                     );
                 }
             }
+        }
+    }
+
+    async fn persist_approval_request(
+        &self,
+        community_id: CommunityId,
+        run_id: Uuid,
+        step_index: i32,
+        approval: executor::ApprovalRequest,
+        trace: &serde_json::Value,
+    ) -> Result<(), (&'static str, String)> {
+        let run = self
+            .db
+            .get_workflow_run(community_id, run_id)
+            .await
+            .map_err(|error| ("approval_persist_failed", error.to_string()))?;
+        let workflow = self
+            .db
+            .get_workflow(community_id, run.workflow_id)
+            .await
+            .map_err(|error| ("approval_persist_failed", error.to_string()))?;
+        let channel_id = workflow.channel_id.or_else(|| {
+            run.trigger_context
+                .as_ref()
+                .and_then(|value| {
+                    serde_json::from_value::<executor::TriggerContext>(value.clone()).ok()
+                })
+                .and_then(|context| Uuid::parse_str(&context.channel_id).ok())
+        });
+        let Some(channel_id) = channel_id else {
+            return Err((
+                "approval_channel_missing",
+                "approval requests need a channel context".to_string(),
+            ));
+        };
+        let approver_pubkeys = self
+            .resolve_approval_targets(community_id, channel_id, &approval.approver_spec)
+            .await
+            .map_err(|message| ("approval_approver_invalid", message))?;
+        let expires_at = Utc::now() + chrono::Duration::seconds(approval.timeout_seconds as i64);
+        let params = buzz_db::workflow::CreateApprovalParams {
+            community_id,
+            token: &approval.token,
+            workflow_id: run.workflow_id,
+            run_id,
+            channel_id,
+            step_id: &approval.step_id,
+            step_index,
+            approver_spec: &approval.approver_spec,
+            approver_pubkeys: &approver_pubkeys,
+            message: &approval.message,
+            workflow_definition: &workflow.definition,
+            expires_at,
+        };
+
+        let serving_write = buzz_deletion::acquire_serving_write(
+            &self.db,
+            community_id,
+            "workflow_approval_request",
+        )
+        .await
+        .map_err(|error| ("approval_persist_failed", error.to_string()))?;
+        serving_write
+            .verify()
+            .await
+            .map_err(|error| ("approval_persist_failed", error.to_string()))?;
+        let persisted = serving_write
+            .protect(
+                self.db
+                    .create_approval_and_wait(params, trace, serving_write.lease()),
+            )
+            .await
+            .map_err(|error| ("approval_persist_failed", error.to_string()))?;
+        persisted.map_err(|error| ("approval_persist_failed", error.to_string()))?;
+
+        tracing::info!(run_id = %run_id, step = %approval.step_id, "Workflow is waiting for approval");
+        Ok(())
+    }
+
+    async fn resolve_approval_targets(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        specification: &str,
+    ) -> Result<Vec<Vec<u8>>, String> {
+        let spec = specification.trim();
+        if spec.is_empty() {
+            return Err("request_approval from cannot be empty".to_string());
+        }
+        if spec.eq_ignore_ascii_case("any") {
+            return Ok(Vec::new());
+        }
+
+        let role_spec = spec.strip_prefix("role:").unwrap_or(spec);
+        if ["owner", "admin", "member", "guest", "bot"]
+            .iter()
+            .any(|role| role.eq_ignore_ascii_case(role_spec))
+        {
+            return Ok(Vec::new());
+        }
+        if spec.starts_with("role:") {
+            return Err(format!("unsupported approver role: {spec}"));
+        }
+
+        if spec.len() == 64 && spec.chars().all(|character| character.is_ascii_hexdigit()) {
+            let pubkey = hex::decode(spec).map_err(|error| error.to_string())?;
+            if pubkey.len() != 32 {
+                return Err("approver public key must decode to 32 bytes".to_string());
+            }
+            return Ok(vec![pubkey]);
+        }
+        if let Ok(pubkey) = nostr::PublicKey::parse(spec) {
+            return Ok(vec![pubkey.to_bytes().to_vec()]);
+        }
+
+        let display_name = spec.strip_prefix('@').unwrap_or(spec).trim();
+        if display_name.is_empty() {
+            return Err("approver display name cannot be empty".to_string());
+        }
+        let members = self
+            .db
+            .get_members(community_id, channel_id)
+            .await
+            .map_err(|error| format!("could not read approver channel roster: {error}"))?;
+        let member_keys = members
+            .iter()
+            .map(|member| member.pubkey.clone())
+            .collect::<Vec<_>>();
+        let users = self
+            .db
+            .get_users_bulk(community_id, &member_keys)
+            .await
+            .map_err(|error| format!("could not read approver display names: {error}"))?;
+        let mut matches = users
+            .into_iter()
+            .filter(|user| {
+                user.display_name
+                    .as_deref()
+                    .is_some_and(|name| name.eq_ignore_ascii_case(display_name))
+            })
+            .map(|user| user.pubkey)
+            .collect::<std::collections::HashSet<_>>();
+        if matches.len() != 1 {
+            return Err(if matches.is_empty() {
+                format!("approver '{display_name}' is not an active channel member")
+            } else {
+                format!("approver name '{display_name}' is ambiguous in this channel")
+            });
+        }
+        Ok(matches.drain().collect())
+    }
+
+    /// Start a one-shot resume for a granted approval. The database claim is
+    /// the cross-pod boundary; an interrupted claim is failed instead of replayed.
+    pub async fn resume_granted_approval(
+        self: &Arc<Self>,
+        community_id: CommunityId,
+        token_hash: Vec<u8>,
+    ) {
+        let claim = match self
+            .db
+            .claim_approval_resume(community_id, &token_hash)
+            .await
+        {
+            Ok(Some(claim)) => claim,
+            Ok(None) => return,
+            Err(error) => {
+                tracing::error!(%community_id, "Could not claim approval resume: {error}");
+                return;
+            }
+        };
+        let (workflow_id, run_id, step_index) = claim;
+        let db = self.db.clone();
+        let heartbeat_token = token_hash.clone();
+        let heartbeat = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                match db
+                    .renew_approval_resume_lease(community_id, &heartbeat_token)
+                    .await
+                {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        tracing::warn!(%community_id, run_id = %run_id, "Approval resume lease is no longer active");
+                        break;
+                    }
+                    Err(error) => {
+                        tracing::error!(%community_id, run_id = %run_id, "Could not renew approval resume lease: {error}")
+                    }
+                }
+            }
+        });
+
+        let outcome = self
+            .execute_claimed_approval_resume(
+                community_id,
+                workflow_id,
+                run_id,
+                step_index,
+                &token_hash,
+            )
+            .await;
+        heartbeat.abort();
+        outcome
+    }
+
+    async fn execute_claimed_approval_resume(
+        self: &Arc<Self>,
+        community_id: CommunityId,
+        workflow_id: Uuid,
+        run_id: Uuid,
+        step_index: i32,
+        token_hash: &[u8],
+    ) {
+        let run = match self.db.get_workflow_run(community_id, run_id).await {
+            Ok(run) if run.workflow_id == workflow_id => run,
+            Ok(_) => {
+                self.fail_claimed_resume(
+                    community_id,
+                    run_id,
+                    step_index,
+                    "approval_workflow_mismatch",
+                    "run belongs to a different workflow",
+                    &serde_json::json!([]),
+                )
+                .await;
+                return;
+            }
+            Err(error) => {
+                tracing::error!(%community_id, %run_id, "Could not load approved workflow run: {error}");
+                return;
+            }
+        };
+        let trace = match run.execution_trace.as_array() {
+            Some(trace) => trace.clone(),
+            None => {
+                self.fail_claimed_resume(
+                    community_id,
+                    run_id,
+                    step_index,
+                    "approval_trace_invalid",
+                    "workflow execution trace is not an array",
+                    &serde_json::json!([]),
+                )
+                .await;
+                return;
+            }
+        };
+        let approval = match self
+            .db
+            .get_approval_by_stored_hash(community_id, token_hash)
+            .await
+        {
+            Ok(approval) if approval.workflow_id == workflow_id => approval,
+            Ok(_) => {
+                self.fail_claimed_resume(
+                    community_id,
+                    run_id,
+                    step_index,
+                    "approval_workflow_mismatch",
+                    "approval belongs to a different workflow",
+                    &serde_json::Value::Array(trace),
+                )
+                .await;
+                return;
+            }
+            Err(error) => {
+                self.fail_claimed_resume(
+                    community_id,
+                    run_id,
+                    step_index,
+                    "approval_missing",
+                    &error.to_string(),
+                    &serde_json::Value::Array(trace),
+                )
+                .await;
+                return;
+            }
+        };
+        let Some(definition) = approval.workflow_definition else {
+            self.fail_claimed_resume(
+                community_id,
+                run_id,
+                step_index,
+                "approval_definition_missing",
+                "approval has no saved workflow definition",
+                &serde_json::Value::Array(trace),
+            )
+            .await;
+            return;
+        };
+        let def = match serde_json::from_value::<WorkflowDef>(definition) {
+            Ok(def) => def,
+            Err(error) => {
+                self.fail_claimed_resume(
+                    community_id,
+                    run_id,
+                    step_index,
+                    "invalid_definition",
+                    &format!("definition parse error: {error}"),
+                    &serde_json::Value::Array(trace),
+                )
+                .await;
+                return;
+            }
+        };
+        let trigger_ctx = match run.trigger_context.clone() {
+            Some(value) => match serde_json::from_value::<executor::TriggerContext>(value) {
+                Ok(context) => context,
+                Err(error) => {
+                    self.fail_claimed_resume(
+                        community_id,
+                        run_id,
+                        step_index,
+                        "approval_trigger_context_invalid",
+                        &format!("trigger context parse error: {error}"),
+                        &serde_json::Value::Array(trace),
+                    )
+                    .await;
+                    return;
+                }
+            },
+            None => {
+                self.fail_claimed_resume(
+                    community_id,
+                    run_id,
+                    step_index,
+                    "approval_trigger_context_missing",
+                    "approved workflow run has no saved trigger context",
+                    &serde_json::Value::Array(trace),
+                )
+                .await;
+                return;
+            }
+        };
+        let mut initial_outputs = HashMap::new();
+        for entry in &trace {
+            if let (Some(step_id), Some(output)) = (
+                entry.get("step_id").and_then(|value| value.as_str()),
+                entry.get("output"),
+            ) {
+                initial_outputs.insert(step_id.to_string(), output.clone());
+            }
+        }
+        let result = executor::execute_from_step(
+            self,
+            community_id,
+            run_id,
+            &def,
+            &trigger_ctx,
+            (step_index + 1) as usize,
+            Some(initial_outputs),
+        )
+        .await;
+        self.finalize_run(community_id, run_id, result, Some(trace))
+            .await;
+    }
+
+    async fn fail_claimed_resume(
+        &self,
+        community_id: CommunityId,
+        run_id: Uuid,
+        step_index: i32,
+        code: &'static str,
+        message: &str,
+        trace: &serde_json::Value,
+    ) {
+        if let Err(error) = self
+            .db
+            .update_workflow_run(
+                community_id,
+                run_id,
+                RunStatus::Failed,
+                step_index + 1,
+                trace,
+                Some(buzz_db::workflow::WorkflowRunFailure { code, message }),
+            )
+            .await
+        {
+            tracing::error!(%community_id, %run_id, %code, "Could not persist approval resume failure: {error}");
         }
     }
 
@@ -470,6 +852,36 @@ impl WorkflowEngine {
         interval_prefilter_should_fire(&self.last_fired, community_id, workflow_id, dur, last, now)
     }
 
+    async fn maintain_approvals(self: &Arc<Self>) {
+        match self.db.expire_pending_approvals(100).await {
+            Ok(failed_runs) if failed_runs > 0 => {
+                tracing::info!(failed_runs, "Expired workflow approvals")
+            }
+            Ok(_) => {}
+            Err(error) => tracing::error!("Approval expiry sweep failed: {error}"),
+        }
+        match self.db.fail_interrupted_approval_resumes(100).await {
+            Ok(failed_runs) if failed_runs > 0 => {
+                tracing::error!(failed_runs, "Failed interrupted workflow approval resumes")
+            }
+            Ok(_) => {}
+            Err(error) => tracing::error!("Interrupted approval resume sweep failed: {error}"),
+        }
+        match self.db.list_unclaimed_granted_approvals(100).await {
+            Ok(approvals) => {
+                for approval in approvals {
+                    let engine = Arc::clone(self);
+                    tokio::spawn(async move {
+                        engine
+                            .resume_granted_approval(approval.community_id, approval.token)
+                            .await;
+                    });
+                }
+            }
+            Err(error) => tracing::error!("Granted approval recovery scan failed: {error}"),
+        }
+    }
+
     /// Background loop for scheduled (cron/interval) triggers.
     ///
     /// Ticks every 60 seconds. For each active workflow with a `Schedule`
@@ -488,9 +900,12 @@ impl WorkflowEngine {
     /// within an interval.
     pub async fn run(self: &Arc<Self>) {
         tracing::info!("WorkflowEngine cron loop started (60s tick)");
+        self.maintain_approvals().await;
 
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+
+            self.maintain_approvals().await;
 
             let now = Utc::now();
 

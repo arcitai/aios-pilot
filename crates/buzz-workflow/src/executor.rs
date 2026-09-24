@@ -18,9 +18,9 @@ use serde_json::Value as JsonValue;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use crate::WorkflowEngine;
 use crate::error::WorkflowError;
 use crate::schema::{ActionDef, Step, WorkflowDef};
-use crate::WorkflowEngine;
 
 /// Data extracted from the triggering event, passed to every step.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -458,11 +458,18 @@ pub fn resolve_step_templates(
             from,
             message,
             timeout,
-        } => Ok(RequestApproval {
-            from: t(from)?,
-            message: t(message)?,
-            timeout: timeout.clone(),
-        }),
+        } => {
+            if from.contains("{{") {
+                return Err(WorkflowError::InvalidDefinition(
+                    "request_approval from must be a fixed user, role, or 'any' value".into(),
+                ));
+            }
+            Ok(RequestApproval {
+                from: from.clone(),
+                message: t(message)?,
+                timeout: timeout.clone(),
+            })
+        }
         Delay { duration } => Ok(Delay {
             duration: duration.clone(),
         }),
@@ -476,8 +483,8 @@ pub enum StepResult {
     Completed(JsonValue),
     /// Step requests suspension (approval gate). Execution must pause.
     Suspended {
-        /// Token used to resume or reject this approval gate.
-        approval_token: String,
+        /// Durable approval request details.
+        approval: ApprovalRequest,
     },
     /// Step was skipped due to `if:` condition being false.
     Skipped,
@@ -565,6 +572,21 @@ pub async fn dispatch_action(
 
     let result = serving_write
         .protect(async {
+            let run = engine
+                .db
+                .get_workflow_run(community_id, run_id)
+                .await
+                .map_err(|error| {
+                    WorkflowError::WebhookError(format!(
+                        "failed to confirm workflow run {run_id} is active: {error}"
+                    ))
+                })?;
+            if run.status != buzz_db::workflow::RunStatus::Running {
+                return Err(WorkflowError::WebhookError(format!(
+                    "workflow run {run_id} is no longer active (status: {})",
+                    run.status
+                )));
+            }
             match action {
                 SendMessage {
                     text,
@@ -728,18 +750,21 @@ pub async fn dispatch_action(
                     timeout,
                 } => {
                     let timeout_str = timeout.as_deref().unwrap_or("24h");
+                    let timeout_seconds = parse_approval_timeout_secs(Some(timeout_str))?;
                     info!(
                         run_id = %run_id, step = step_id,
                         "RequestApproval from={from} timeout={timeout_str}: {message}"
                     );
 
                     let token = generate_approval_token(run_id, step_id);
-
-                    // TODO (WF-08): create approval record in DB, emit kind:46010.
-                    // For now, return Suspended with the token so the caller can persist state.
-
                     Ok(StepResult::Suspended {
-                        approval_token: token,
+                        approval: ApprovalRequest {
+                            token,
+                            step_id: step_id.clone(),
+                            approver_spec: from.clone(),
+                            message: message.clone(),
+                            timeout_seconds,
+                        },
                     })
                 }
 
@@ -792,11 +817,31 @@ fn generate_approval_token(_run_id: Uuid, _step_id: &str) -> String {
     Uuid::new_v4().to_string()
 }
 
+fn parse_approval_timeout_secs(timeout: Option<&str>) -> Result<u64, WorkflowError> {
+    let timeout_str = timeout.unwrap_or("24h");
+    let timeout_seconds = parse_duration_secs(timeout_str)?;
+    const MAX_APPROVAL_TIMEOUT_SECS: u64 = 30 * 24 * 60 * 60;
+    if timeout_seconds == 0 || timeout_seconds > MAX_APPROVAL_TIMEOUT_SECS {
+        return Err(WorkflowError::InvalidDefinition(format!(
+            "request_approval timeout must be between 1 second and 30 days (got {timeout_str})"
+        )));
+    }
+    Ok(timeout_seconds)
+}
+
 /// Parse a duration string like "5m", "1h", "30s" into seconds.
 ///
 /// Exposed as `pub(crate)` so `schema.rs` can use it for interval validation.
 pub(crate) fn parse_duration_secs(duration: &str) -> Result<u64, WorkflowError> {
     let duration = duration.trim();
+    if let Some(n) = duration.strip_suffix('d') {
+        let days: u64 = n.trim().parse().map_err(|_| {
+            WorkflowError::InvalidDefinition(format!("invalid duration: {duration}"))
+        })?;
+        return days.checked_mul(86_400).ok_or_else(|| {
+            WorkflowError::InvalidDefinition(format!("duration overflow: {duration}"))
+        });
+    }
     if let Some(n) = duration.strip_suffix('h') {
         let hours: u64 = n.trim().parse().map_err(|_| {
             WorkflowError::InvalidDefinition(format!("invalid duration: {duration}"))
@@ -1034,14 +1079,40 @@ async fn add_reaction_impl(message_id: &str, emoji: &str) -> Result<JsonValue, W
 #[derive(Debug)]
 pub struct ExecutionResult {
     /// Set when execution suspended at a `RequestApproval` step.
-    /// `None` means the run completed normally.
-    pub approval_token: Option<String>,
+    pub approval: Option<ApprovalRequest>,
     /// Index of the step that suspended (or the total step count on completion).
     pub step_index: usize,
     /// Accumulated step outputs at the point of suspension or completion.
     pub step_outputs: HashMap<String, JsonValue>,
     /// Execution trace: one entry per completed/skipped step.
     pub trace: Vec<JsonValue>,
+}
+
+/// Details of a workflow step that is waiting for a human decision.
+#[derive(Clone)]
+pub struct ApprovalRequest {
+    /// Raw random token. Persistence hashes it before storage.
+    pub token: String,
+    /// Stable workflow step identifier.
+    pub step_id: String,
+    /// Authored approver specification.
+    pub approver_spec: String,
+    /// Rendered request message.
+    pub message: String,
+    /// Requested lifetime, already validated against the maximum.
+    pub timeout_seconds: u64,
+}
+
+impl std::fmt::Debug for ApprovalRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApprovalRequest")
+            .field("token", &"<redacted>")
+            .field("step_id", &self.step_id)
+            .field("approver_spec", &self.approver_spec)
+            .field("message", &self.message)
+            .field("timeout_seconds", &self.timeout_seconds)
+            .finish()
+    }
 }
 
 /// Execute a workflow run sequentially.
@@ -1127,16 +1198,17 @@ pub async fn execute_from_step(
 
     // Mark run as Running now that we have a permit (resume from approval).
     // Preserve the existing execution trace from pre-approval steps.
-    let existing_trace = match engine.db.get_workflow_run(community_id, run_id).await {
-        Ok(r) => r.execution_trace,
-        Err(e) => {
-            warn!(
-                run_id = %run_id,
-                "Failed to read existing trace for resume — pre-approval trace will be lost: {e}"
-            );
-            serde_json::json!([])
-        }
-    };
+    let existing_trace = engine
+        .db
+        .get_workflow_run(community_id, run_id)
+        .await
+        .map(|run| run.execution_trace)
+        .map_err(|error| {
+            (
+                WorkflowError::from(error),
+                crate::error::PartialProgress::default(),
+            )
+        })?;
     engine
         .db
         .update_workflow_run(
@@ -1276,15 +1348,17 @@ async fn execute_steps(
                 }));
                 step_outputs.insert(step.id.clone(), output);
             }
-            StepResult::Suspended { approval_token } => {
+            StepResult::Suspended { approval } => {
                 info!(
                     run_id = %run_id, step = %step.id,
                     "Step suspended — awaiting approval (token: <redacted>)"
                 );
-                // Return the token and current state so the caller can persist the
-                // approval record and update the run's execution trace.
+                trace.push(serde_json::json!({
+                    "step_id": step.id,
+                    "status": "waiting_approval",
+                }));
                 return Ok(ExecutionResult {
-                    approval_token: Some(approval_token),
+                    approval: Some(approval),
                     step_index: i,
                     step_outputs,
                     trace,
@@ -1302,7 +1376,7 @@ async fn execute_steps(
 
     info!(run_id = %run_id, "Workflow run completed");
     Ok(ExecutionResult {
-        approval_token: None,
+        approval: None,
         step_index: def.steps.len(),
         step_outputs,
         trace,
@@ -1581,6 +1655,34 @@ mod tests {
     #[test]
     fn parse_duration_invalid() {
         assert!(parse_duration_secs("not-a-duration").is_err());
+    }
+
+    #[test]
+    fn approval_timeout_defaults_and_caps() {
+        assert_eq!(parse_approval_timeout_secs(None).unwrap(), 24 * 60 * 60);
+        assert_eq!(
+            parse_approval_timeout_secs(Some("30d")).unwrap(),
+            30 * 24 * 60 * 60
+        );
+        assert!(parse_approval_timeout_secs(Some("0s")).is_err());
+        assert!(parse_approval_timeout_secs(Some("31d")).is_err());
+    }
+
+    #[test]
+    fn approval_approver_cannot_use_trigger_templates() {
+        let ctx = make_trigger();
+        let step = Step {
+            id: "review".to_owned(),
+            name: None,
+            if_expr: None,
+            timeout_secs: None,
+            action: ActionDef::RequestApproval {
+                from: "{{trigger.author}}".to_owned(),
+                message: "Review {{trigger.text}}".to_owned(),
+                timeout: None,
+            },
+        };
+        assert!(resolve_step_templates(&step, &ctx, &HashMap::new()).is_err());
     }
 
     #[test]

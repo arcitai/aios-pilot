@@ -54,13 +54,14 @@ export type WorkflowApprovalStatus =
   | "expired";
 
 export type WorkflowApproval = {
-  /** Opaque, non-actionable identifier for display/correlation only. */
+  /** Stored approval hash reference; relay authorization still checks the actor. */
   approvalRef: string;
   workflowId: string;
   runId: string;
   stepId: string;
   stepIndex: number;
   approverSpec: string;
+  message: string;
   status: WorkflowApprovalStatus;
   approverPubkey: string | null;
   note: string | null;

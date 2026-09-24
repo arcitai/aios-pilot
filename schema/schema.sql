@@ -418,12 +418,18 @@ CREATE TABLE workflow_approvals (
     step_id         VARCHAR(64) NOT NULL,
     step_index      INT NOT NULL,
     approver_spec   TEXT NOT NULL,
+    message         TEXT NOT NULL DEFAULT '',
+    channel_id      UUID,
+    workflow_definition JSONB,
+    approver_pubkeys BYTEA[] NOT NULL DEFAULT ARRAY[]::BYTEA[],
     status          approval_status NOT NULL DEFAULT 'pending',
     approver_pubkey BYTEA,
     note            TEXT,
     granted_at      TIMESTAMPTZ,
     denied_at       TIMESTAMPTZ,
     expires_at      TIMESTAMPTZ NOT NULL,
+    resume_claimed_at TIMESTAMPTZ,
+    resume_lease_until TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (community_id, token),
     FOREIGN KEY (community_id, workflow_id)
@@ -435,6 +441,12 @@ CREATE TABLE workflow_approvals (
 CREATE INDEX idx_workflow_approvals_workflow ON workflow_approvals (community_id, workflow_id);
 CREATE INDEX idx_workflow_approvals_run ON workflow_approvals (community_id, run_id);
 CREATE INDEX idx_workflow_approvals_status ON workflow_approvals (community_id, status);
+CREATE INDEX idx_workflow_approvals_pending_expiry
+    ON workflow_approvals (expires_at)
+    WHERE status = 'pending';
+CREATE INDEX idx_workflow_approvals_granted_resume
+    ON workflow_approvals (community_id, created_at)
+    WHERE status = 'granted' AND resume_claimed_at IS NULL;
 
 -- ── Scheduled workflow fires (cron claim) ─────────────────────────────────────
 -- Plan §5: the at-most-once cron fire claim. UNIQUE (community_id, workflow_id,

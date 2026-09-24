@@ -703,7 +703,7 @@ mod postgres_tests {
         let mut migrations: Vec<_> = MIGRATOR.iter().collect();
         migrations.sort_by_key(|migration| migration.version);
 
-        assert_eq!(migrations.len(), 48);
+        assert_eq!(migrations.len(), 49);
         assert_eq!(migrations[0].version, 1);
         assert_eq!(&*migrations[0].description, "initial schema");
         assert!(migrations[0]
@@ -727,6 +727,24 @@ mod postgres_tests {
             .sql
             .as_str()
             .contains("search_tsv  TSVECTOR GENERATED ALWAYS"));
+
+        let approval_lifecycle = migrations.last().expect("approval lifecycle migration");
+        assert_eq!(approval_lifecycle.version, 49);
+        for fragment in [
+            "ADD COLUMN message TEXT",
+            "ADD COLUMN channel_id UUID",
+            "ADD COLUMN workflow_definition JSONB",
+            "ADD COLUMN approver_pubkeys BYTEA[]",
+            "ADD COLUMN resume_claimed_at TIMESTAMPTZ",
+            "ADD COLUMN resume_lease_until TIMESTAMPTZ",
+            "idx_workflow_approvals_pending_expiry",
+            "idx_workflow_approvals_granted_resume",
+        ] {
+            assert!(
+                approval_lifecycle.sql.as_str().contains(fragment),
+                "migration 0049 must contain {fragment}"
+            );
+        }
 
         // The git repo-name registry is an additive migration, never folded into
         // 0001 — folding it would change 0001's checksum and break brownfield
@@ -2259,14 +2277,15 @@ mod postgres_tests {
             .await
             .expect("connect migrated probe database");
         MIGRATOR
-            .run_to(47, &migrated)
+            .run_to(49, &migrated)
             .await
-            .expect("apply migrations 1-47");
+            .expect("apply migrations 1-49");
 
         for table in [
             "relay_admin_actions",
             "relay_admin_outbox",
             "relay_operator_audit",
+            "workflow_approvals",
         ] {
             assert_eq!(
                 columns(&desired, table).await,
