@@ -81,6 +81,8 @@ pub struct ChannelRecord {
     pub topic_required: bool,
     /// Optional cap on the number of members.
     pub max_members: Option<i32>,
+    /// Durable resource discriminator for typed channel-backed resources.
+    pub resource_type: Option<String>,
     /// Current channel topic (short, visible in header).
     pub topic: Option<String>,
     /// Compressed public key bytes of the user who last set the topic.
@@ -170,7 +172,7 @@ pub async fn create_channel(
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
                purpose, purpose_set_by, purpose_set_at,
-               ttl_seconds, ttl_deadline
+               ttl_seconds, ttl_deadline, resource_type
         FROM channels WHERE community_id = $1 AND id = $2
         "#,
     )
@@ -270,7 +272,7 @@ pub async fn create_channel_with_id(
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
                purpose, purpose_set_by, purpose_set_at,
-               ttl_seconds, ttl_deadline
+               ttl_seconds, ttl_deadline, resource_type
         FROM channels WHERE community_id = $1 AND id = $2
         "#,
     )
@@ -314,7 +316,7 @@ async fn get_channel_with_operation(
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
                purpose, purpose_set_by, purpose_set_at,
-               ttl_seconds, ttl_deadline
+               ttl_seconds, ttl_deadline, resource_type
         FROM channels WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL
         "#,
     )
@@ -396,7 +398,7 @@ async fn list_channels_with_operation(
                    nip29_group_id, topic_required, max_members,
                    topic, topic_set_by, topic_set_at,
                    purpose, purpose_set_by, purpose_set_at,
-                   ttl_seconds, ttl_deadline
+                   ttl_seconds, ttl_deadline, resource_type
             FROM channels
             WHERE community_id = $1 AND deleted_at IS NULL AND visibility::text = $2
             ORDER BY created_at DESC
@@ -416,7 +418,7 @@ async fn list_channels_with_operation(
                    nip29_group_id, topic_required, max_members,
                    topic, topic_set_by, topic_set_at,
                    purpose, purpose_set_by, purpose_set_at,
-                   ttl_seconds, ttl_deadline
+                   ttl_seconds, ttl_deadline, resource_type
             FROM channels
             WHERE community_id = $1 AND deleted_at IS NULL
             ORDER BY created_at DESC
@@ -456,6 +458,7 @@ pub(crate) fn row_to_channel_record(row: sqlx::postgres::PgRow) -> Result<Channe
     let purpose_set_at: Option<DateTime<Utc>> = row.try_get("purpose_set_at").unwrap_or(None);
     let ttl_seconds: Option<i32> = row.try_get("ttl_seconds").unwrap_or(None);
     let ttl_deadline: Option<DateTime<Utc>> = row.try_get("ttl_deadline").unwrap_or(None);
+    let resource_type: Option<String> = row.try_get("resource_type")?;
 
     Ok(ChannelRecord {
         id,
@@ -472,6 +475,7 @@ pub(crate) fn row_to_channel_record(row: sqlx::postgres::PgRow) -> Result<Channe
         nip29_group_id: row.try_get("nip29_group_id")?,
         topic_required,
         max_members: row.try_get("max_members")?,
+        resource_type,
         topic,
         topic_set_by,
         topic_set_at,

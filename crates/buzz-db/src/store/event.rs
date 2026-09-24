@@ -1556,6 +1556,21 @@ pub async fn insert_event_with_thread_metadata(
                 .bind(lock_key)
                 .execute(&mut *tx)
                 .await?;
+            let resource_row = sqlx::query(
+                "SELECT resource_type FROM channels WHERE community_id = $1 AND id = $2 FOR UPDATE",
+            )
+            .bind(community_id.as_uuid())
+            .bind(ch)
+            .fetch_optional(&mut *tx)
+            .await?;
+            if let Some(row) = resource_row {
+                let resource_type: Option<String> = row.try_get("resource_type")?;
+                if resource_type.is_some() {
+                    return Err(DbError::InvalidData(
+                        "typed channel Canvas writes require a validated expected-revision".into(),
+                    ));
+                }
+            }
         }
     }
 
@@ -1630,7 +1645,55 @@ pub async fn insert_channel_head_checked(
     channel_id: Uuid,
     precondition: ChannelHeadPrecondition<'_>,
 ) -> Result<(StoredEvent, ChannelHeadWriteStatus)> {
+    insert_channel_head_checked_with_resource(
+        pool,
+        community_id,
+        event,
+        channel_id,
+        precondition,
+        None,
+    )
+    .await
+}
+
+/// Conditionally append a canvas event after the caller has applied the
+/// Business document validator. The transaction confirms the durable type
+/// under the same lock used by registration and generic Canvas writes.
+pub async fn insert_channel_head_checked_for_resource(
+    pool: &PgPool,
+    community_id: CommunityId,
+    event: &Event,
+    channel_id: Uuid,
+    precondition: ChannelHeadPrecondition<'_>,
+    resource_type: &str,
+) -> Result<(StoredEvent, ChannelHeadWriteStatus)> {
+    insert_channel_head_checked_with_resource(
+        pool,
+        community_id,
+        event,
+        channel_id,
+        precondition,
+        Some(resource_type),
+    )
+    .await
+}
+
+async fn insert_channel_head_checked_with_resource(
+    pool: &PgPool,
+    community_id: CommunityId,
+    event: &Event,
+    channel_id: Uuid,
+    precondition: ChannelHeadPrecondition<'_>,
+    expected_resource_type: Option<&str>,
+) -> Result<(StoredEvent, ChannelHeadWriteStatus)> {
+    const BUSINESS_CONTEXT: &str = "aios.business-context:v1";
     use crate::store::replaceable::event_replacement_lock_key;
+
+    if expected_resource_type.is_some_and(|kind| kind != BUSINESS_CONTEXT) {
+        return Err(DbError::InvalidData(
+            "unsupported typed channel Canvas validator".into(),
+        ));
+    }
 
     let kind_i32 = buzz_core::kind::event_kind_i32(event);
     let received_at = Utc::now();
@@ -1649,6 +1712,21 @@ pub async fn insert_channel_head_checked(
         .bind(lock_key)
         .execute(&mut *tx)
         .await?;
+
+    let resource_row = sqlx::query(
+        "SELECT resource_type FROM channels WHERE community_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE",
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(DbError::ChannelNotFound(channel_id))?;
+    let current_resource_type: Option<String> = resource_row.try_get("resource_type")?;
+    if current_resource_type.as_deref() != expected_resource_type {
+        return Err(DbError::InvalidData(
+            "channel resource type changed while the Canvas write was being validated".into(),
+        ));
+    }
 
     let head: Option<(Vec<u8>, DateTime<Utc>)> = sqlx::query_as(
         "SELECT id, created_at FROM events \
@@ -2310,6 +2388,31 @@ impl Db {
         precondition: ChannelHeadPrecondition<'_>,
     ) -> Result<(StoredEvent, ChannelHeadWriteStatus)> {
         insert_channel_head_checked(&self.pool, community_id, event, channel_id, precondition).await
+    }
+
+    /// Conditionally append a canvas event after the caller applied the
+    /// validator for the specified durable channel resource.
+    #[datastore_span(
+        name = "insert_channel_head_checked_for_resource",
+        system = "postgresql"
+    )]
+    pub async fn insert_channel_head_checked_for_resource(
+        &self,
+        community_id: CommunityId,
+        event: &nostr::Event,
+        channel_id: Uuid,
+        precondition: ChannelHeadPrecondition<'_>,
+        resource_type: &str,
+    ) -> Result<(StoredEvent, ChannelHeadWriteStatus)> {
+        insert_channel_head_checked_for_resource(
+            &self.pool,
+            community_id,
+            event,
+            channel_id,
+            precondition,
+            resource_type,
+        )
+        .await
     }
 }
 

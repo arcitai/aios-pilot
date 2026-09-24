@@ -80,6 +80,12 @@ For new resources, the explicit context/plugin/agent grants below supersede
 VISION.md's upstream channel-membership-only rule. Existing channel data keeps
 its current ACLs until an additive, verified migration is ready.
 
+For the first Business context slice, the dedicated typed private NIP-29 group
+is the resource and its existing membership is the internal access adapter.
+That membership is separate from ordinary working-channel membership; no
+second ACL store is introduced. Existing groups and contexts remain discoverable
+and retain their current membership and history until an explicit adoption.
+
 Packaged skills are instructions selected by the user. Runtime skill discovery
 is a separate capability whose sole authority remains the Rust runtime catalog.
 Unknown or unsettled runtime metadata is neither unsupported nor successfully
@@ -114,14 +120,15 @@ membership lists into child channels. Existing private app documents remain
 under their current ACL until an explicit, verified migration/attachment.
 
 The shared context reference does not make previously private knowledge
-workspace-public. Context grants are separate from plugin, agent and channel
-membership. New grants and imported data must show their actual destination.
-Use the native signed-event pipeline, tenant binding, rate limits and
-transactional revision preconditions. New shared resources and grants should
-use Nostr kinds and the existing event/query bridge, following AGENTS.md;
-reserve HTTP-specific adapters for genuine provider/app-delivery boundaries.
-Reuse the existing `buzz-business` validator. Extract app/Sites schemas from
-CLI-only code before adding another validator.
+workspace-public. Context-group membership is separate from ordinary channel
+membership; plugin and agent grants remain distinct. New grants and imported
+data must show their actual destination. Use the native signed-event pipeline,
+tenant binding, rate limits and transactional revision preconditions. New
+shared resources and grants should use Nostr kinds and the existing
+event/query bridge, following AGENTS.md; reserve HTTP-specific adapters for
+genuine provider/app-delivery boundaries. Reuse the existing `buzz-business`
+validator. Extract app/Sites schemas from CLI-only code before adding another
+validator.
 
 Secrets never belong in context documents, channel messages, exported apps or
 browser storage. Existing connection credentials are currently client-local
@@ -143,13 +150,63 @@ connections: [{ id, provider, label, status: "not_configured" | "connected" | "e
 
 All timestamps are ISO-8601 strings. A connection is only `connected` after a
 successful provider operation; adding its descriptor does not connect it.
-Workspace access initially follows private-channel membership; do not imply
-finer source-level permissions than implemented. Context revisions use the
-existing canvas expectedRevision contract; expose conflicts and retry safely.
-Bound document/source sizes and reject malformed/unrecognized schema versions.
+Workspace access follows membership in its dedicated private context group; do
+not imply finer source-level permissions than implemented. Context revisions
+use the existing canvas expectedRevision contract; expose conflicts and do not
+automatically retry or merge. Bound document/source sizes and reject
+malformed/unrecognized schema versions.
 Individual string limits use UTF-16 code units, matching the desktop fields and
 Zod parser; the complete serialized document is capped at 200,000 UTF-8 bytes.
 Rust and TypeScript validators must pass the same Unicode/boundary fixtures.
+
+### Phase 2 host-context implementation contract — accepted 24 September 2026
+
+- V1 has at most one canonical Business context per community. It is an
+  explicitly registered or adopted existing private `stream` channel, marked
+  by a durable `resource_type` and NIP-29 `kind:39000` tag
+  `resource=aios.business-context:v1`. The relay-signed metadata `d` value is
+  the backing group/channel ID. The community comes from the selected relay
+  tenant and the actor from the authenticated signer; clients cannot supply a
+  trusted community ID.
+- Initial registration is an explicit `kind:9002` event authorized by both a
+  current community owner/admin and an owner/admin of the context group. This
+  prevents an ordinary member from claiming the single canonical slot by
+  creating a private group. Repeated registration of that same group remains
+  idempotent but keeps the same two-tier authority check. It conflicts if
+  another group is already canonical and has no unregister or retarget
+  operation in v1, including after soft deletion. The group must be private,
+  unarchived and of type `stream`; once typed, it cannot become
+  public or untyped. Registration preserves every existing member and event;
+  adoption itself never changes membership. Human grants are explicit and
+  disclose that the person can read this group's prior messages as well as the
+  Business document. Agent provisioning follows the accepted [F02/F05 flows](docs/aios/FLOWS.md#connected-target-flows),
+  with the host checking the agent identity; it does not make old private
+  history public. All active members can read and write the context; do not
+  promise finer read-only/source permissions.
+- Context membership uses existing NIP-29 membership, private metadata,
+  queries, fanout and revocation. Ordinary working-channel membership does not
+  grant Business access. No parallel ACL table or feature HTTP endpoint is
+  added. Legacy untyped contexts stay visible and unchanged.
+- Context access and agent prompt loading are separate. Follow the
+  [accepted Business and agent flows](docs/aios/FLOWS.md#connected-target-flows)
+  for default provisioning, selective retrieval and any explicit full-context
+  opt-in. Keep future CLI index/search/source-get operations modular and behind
+  the same context access checks; they are not part of this backend slice.
+- Business Canvas events keep `KIND_CANVAS=40100` and the shared
+  `buzz-business` schema (`schemaVersion:1`, maximum 200,000 UTF-8 bytes).
+  The relay applies this validator only to typed Business contexts and requires
+  exactly one `expected-revision` tag: `none` for no head, or the current
+  event ID. Missing, duplicate, malformed, stale, unsupported-schema and
+  oversized writes fail; there is no automatic retry or merge. Untyped Canvas behavior
+  remains unchanged. Strict writes use the existing channel-head CAS path.
+- Add one additive migration after 0049 and mirror it in `schema/schema.sql`.
+  Backup/restore must retain the resource type, context ID, roster and complete
+  event history. Existing user-local databases are not migrated by this task.
+- Native `remove_channel_member` accepts optional paired relay/signer scope
+  assertions, captures the relay base URL and signing keys once, validates the
+  assertions and submits with those captured values. `search_users` accepts the
+  same optional scope and pins all query requests to its captured relay and
+  signer. Frontend wrappers and the human-only Access dialog remain lead-owned.
 
 Front-end ownership: `desktop/src/features/business/` and shared API adapters.
 Reusable apps: `desktop/src/features/aios-apps/`; editor components consume

@@ -884,3 +884,48 @@ assembly; `FLOWS.md` records the relay binding and partial-grant recovery
 contract. Existing Buzz private memory and bounded thread history are reusable;
 there is no evidence of an archive retaining every pre-compaction model/tool
 turn. Do not equate retained relay messages with lossless model history.
+
+
+## Phase 2 host-context backend — 24 September 2026
+
+- Implemented the accepted backend contract in isolated checkout
+  `/Users/gustavanderson/Downloads/aios-pilot-host`, branch
+  `ai-os-context-host`. This adds durable channel resource typing, the
+  one-context-per-community constraint, explicit signed adoption/registration,
+  kind:39000 discovery metadata and typed Business Canvas validation with
+  expected-revision compare-and-swap. Existing untyped groups keep their
+  behavior; adoption preserves their roster and event history. CLI index/search
+  implementation and frontend ownership remain outside this slice.
+- Registration requires current owner/admin authority in both the selected
+  private group and its community. Authority and the current Canvas head are
+  rechecked transactionally. The resource type cannot be removed or retargeted;
+  a soft-deleted canonical slot remains reserved. Mention indexing is in the
+  registration transaction, so indexing failure rolls back the event and type.
+- Four PostgreSQL-backed `buzz-db` tests pass against a uniquely named
+  disposable database: member denial, idempotent replay/authority recheck and
+  uniqueness/type/CAS fences, mention-index rollback, and untyped Canvas versus
+  adoption serialization. Five relay context unit tests pass, including strict
+  Business document/revision validation. Latest Docker release build compiled
+  the final relay source.
+- Against a disposable selfhost relay, the rebuilt lead CLI live test passes
+  discovery, adoption/replay, ACL/history preservation, explicit grant, index
+  omission, selected read/search, stale pagination conflict and revocation.
+  Signed HTTP query/count and NIP-42 WebSocket checks confirm reads and live
+  delivery stop after revoke while the owner retains access and write ability.
+  A fresh-volume backup/restore retained the context ID, type, roster and
+  complete history; the restored CLI and relay checks passed before a deliberate
+  revoke on the restored copy.
+- Migration 0050 and `schema/schema.sql` agree. Restore readback confirms
+  migration 50, the unique community index and immutable-type trigger. Docker
+  image digest: `sha256:349753f731b53d6073393837c0fbd3cc691a82716a19badab19fa8f3dcb010cc`;
+  relay binary SHA-256:
+  `4cd05f7a8bacb5d6daeb1575a7f8a625333866e6cd7511c4c8a36ad6a5308fb8`.
+- Scoped Rust formatting, `git diff --check`, and `just file-size-check` pass.
+  The repository-wide format check remains blocked only by unchanged baseline
+  files; repository-wide test discovery likewise reports one pre-existing
+  ignored-test discovery failure in `buzz-test-client`. No broad Cargo run was
+  started because the lead assigned the sole heavy Cargo slot to Browser.
+- This is an isolated implementation checkpoint. Lead review and integration
+  remain pending; no production deployment or migration of user-local data is
+  claimed. Detailed test/restore outputs and full source/image binding are in
+  `/tmp/aios-host-context-handback.md`.

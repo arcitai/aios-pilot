@@ -1343,6 +1343,7 @@ dependencies = [
  "base64 0.22.1",
  "buzz-audit",
  "buzz-auth",
+ "buzz-business",
  "buzz-conformance",
  "buzz-core",
  "buzz-datastore-tracing",

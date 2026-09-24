@@ -245,6 +245,22 @@ pub(crate) fn parse_canvas_expected_revision(
     Ok(Some(CanvasRevisionSpec::Head(bytes)))
 }
 
+fn validate_business_context_canvas(
+    content: &str,
+    revision: Option<&CanvasRevisionSpec>,
+) -> Result<(), IngestError> {
+    if revision.is_none() {
+        return Err(IngestError::Rejected(
+            "invalid: Business context Canvas requires expected-revision".into(),
+        ));
+    }
+    buzz_business::parse_document(content)
+        .map(|_| ())
+        .map_err(|error| {
+            IngestError::Rejected(format!("invalid: Business context Canvas: {error}"))
+        })
+}
+
 /// How the HTTP caller authenticated (for [`IngestAuth::Http`]).
 #[derive(Debug, Clone)]
 pub enum HttpAuthMethod {
@@ -2764,6 +2780,14 @@ async fn ingest_event_inner(
             .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?;
     }
 
+    let business_context_registration = if kind_u32 == KIND_NIP29_EDIT_METADATA {
+        crate::handlers::side_effects::validate_business_context_registration(tenant, &event, state)
+            .await
+            .map_err(|e| IngestError::Rejected(format!("invalid: {e}")))?
+    } else {
+        None
+    };
+
     // Processed here (verify consent, mutate archived_identities, emit the
     // relay-signed 8002/8003 delta + 13535 snapshot), then — unlike the
     // NIP-43 admin commands above — the request itself falls through to normal
@@ -3237,14 +3261,47 @@ async fn ingest_event_inner(
     // Parse a canvas `expected-revision` precondition once, ahead of the write
     // dispatch. Malformed or duplicate tags reject here (never reaching the DB);
     // an absent tag yields `None`, routing canvas writes to the generic append.
+    let business_context_canvas = kind_u32 == KIND_CANVAS
+        && channel_row.as_ref().is_some_and(|channel| {
+            channel.resource_type.as_deref() == Some(buzz_business::BUSINESS_CONTEXT_RESOURCE_TYPE)
+        });
     let canvas_revision_spec = if kind_u32 == KIND_CANVAS {
-        parse_canvas_expected_revision(&event)?
+        let spec = parse_canvas_expected_revision(&event)?;
+        if business_context_canvas {
+            validate_business_context_canvas(&event.content, spec.as_ref())?;
+        }
+        spec
     } else {
         None
     };
 
     let workflow_deletion = crate::handlers::side_effects::is_workflow_deletion(&event);
-    let (stored_event, was_inserted) = if workflow_deletion {
+    let (stored_event, was_inserted) = if let Some(registration) =
+        business_context_registration.as_ref()
+    {
+        let channel = channel_id.ok_or_else(|| {
+            IngestError::Rejected("invalid: context registration missing channel".into())
+        })?;
+        state
+            .db
+            .insert_channel_resource_registration_event(
+                tenant.community(),
+                &event,
+                channel,
+                buzz_business::BUSINESS_CONTEXT_RESOURCE_TYPE,
+                registration.expected_canvas_head.as_deref(),
+            )
+            .await
+            .map_err(|error| match error {
+                buzz_db::DbError::InvalidData(message) => {
+                    IngestError::Rejected(format!("invalid: {message}"))
+                }
+                buzz_db::DbError::AccessDenied(message) => {
+                    IngestError::Rejected(format!("restricted: {message}"))
+                }
+                other => IngestError::Internal(format!("error: {other}")),
+            })?
+    } else if workflow_deletion {
         // A single commit owns public acceptance, domain mutation, and dispatch.
         // Failure rolls everything back; identical concurrent requests cannot
         // divide insertion and repair ownership between two relay workers.
@@ -3286,11 +3343,29 @@ async fn ingest_event_inner(
             CanvasRevisionSpec::NoHead => buzz_db::ChannelHeadPrecondition::ExpectNoHead,
             CanvasRevisionSpec::Head(id) => buzz_db::ChannelHeadPrecondition::ExpectedHead(id),
         };
-        let (stored_event, status) = state
-            .db
-            .insert_channel_head_checked(tenant.community(), &event, channel, precondition)
-            .await
-            .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+        let checked_write = if business_context_canvas {
+            state
+                .db
+                .insert_channel_head_checked_for_resource(
+                    tenant.community(),
+                    &event,
+                    channel,
+                    precondition,
+                    buzz_business::BUSINESS_CONTEXT_RESOURCE_TYPE,
+                )
+                .await
+        } else {
+            state
+                .db
+                .insert_channel_head_checked(tenant.community(), &event, channel, precondition)
+                .await
+        };
+        let (stored_event, status) = checked_write.map_err(|error| match error {
+            buzz_db::DbError::InvalidData(message) => {
+                IngestError::Rejected(format!("invalid: {message}"))
+            }
+            other => IngestError::Internal(format!("error: {other}")),
+        })?;
         match status {
             buzz_db::ChannelHeadWriteStatus::RevisionMissing => {
                 return Err(IngestError::CanvasConflict(
@@ -3340,6 +3415,9 @@ async fn ingest_event_inner(
                     buzz_db::DbError::AuthEventRejected => {
                         IngestError::Rejected("invalid: AUTH events cannot be stored".into())
                     }
+                    buzz_db::DbError::InvalidData(message) => {
+                        IngestError::Rejected(format!("invalid: {message}"))
+                    }
                     other => IngestError::Internal(format!("error: database error: {other}")),
                 });
             }
@@ -3347,6 +3425,17 @@ async fn ingest_event_inner(
     };
 
     if !was_inserted {
+        if business_context_registration.is_some() {
+            if let Some(channel) = channel_id {
+                if let Err(error) = crate::handlers::side_effects::emit_group_discovery_events(
+                    tenant, state, channel,
+                )
+                .await
+                {
+                    warn!(channel = %channel, "NIP-29 context discovery replay failed: {error}");
+                }
+            }
+        }
         return Ok(IngestResult {
             event_id: event_id_hex,
             accepted: true,
@@ -3430,6 +3519,10 @@ async fn ingest_event_inner(
         message: String::new(),
     })
 }
+
+#[cfg(test)]
+#[path = "ingest_business_context_tests.rs"]
+mod business_context_tests;
 
 #[cfg(test)]
 mod postgres_tests {

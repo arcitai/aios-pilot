@@ -28,6 +28,106 @@ pub fn is_admin_kind(kind: u32) -> bool {
     matches!(kind, 9000..=9022)
 }
 
+/// Captured canvas head validated before an explicit Business-context
+/// registration. The DB transaction rechecks it under the shared canvas lock.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BusinessContextRegistration {
+    /// Current Canvas head ID captured before the registration transaction.
+    pub expected_canvas_head: Option<Vec<u8>>,
+}
+
+fn is_business_context_registration(event: &Event) -> anyhow::Result<bool> {
+    let tags: Vec<_> = event
+        .tags
+        .iter()
+        .map(Tag::as_slice)
+        .filter(|parts| parts.first().map(String::as_str) == Some("resource"))
+        .collect();
+    if tags.is_empty() {
+        return Ok(false);
+    }
+    if tags.len() != 1 || tags[0].len() != 2 {
+        return Err(anyhow::anyhow!(
+            "resource tag must appear once with exactly one value"
+        ));
+    }
+    if tags[0][1] != buzz_business::BUSINESS_CONTEXT_RESOURCE_TYPE {
+        return Err(anyhow::anyhow!("unsupported channel resource type"));
+    }
+    Ok(true)
+}
+
+/// Validate an explicit Business-context adoption and snapshot its current
+/// Canvas head. The persistence transaction compares this snapshot after
+/// acquiring the same advisory lock used by every Canvas writer.
+pub async fn validate_business_context_registration(
+    tenant: &TenantContext,
+    event: &Event,
+    state: &Arc<AppState>,
+) -> anyhow::Result<Option<BusinessContextRegistration>> {
+    if !is_business_context_registration(event)? {
+        return Ok(None);
+    }
+    let channel_id =
+        extract_h_tag_channel(event).ok_or_else(|| anyhow::anyhow!("missing h tag"))?;
+    let actor_bytes = event.pubkey.to_bytes().to_vec();
+    let channel_members = state.db.get_members(tenant.community(), channel_id).await?;
+    let channel_role = channel_members
+        .iter()
+        .find(|member| member.pubkey == actor_bytes)
+        .map(|member| member.role.as_str());
+    let community_member = state
+        .db
+        .get_relay_member(tenant.community(), &event.pubkey.to_hex())
+        .await?;
+    let community_role = community_member.as_ref().map(|member| member.role.as_str());
+    if !can_register_business_context(channel_role, community_role) {
+        return Err(anyhow::anyhow!(
+            "Business context registration requires channel owner/admin and community owner/admin authority"
+        ));
+    }
+    let channel = state
+        .db
+        .get_channel_for_event_write(tenant.community(), channel_id)
+        .await?;
+    if channel.channel_type != "stream"
+        || channel.visibility != "private"
+        || channel.archived_at.is_some()
+    {
+        return Err(anyhow::anyhow!(
+            "Business context must be an unarchived private stream channel"
+        ));
+    }
+    if channel
+        .resource_type
+        .as_deref()
+        .is_some_and(|kind| kind != buzz_business::BUSINESS_CONTEXT_RESOURCE_TYPE)
+    {
+        return Err(anyhow::anyhow!(
+            "channel is already registered as a different resource type"
+        ));
+    }
+
+    let mut query = buzz_db::EventQuery::for_community(tenant.community());
+    query.channel_id = Some(channel_id);
+    query.kinds = Some(vec![buzz_core::kind::KIND_CANVAS as i32]);
+    query.limit = Some(1);
+    let canvas_head = state.db.query_events(&query).await?.into_iter().next();
+    if let Some(head) = &canvas_head {
+        buzz_business::parse_document(&head.event.content).map_err(|error| {
+            anyhow::anyhow!("existing Canvas cannot be adopted as Business context: {error}")
+        })?;
+    }
+    Ok(Some(BusinessContextRegistration {
+        expected_canvas_head: canvas_head.map(|head| head.event.id.as_bytes().to_vec()),
+    }))
+}
+
+fn can_register_business_context(channel_role: Option<&str>, community_role: Option<&str>) -> bool {
+    matches!(channel_role, Some("owner" | "admin"))
+        && matches!(community_role, Some("owner" | "admin"))
+}
+
 /// Check if a kind triggers side effects after storage.
 ///
 /// NOTE: kind:7 (reaction) is intentionally excluded — dedup and DB writes are
@@ -570,6 +670,7 @@ pub async fn validate_admin_event(
                 "purpose",
                 "visibility",
                 "ttl",
+                "resource",
             ];
             let has_recognized = event
                 .tags
@@ -577,7 +678,48 @@ pub async fn validate_admin_event(
                 .any(|t| RECOGNIZED_TAGS.contains(&t.kind().to_string().as_str()));
             if !has_recognized {
                 return Err(anyhow::anyhow!(
-                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl)"
+                    "kind:9002 must include at least one metadata tag (name, about, archived, topic, purpose, visibility, ttl, resource)"
+                ));
+            }
+
+            let registering_business_context = is_business_context_registration(event)?;
+            if registering_business_context
+                && (channel.channel_type != "stream"
+                    || channel.visibility != "private"
+                    || channel.archived_at.is_some())
+            {
+                return Err(anyhow::anyhow!(
+                    "Business context must be an unarchived private stream channel"
+                ));
+            }
+            if registering_business_context
+                && channel
+                    .resource_type
+                    .as_deref()
+                    .is_some_and(|kind| kind != buzz_business::BUSINESS_CONTEXT_RESOURCE_TYPE)
+            {
+                return Err(anyhow::anyhow!(
+                    "channel is already registered as a different resource type"
+                ));
+            }
+            if (channel.resource_type.is_some() || registering_business_context)
+                && event.tags.iter().any(|tag| {
+                    let parts = tag.as_slice();
+                    parts.len() == 2 && parts[0] == "visibility" && parts[1] == "open"
+                })
+            {
+                return Err(anyhow::anyhow!(
+                    "typed context channels must remain private"
+                ));
+            }
+            if registering_business_context
+                && event.tags.iter().any(|tag| {
+                    let parts = tag.as_slice();
+                    parts.len() == 2 && parts[0] == "archived" && parts[1] == "true"
+                })
+            {
+                return Err(anyhow::anyhow!(
+                    "archived channels cannot be registered as Business context"
                 ));
             }
 
@@ -1204,6 +1346,9 @@ pub async fn emit_group_discovery_events(
             if !desc.is_empty() {
                 tags.push(Tag::parse(["about", desc])?);
             }
+        }
+        if let Some(ref resource_type) = channel.resource_type {
+            tags.push(Tag::parse(["resource", resource_type])?);
         }
         if channel.visibility == "private" {
             tags.push(Tag::parse(["private"])?);
@@ -3787,6 +3932,43 @@ pub async fn publish_nipia_unarchived(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ordinary_community_member_cannot_claim_canonical_context_with_owned_group() {
+        // Owning a private group grants group-level control, but not the
+        // community-wide authority to claim its single canonical context.
+        assert!(!can_register_business_context(
+            Some("owner"),
+            Some("member")
+        ));
+        assert!(!can_register_business_context(Some("admin"), None));
+        assert!(can_register_business_context(Some("owner"), Some("owner")));
+        assert!(can_register_business_context(Some("admin"), Some("admin")));
+    }
+
+    #[test]
+    fn business_context_resource_tag_has_one_exact_value() {
+        let keys = nostr::Keys::generate();
+        let valid = EventBuilder::new(Kind::Custom(9002), "")
+            .tags([
+                Tag::parse(["resource", buzz_business::BUSINESS_CONTEXT_RESOURCE_TYPE])
+                    .expect("resource tag"),
+            ])
+            .sign_with_keys(&keys)
+            .expect("sign event");
+        assert!(is_business_context_registration(&valid).expect("validate tag"));
+
+        let duplicate = EventBuilder::new(Kind::Custom(9002), "")
+            .tags([
+                Tag::parse(["resource", buzz_business::BUSINESS_CONTEXT_RESOURCE_TYPE])
+                    .expect("first resource tag"),
+                Tag::parse(["resource", buzz_business::BUSINESS_CONTEXT_RESOURCE_TYPE])
+                    .expect("second resource tag"),
+            ])
+            .sign_with_keys(&keys)
+            .expect("sign duplicate event");
+        assert!(is_business_context_registration(&duplicate).is_err());
+    }
 
     #[test]
     fn workflow_deletion_retry_matches_authorized_dispatch() {

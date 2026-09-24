@@ -76,7 +76,7 @@ pub async fn find_dm_by_participants(
                created_by, created_at, updated_at, archived_at, deleted_at,
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
-               purpose, purpose_set_by, purpose_set_at
+               purpose, purpose_set_by, purpose_set_at, resource_type
         FROM channels
         WHERE community_id = $1
           AND participant_hash = $2
@@ -137,7 +137,7 @@ pub async fn create_dm(
                created_by, created_at, updated_at, archived_at, deleted_at,
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
-               purpose, purpose_set_by, purpose_set_at
+               purpose, purpose_set_by, purpose_set_at, resource_type
         FROM channels
         WHERE community_id = $1
           AND participant_hash = $2
@@ -207,7 +207,7 @@ pub async fn create_dm(
                created_by, created_at, updated_at, archived_at, deleted_at,
                nip29_group_id, topic_required, max_members,
                topic, topic_set_by, topic_set_at,
-               purpose, purpose_set_by, purpose_set_at
+               purpose, purpose_set_by, purpose_set_at, resource_type
         FROM channels WHERE community_id = $1 AND id = $2
         "#,
     )
@@ -505,6 +505,7 @@ fn row_to_channel_record(row: sqlx::postgres::PgRow) -> Result<ChannelRecord> {
         nip29_group_id: row.try_get("nip29_group_id")?,
         topic_required,
         max_members: row.try_get("max_members")?,
+        resource_type: row.try_get("resource_type")?,
         topic: row.try_get("topic").unwrap_or(None),
         topic_set_by: row.try_get("topic_set_by").unwrap_or(None),
         topic_set_at: row.try_get("topic_set_at").unwrap_or(None),

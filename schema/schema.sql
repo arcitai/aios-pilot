@@ -101,8 +101,16 @@ CREATE TABLE channels (
     participant_hash BYTEA,
     ttl_seconds     INT,
     ttl_deadline    TIMESTAMPTZ,
+    resource_type   TEXT,
     PRIMARY KEY (community_id, id),
-    CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
+    CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CONSTRAINT chk_channels_resource_type_scope CHECK (
+        resource_type IS NULL OR (
+            resource_type = 'aios.business-context:v1'
+            AND channel_type = 'stream'
+            AND visibility = 'private'
+        )
+    )
 );
 
 -- nip29 group id and DM participant hash are unique WITHIN a community, not globally.
@@ -110,6 +118,9 @@ CREATE UNIQUE INDEX idx_channels_nip29_group ON channels (community_id, nip29_gr
     WHERE nip29_group_id IS NOT NULL;
 CREATE UNIQUE INDEX idx_channels_dm_hash ON channels (community_id, participant_hash)
     WHERE participant_hash IS NOT NULL;
+CREATE UNIQUE INDEX idx_channels_one_business_context_per_community
+    ON channels (community_id)
+    WHERE resource_type = 'aios.business-context:v1';
 CREATE INDEX idx_channels_community_type ON channels (community_id, channel_type);
 CREATE INDEX idx_channels_community_visibility ON channels (community_id, visibility);
 CREATE INDEX idx_channels_created_by ON channels (community_id, created_by);
@@ -138,6 +149,27 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_channels_community_id_immutable
     BEFORE UPDATE ON channels
     FOR EACH ROW EXECUTE FUNCTION channels_community_id_immutable();
+
+CREATE FUNCTION preserve_channel_resource_type() RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.resource_type IS NOT NULL
+        AND NEW.resource_type IS DISTINCT FROM OLD.resource_type THEN
+        RAISE EXCEPTION 'channel resource type is immutable once registered'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    IF OLD.resource_type IS NULL
+        AND NEW.resource_type IS NOT NULL
+        AND NEW.archived_at IS NOT NULL THEN
+        RAISE EXCEPTION 'archived channels cannot be registered as resources'
+            USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_channels_resource_type_immutable
+    BEFORE UPDATE ON channels
+    FOR EACH ROW EXECUTE FUNCTION preserve_channel_resource_type();
 
 -- ── Channel members ───────────────────────────────────────────────────────────
 -- Conformance: "Channels and channel membership". PK leads with community_id.
