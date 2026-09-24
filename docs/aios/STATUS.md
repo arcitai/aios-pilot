@@ -64,8 +64,12 @@ worker (jobs=1); lead runs no Cargo. The worker is implementing and verifying
 private instance/grant/revocation/retry in
 `/Users/gustavanderson/Documents/Codex/2026-09-24/aios-native-agent-context`,
 branch `native-agent-context-setup`, from clean `19c8063`. The ACP worker now
-has only a read-only F10 channel-app ownership/authentication design assignment,
-with its handback to `/tmp/aios-channel-app-proposal.md`.
+completed the read-only F10 design handback at
+`/tmp/aios-channel-app-proposal.md`; lead read its source map and adopted the
+bounded direction in `AIOS_PILOT.md`. It now owns source-only extraction of
+existing app/Sites validators into shared `buzz-apps`, with no Cargo/build until
+the native slot is explicitly released. New event kinds, per-instance CAS,
+open-parent membership enforcement and media association remain later work.
 Lead owns React
 and integration; no third worker or concurrent heavy build. Non-secret runtime
 selection uses `BUZZ_ACP_BUSINESS_CONTEXT_ID`,

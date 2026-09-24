@@ -119,6 +119,20 @@ the channel's supported write policy. Do not simulate inheritance by copying
 membership lists into child channels. Existing private app documents remain
 under their current ACL until an explicit, verified migration/attachment.
 
+F10 implementation direction (24 September, afternoon): new app resources
+require actual current parent membership even in open/public channels. Parent
+owner/admin authority governs create, title changes, attachment and archive;
+member/bot document edits follow the parent's existing write policy. Community
+administration alone is not a bypass. Parent and app type are immutable. A
+separate app event/head coordinate must preserve ordinary Canvas behavior;
+exact kind allocation and metadata/document revision protocol remain a design
+gate before relay implementation. Extract the current CLI app and Sites schema
+validation into a shared `buzz-apps` module first, preserving existing behavior.
+The source audit found that Blossom GET/HEAD authorizes at relay/blob scope,
+not parent-channel scope. Private app-media acceptance therefore remains open
+until blob association and current parent authorization are implemented; app
+metadata/document protection must not be described as blob privacy.
+
 The shared context reference does not make previously private knowledge
 workspace-public. Context-group membership is separate from ordinary channel
 membership; plugin and agent grants remain distinct. New grants and imported
