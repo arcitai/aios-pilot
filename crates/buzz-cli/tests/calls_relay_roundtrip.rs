@@ -1,8 +1,11 @@
 //! Signed/encrypted call-request round trips against an isolated Buzz relay.
 //!
-//! Run with `BUZZ_MANAGED_AGENT_START_NONCE=<ephemeral-value> cargo test -p
-//! buzz-cli --test calls_relay_roundtrip -- --ignored --nocapture` after
-//! starting `scripts/start-isolated-test-relay.sh`.
+//! Run with `BUZZ_CALLS_RELAY_URL` set to a disposable isolated relay and
+//! `BUZZ_MANAGED_AGENT_START_NONCE` set to an ephemeral value, then invoke
+//! `cargo test -p buzz-cli --test calls_relay_roundtrip -- --ignored
+//! --nocapture`. This test never starts or resets relay services and has no
+//! default URL, and refuses ports 3030 and 3031 so it cannot target the known
+//! shared endpoints.
 
 #[path = "../src/commands/calls/mod.rs"]
 mod calls;
@@ -22,6 +25,8 @@ use tokio::time::{timeout, Instant};
 use uuid::Uuid;
 
 const OBSERVER_FRAME_KIND: u16 = 24_200;
+const MAX_RELAY_DIAGNOSTICS: usize = 8;
+const MAX_RELAY_DIAGNOSTIC_CHARS: usize = 240;
 
 #[derive(Clone, Copy)]
 enum SyntheticResponse {
@@ -33,7 +38,11 @@ enum SyntheticResponse {
 
 fn relay_urls() -> (String, String) {
     let http_url = std::env::var("BUZZ_CALLS_RELAY_URL")
-        .unwrap_or_else(|_| "http://localhost:3030".to_owned());
+        .expect("set BUZZ_CALLS_RELAY_URL to a disposable isolated relay");
+    assert!(
+        !http_url.contains(":3030") && !http_url.contains(":3031"),
+        "refusing shared relay ports 3030 and 3031"
+    );
     let ws_url = http_url
         .replacen("https://", "wss://", 1)
         .replacen("http://", "ws://", 1)
@@ -46,23 +55,147 @@ async fn receive_call_request(
     owner_connection: &mut NostrWsConnection,
     subscription_id: &str,
     wait: Duration,
-) -> Event {
+) -> Result<Event, String> {
     let deadline = Instant::now() + wait;
+    let mut diagnostics = Vec::new();
+    let mut omitted_diagnostics = 0;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
-        assert!(!remaining.is_zero(), "timed out waiting for call request");
-        match owner_connection
-            .next_event(remaining)
-            .await
-            .expect("receive call request from relay")
-        {
+        if remaining.is_zero() {
+            return Err(format!(
+                "timed out waiting for call request; {}",
+                relay_diagnostics(&diagnostics, omitted_diagnostics)
+            ));
+        }
+        let message = match owner_connection.next_event(remaining).await {
+            Ok(message) => message,
+            Err(error) => {
+                return Err(format!(
+                    "relay receive failed: {error:?}; {}",
+                    relay_diagnostics(&diagnostics, omitted_diagnostics)
+                ));
+            }
+        };
+        match message {
             RelayMessage::Event {
                 subscription_id: received_id,
                 event,
+            } if received_id == subscription_id && event.kind.as_u16() == OBSERVER_FRAME_KIND => {
+                return Ok(*event);
+            }
+            RelayMessage::Closed {
+                subscription_id: received_id,
+                message,
             } if received_id == subscription_id => {
-                if event.kind.as_u16() == OBSERVER_FRAME_KIND {
-                    return *event;
-                }
+                return Err(format!(
+                    "request subscription was closed: {}; {}",
+                    clipped(&message),
+                    relay_diagnostics(&diagnostics, omitted_diagnostics)
+                ));
+            }
+            message => push_relay_diagnostic(
+                &mut diagnostics,
+                &mut omitted_diagnostics,
+                relay_message_diagnostic(&message),
+            ),
+        }
+    }
+}
+
+fn clipped(value: &str) -> String {
+    value.chars().take(MAX_RELAY_DIAGNOSTIC_CHARS).collect()
+}
+
+fn push_relay_diagnostic(
+    diagnostics: &mut Vec<String>,
+    omitted_diagnostics: &mut usize,
+    detail: String,
+) {
+    if diagnostics.len() == MAX_RELAY_DIAGNOSTICS {
+        *omitted_diagnostics += 1;
+    } else {
+        diagnostics.push(clipped(&detail));
+    }
+}
+
+fn relay_diagnostics(diagnostics: &[String], omitted_diagnostics: usize) -> String {
+    format!("observed relay messages: {diagnostics:?} ({omitted_diagnostics} more omitted)")
+}
+
+fn relay_message_diagnostic(message: &RelayMessage) -> String {
+    match message {
+        RelayMessage::Event {
+            subscription_id,
+            event,
+        } => event_diagnostic(subscription_id, event),
+        RelayMessage::Closed {
+            subscription_id,
+            message,
+        } => format!("CLOSED sub={subscription_id}: {}", clipped(message)),
+        RelayMessage::Notice { message } => format!("NOTICE: {}", clipped(message)),
+        RelayMessage::Ok(response) => format!(
+            "OK accepted={} message={}",
+            response.accepted,
+            clipped(&response.message)
+        ),
+        RelayMessage::Eose { subscription_id } => format!("unexpected EOSE sub={subscription_id}"),
+        RelayMessage::Auth { challenge } => {
+            format!("unexpected AUTH challenge={}", clipped(challenge))
+        }
+        RelayMessage::Count {
+            subscription_id,
+            count,
+        } => format!("unexpected COUNT sub={subscription_id} count={count}"),
+    }
+}
+
+fn event_diagnostic(subscription_id: &str, event: &Event) -> String {
+    let tag_values = |tag_name: &str| {
+        event
+            .tags
+            .iter()
+            .filter(|tag| tag.kind().to_string() == tag_name)
+            .filter_map(|tag| tag.content())
+            .take(2)
+            .map(clipped)
+            .collect::<Vec<_>>()
+    };
+    format!(
+        "EVENT sub={} kind={} id={} author={} p={:?} agent={:?} frame={:?}",
+        clipped(subscription_id),
+        event.kind.as_u16(),
+        event.id.to_hex(),
+        event.pubkey.to_hex(),
+        tag_values("p"),
+        tag_values("agent"),
+        tag_values("frame")
+    )
+}
+
+async fn wait_for_subscription_ready(
+    owner_connection: &mut NostrWsConnection,
+    subscription_id: &str,
+) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        assert!(
+            !remaining.is_zero(),
+            "owner subscription did not reach EOSE"
+        );
+        match owner_connection
+            .next_event(remaining)
+            .await
+            .expect("wait for owner subscription EOSE")
+        {
+            RelayMessage::Eose {
+                subscription_id: received_id,
+            } if received_id == subscription_id => return,
+            RelayMessage::Closed {
+                subscription_id: received_id,
+                message,
+            } if received_id == subscription_id => {
+                panic!("relay closed owner request subscription before EOSE: {message}");
             }
             _ => {}
         }
@@ -107,6 +240,7 @@ async fn run_round_trip(response: SyntheticResponse, expected: &str) {
         ]))
         .await
         .expect("subscribe generated owner identity to its incoming request");
+    wait_for_subscription_ready(&mut owner_connection, &subscription_id).await;
 
     let agent_client = client::BuzzClient::new(
         http_url,
@@ -117,7 +251,7 @@ async fn run_round_trip(response: SyntheticResponse, expected: &str) {
     .expect("create CLI client with generated identity");
     let wait_seconds = if expected == "timeout" { 1 } else { 6 };
     let call_channel_id = channel_id.clone();
-    let call_task = tokio::spawn(async move {
+    let mut call_task = tokio::spawn(async move {
         calls::request_call(
             &agent_client,
             Some(&auth_tag),
@@ -127,12 +261,21 @@ async fn run_round_trip(response: SyntheticResponse, expected: &str) {
         .await
     });
 
-    let request_event = receive_call_request(
+    let request_event = match receive_call_request(
         &mut owner_connection,
         &subscription_id,
         Duration::from_secs(8),
     )
-    .await;
+    .await
+    {
+        Ok(event) => event,
+        Err(relay_error) => {
+            let cli_result = timeout(Duration::from_secs(7), &mut call_task).await;
+            panic!(
+                "owner did not receive call request ({relay_error}); CLI completion: {cli_result:?}"
+            );
+        }
+    };
     assert_eq!(request_event.pubkey.to_hex(), agent_pubkey);
     assert!(
         request_event.verify().is_ok(),
