@@ -2337,7 +2337,7 @@ async fn apply_permission_mode(
                 target: "pool::permission",
                 "fatal error setting permission mode {wire:?}: {e}"
             );
-            return Err(e);
+            Err(e)
         }
         // Application-level errors mean the provider rejected the request.
         Ok(Err(e)) => {
@@ -2359,7 +2359,7 @@ async fn apply_permission_mode(
                 target: "pool::permission",
                 "permission mode set timed out ({PERMISSION_MODE_TIMEOUT:?}) — treating as fatal"
             );
-            return Err(AcpError::Timeout(PERMISSION_MODE_TIMEOUT));
+            Err(AcpError::Timeout(PERMISSION_MODE_TIMEOUT))
         }
     }
 }
