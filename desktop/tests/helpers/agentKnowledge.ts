@@ -24,15 +24,26 @@ declare global {
 export async function openAgentKnowledge(
   page: Page,
   state: "none" | "full" | "pending" | "removing" = "none",
+  linked = false,
 ) {
   const pubkey = TEST_IDENTITIES.tyler.pubkey;
   await installMockBridge(page, {
+    personas: linked
+      ? [
+          {
+            id: "knowledge-template",
+            displayName: "Knowledge template",
+            systemPrompt: "Help with company knowledge.",
+          },
+        ]
+      : undefined,
     managedAgents: [
       {
         pubkey,
         name: "Knowledge assistant",
         status: "stopped",
         channelNames: ["agents"],
+        personaId: linked ? "knowledge-template" : undefined,
       },
     ],
   });
@@ -138,9 +149,19 @@ export async function openAgentKnowledge(
   );
   await page.getByTestId("open-agents-view").click();
   await page
-    .getByRole("button", { name: "Knowledge assistant agent profile" })
+    .getByRole("button", {
+      name: linked
+        ? "Knowledge template agent profile"
+        : "Knowledge assistant agent profile",
+    })
     .click();
-  await page.getByTestId("user-profile-edit-agent").click();
+  if (linked) {
+    await page
+      .getByRole("button", { name: "Agent settings", exact: true })
+      .click();
+  } else {
+    await page.getByTestId("user-profile-edit-agent").click();
+  }
   await expect(page.getByTestId("edit-agent-dialog")).toBeVisible();
   if (state !== "none")
     await expect(

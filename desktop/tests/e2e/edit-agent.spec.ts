@@ -358,10 +358,9 @@ test.describe("edit agent dialog", () => {
     // Routing pin for handleEditAgent (UserProfilePanel): when the agent has
     // a resolvable non-built-in persona, the Edit quick action opens the
     // DEFINITION editor (persona dialog), not EditAgentDialog. The instance
-    // editor (and its inherit-runtime toggle) is reachable for persona-linked
-    // agents only via the requestOpenEditAgent event (ConfigNudgeCard) — no
-    // plain UI path — so its inherit-toggle behavior is covered by B3b's
-    // component-level pinning test, not e2e.
+    // editor also has a separate Agent settings management entry, covered by the
+    // company-knowledge recovery spec. The quick Edit action keeps editing
+    // the shared definition.
     await installMockBridge(page, {
       managedAgents: [
         {

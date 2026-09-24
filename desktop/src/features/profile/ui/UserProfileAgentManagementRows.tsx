@@ -4,12 +4,14 @@ import {
   ArchiveRestore,
   CopyPlus,
   Download,
+  Settings,
   Sparkles,
   Trash2,
   type LucideIcon,
 } from "lucide-react";
 
 import type { IdentityArchiveActions } from "@/features/identity-archive/hooks";
+import { requestOpenEditAgent } from "@/features/agents/openEditAgentEvent";
 import { ArchiveConfirmDialog } from "@/features/profile/ui/ArchiveConfirmDialog";
 import type { ManagedAgent } from "@/shared/api/types";
 import {
@@ -50,6 +52,7 @@ export function UserProfileAgentManagementRows({
   onExportAgent?: () => void;
 }) {
   if (
+    !managedAgent &&
     !onCreateCard &&
     !onDuplicateAgent &&
     !onExportAgent &&
@@ -62,6 +65,15 @@ export function UserProfileAgentManagementRows({
 
   return (
     <PanelSectionGroup testId="user-profile-agent-management-section">
+      {managedAgent ? (
+        <ProfileAgentActionRow
+          disabled={isDeletePending}
+          icon={Settings}
+          label="Agent settings"
+          onClick={() => requestOpenEditAgent(managedAgent.pubkey)}
+          testId="user-profile-instance-settings"
+        />
+      ) : null}
       {onDuplicateAgent ? (
         <ProfileAgentActionRow
           disabled={isDeletePending}

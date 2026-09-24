@@ -2,6 +2,22 @@ import { expect, test } from "@playwright/test";
 import { openAgentKnowledge } from "../helpers/agentKnowledge";
 import { waitForAnimations } from "../helpers/animations";
 
+test("a persona-linked agent exposes its private knowledge through Agent settings", async ({
+  page,
+}) => {
+  const dialog = await openAgentKnowledge(page, "full", true);
+  await expect(
+    dialog.getByRole("radio", { name: /^Full company context/ }),
+  ).toBeChecked();
+  await dialog.press("Escape");
+  await expect(page.locator("#edit-agent-name")).toHaveValue(
+    "Unsaved name draft",
+  );
+  expect(
+    await page.evaluate(() => window.__AIOS_EDIT_KNOWLEDGE__.calls),
+  ).toEqual([]);
+});
+
 test("an existing agent does not inherit a new context and closing preserves ordinary edits", async ({
   page,
 }) => {

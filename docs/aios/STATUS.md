@@ -158,6 +158,16 @@ The fixture controls native responses; it proves UI/wire/recovery semantics,
 not real host access. Real localhost still lists only saved definitions; no
 real agent was created or granted access for this verification.
 
+A further real UI path check found that a persona-linked instance's quick Edit
+opens its definition, so private settings needed a direct entry. The profile's
+existing management rows now include Agent settings. The edit-request listener
+uses the resolved instance identity even when the profile was opened through a
+definition card. The new regression failed before this identity-binding fix;
+then both private-entry and existing definition-edit routing checks passed in
+`/tmp/aios-agent-private-entry-v2-final.log`. The saved-failure log is
+`/tmp/aios-agent-private-entry-final.log`. Scoped format, typecheck and file-size
+results are in `/tmp/aios-agent-private-entry-{format-final,tsc-final,filesize}.log`.
+
 The current native companion is still the prior verified build. Lead reopened
 Fizz's definition editor on real localhost and cancelled without changing it;
 its shared instructions/skills are distinct from the private running instance.

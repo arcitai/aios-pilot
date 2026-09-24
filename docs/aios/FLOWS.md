@@ -116,6 +116,15 @@ permission/onboarding/recovery fixtures pass. This protects partial creation;
 it does not yet prove the forthcoming native context grant/retry journal.
 See `STATUS.md` for the evidence logs.
 
+F05 private-instance recovery now has a compact Company knowledge editor.
+Loading/access saves separately from an unsaved name/model draft. A durable
+operation can be retried or removed, including unknown grant delivery before
+any applied state exists. Removing access cannot recall previously read data.
+Eight final controlled UI checks cover these transitions and name persistence;
+see `STATUS.md` for logs and the distinction from native/host verification.
+Persona-linked instances expose this through the profile's Agent settings
+management entry; the quick Edit action continues to edit the definition.
+
 ### Company knowledge in agent work — clarified 24 September
 
 Gustav clarified that every workspace agent should have an entry point to the
@@ -336,10 +345,3 @@ Plan review resolved: Plugins is a workspace-owned catalog; bundled skill
 selection does not assert runtime discovery or application. New resource grants
 explicitly supersede the upstream channel-only rule; current data retains its
 existing ACL during the navigation slice.
-
-F05 private-instance recovery now has a compact Company knowledge editor.
-Loading/access saves separately from an unsaved name/model draft. A durable
-operation can be retried or removed, including unknown grant delivery before
-any applied state exists. Removing access cannot recall previously read data.
-Eight final controlled UI checks cover these transitions and name persistence;
-see `STATUS.md` for logs and the distinction from native/host verification.

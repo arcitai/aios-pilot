@@ -166,12 +166,6 @@ export function UserProfilePanel({
     },
     [],
   );
-  const {
-    focus: editAgentFocus,
-    open: editAgentOpen,
-    setFocus: setEditAgentFocus,
-    setOpen: setEditAgentOpen,
-  } = useProfileEditAgentRequest(pubkey);
   const [addToChannelOpen, setAddToChannelOpen] = React.useState(false);
   const [personaDialogState, setPersonaDialogState] =
     React.useState<PersonaDialogState | null>(null);
@@ -224,6 +218,12 @@ export function UserProfilePanel({
   );
   const resolvedPersona = pubkey && !managedAgent ? undefined : retainedPersona;
   const effectivePubkey = pubkey ?? managedAgent?.pubkey ?? null;
+  const {
+    focus: editAgentFocus,
+    open: editAgentOpen,
+    setFocus: setEditAgentFocus,
+    setOpen: setEditAgentOpen,
+  } = useProfileEditAgentRequest(effectivePubkey);
   const pubkeyLower = effectivePubkey?.toLowerCase() ?? "";
 
   const profileQuery = useUserProfileQuery(effectivePubkey ?? undefined);
