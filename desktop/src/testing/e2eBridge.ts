@@ -47,10 +47,8 @@ import type {
 import { getMarkdownParseCount } from "@/shared/ui/markdown/nodeCache";
 import { syncAgentTurnsFromEvents } from "@/features/agents/activeAgentTurnsStore";
 import { recordTimeoutFromRejection } from "@/features/moderation/lib/timeoutStore";
-import {
-  injectObserverEventsForE2E,
-  syncAgentObserverEvents,
-} from "@/features/agents/observerRelayStore";
+import { syncAgentObserverEvents } from "@/features/agents/observerRelayStore";
+import { installObserverTestBridge } from "./observerTestBridge";
 import {
   CUSTOM_EMOJI_SET_D_TAG,
   KIND_EMOJI_SET,
@@ -1503,19 +1501,6 @@ declare global {
       channelId: string;
       turnId: string;
       kind?: "turn_started" | "turn_completed";
-    }) => void;
-    __BUZZ_E2E_SEED_OBSERVER_EVENTS__?: (input: {
-      agentPubkey: string;
-      events: Array<{
-        seq: number;
-        timestamp: string;
-        kind: string;
-        agentIndex: number | null;
-        channelId: string | null;
-        sessionId: string | null;
-        turnId: string | null;
-        payload: unknown;
-      }>;
     }) => void;
     __BUZZ_E2E_EMIT_MOCK_READ_STATE__?: (input: {
       clientId: string;
@@ -11944,9 +11929,7 @@ export function maybeInstallE2eTauriMocks() {
     syncAgentTurnsFromEvents(agentPubkey, [event]);
     syncAgentObserverEvents(agentPubkey, [event]);
   };
-  window.__BUZZ_E2E_SEED_OBSERVER_EVENTS__ = ({ agentPubkey, events }) => {
-    injectObserverEventsForE2E(agentPubkey, events);
-  };
+  installObserverTestBridge();
   const meshModelName = (modelId: string) => {
     const basename = modelId.split("/").at(-1) ?? modelId;
     return basename

@@ -2,6 +2,8 @@ import { toast } from "sonner";
 
 import { attachManagedAgentToChannel } from "./channelAgents";
 import type { Channel, CreateManagedAgentResponse } from "@/shared/api/types";
+import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
+import { requestOpenEditAgent } from "./openEditAgentEvent";
 
 type TargetChannel = Pick<Channel, "id" | "name">;
 
@@ -53,11 +55,28 @@ function showAttachmentFailure(
 
 /** Keeps creation successful when its optional channel attachment fails. */
 export function useCreatedAgentChannelAttachment() {
+  const { openProfilePanel } = useProfilePanel();
   async function presentCreatedAgent(
     created: CreateManagedAgentResponse,
     targetChannel?: TargetChannel | null,
   ) {
-    if (created.spawnError || !targetChannel) {
+    const setupError = created.spawnError ?? created.profileSyncError;
+    if (setupError) {
+      toast.warning("Agent created, but setup needs attention", {
+        description: `${created.agent.name}: ${setupError}`,
+        action: openProfilePanel
+          ? {
+              label: "Review agent",
+              onClick: () => {
+                openProfilePanel(created.agent.pubkey);
+                requestOpenEditAgent(created.agent.pubkey);
+              },
+            }
+          : undefined,
+      });
+      return;
+    }
+    if (!targetChannel) {
       toast.success("Agent created");
       return;
     }

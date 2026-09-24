@@ -192,7 +192,8 @@ export function useAgentManagement() {
             browserEnabled,
           ),
         );
-        if (created.spawnError) throw new Error(created.spawnError);
+        // Creation is already durable even when setup/start fails. Close this
+        // draft and recover on the saved instance instead of minting another.
         const targetChannel = (channelsQuery.data ?? []).find(
           (channel) => channel.id === request.request.channelId,
         );

@@ -37,8 +37,10 @@ diff checks and the integrated file-size gate pass. Logs:
 
 Next boundary is actual agent context setup and runtime loading. The backend
 worker owns ACP selection/authorized per-run lookup, with the sole heavy Cargo
-slot (jobs=1). The browser worker is source-only, preparing the native
-instance/grant/revocation/retry contract before implementation. Lead owns React
+slot (jobs=1). The browser worker is source-only, implementing the reviewed native
+instance/grant/revocation/retry contract in
+`/Users/gustavanderson/Documents/Codex/2026-09-24/aios-native-agent-context`,
+branch `native-agent-context-setup`, verified from clean `19c8063`. Lead owns React
 and integration; no third worker or concurrent heavy build. Non-secret runtime
 selection uses `BUZZ_ACP_BUSINESS_CONTEXT_ID`,
 `BUZZ_ACP_BUSINESS_CONTEXT_RELAY`, and
@@ -46,6 +48,26 @@ selection uses `BUZZ_ACP_BUSINESS_CONTEXT_ID`,
 are routing/settings, never grants. No configuration preserves old behavior.
 The shared policy is not authentication; every adapter obtains current host
 metadata and membership under the agent identity.
+
+Native setup and ACP also require a versioned capability check: an older
+configured ACP binary that ignores the context environment must not receive a
+new grant or be reported as supporting the loading policy. The two workers
+coordinate that boundary before native verification; no extra build runs.
+
+Agent creation recovery is now corrected: after a durable creation followed
+by a setup/start failure, the form closes and its warning opens the existing
+agent's settings. Retrying the creation form no longer mints a duplicate.
+Profile-sync failure uses the same recovery route. A controlled browser fixture
+exercises the real observer request, creation UI and saved-agent editor; nine
+affected recovery, permission and onboarding browser tests pass. Restoring the
+old throw makes the new regression fail because the creation form stays open.
+Evidence: `/tmp/aios-agent-recovery-final.log` (9/9),
+`/tmp/aios-agent-recovery-mutation.log` (expected failure),
+`/tmp/aios-agent-recovery-tsc-final.log`,
+`/tmp/aios-agent-recovery-format-final.log`, and
+`/tmp/aios-agent-recovery-filesize.log`. These are controlled bridge fixtures,
+not real new agents or memberships on the user's relay. The private-context
+TypeScript wire adapter is still uncommitted pending native integration.
 
 The current native companion is still the prior verified build. Lead reopened
 Fizz's definition editor on real localhost and cancelled without changing it;

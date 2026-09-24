@@ -108,6 +108,14 @@ Prefer visible, reversible transitions: draft → saved → applied/ready; previ
 Persist enough to resume without repeating completed external effects.
 Show a human-readable reason and the next action at the affected surface.
 
+F02/F05 recovery checkpoint: durable creation with a subsequent start/setup
+error now closes the creation draft and offers the existing agent's settings.
+The controlled browser regression verifies one identity/persona creation and
+the recovery action; reinstating the old throw fails it. Nine adjacent
+permission/onboarding/recovery fixtures pass. This protects partial creation;
+it does not yet prove the forthcoming native context grant/retry journal.
+See `STATUS.md` for the evidence logs.
+
 ### Company knowledge in agent work — clarified 24 September
 
 Gustav clarified that every workspace agent should have an entry point to the
