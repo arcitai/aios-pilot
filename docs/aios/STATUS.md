@@ -48,14 +48,25 @@ original raw stdout was not retained. These remain worker-reported counts.
 The fixture uses a synthetic signed relay and fake ACP stdio provider, not a
 live model or the user's relay. The document limit does not prove model fit.
 
-Clippy found two existing needless-return warnings in ACP's permission-mode
-handling (`pool.rs`); the backend worker owns their bounded repair and retained
-final checks, with the sole heavy Cargo slot (jobs=1). Lead runs no Cargo during
-that repair. Transfer the slot explicitly to the native worker afterwards.
-The browser worker is source-only, implementing the reviewed native
-instance/grant/revocation/retry contract in
+ACP final gates are now clean. The two permission-mode return warnings and
+one equivalent browser-cleanup test expression were fixed at `bd7c129` and
+`66bbd9f`. Lead read the retained results: 16 permission-mode tests, 9 Business
+context tests and the installer-descendant cleanup test pass; all-target ACP
+Clippy with warnings denied and scoped formatting pass. The built executable
+reports `schemaVersion: 1` and `business_context_protocol: 1`. Logs are
+`/tmp/aios-acp-context-{permission,focused,capabilities}-final.*`,
+`/tmp/aios-acp-context-clippy-clean-final.log`,
+`/tmp/aios-acp-context-browser-cleanup-final.log` and
+`/tmp/aios-acp-context-fmt-clean-final.log`.
+
+The sole heavy Cargo slot has been explicitly transferred to the native
+worker (jobs=1); lead runs no Cargo. The worker is implementing and verifying
+private instance/grant/revocation/retry in
 `/Users/gustavanderson/Documents/Codex/2026-09-24/aios-native-agent-context`,
-branch `native-agent-context-setup`, verified from clean `19c8063`. Lead owns React
+branch `native-agent-context-setup`, from clean `19c8063`. The ACP worker now
+has only a read-only F10 channel-app ownership/authentication design assignment,
+with its handback to `/tmp/aios-channel-app-proposal.md`.
+Lead owns React
 and integration; no third worker or concurrent heavy build. Non-secret runtime
 selection uses `BUZZ_ACP_BUSINESS_CONTEXT_ID`,
 `BUZZ_ACP_BUSINESS_CONTEXT_RELAY`, and
