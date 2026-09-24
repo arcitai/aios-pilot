@@ -857,6 +857,16 @@ user's existing relay. Image and relay binary digests are in that evidence log.
 Final backend handback, source review and integration remain pending. No new
 schema or access change has been applied to the user's host.
 
+Additional restored-host proof is in
+`/tmp/aios-context-proof-20260924-01-signed-http-ws.log`. Lead read the result and
+its reproduction harness: signed HTTP query/count expose 3 Canvas events to
+both admitted identities before removal and zero to the revoked agent after;
+the owner can still write/read. The authenticated agent WebSocket receives
+history and a live update before removal, is closed on revocation and receives
+no subsequent update. This proves the isolated host boundary, not the running
+user host or an agent model's behavior. The restored fixture now has its agent
+revoked; its original backup retains the earlier grant.
+
 Bundled agent guidance is being updated to use company discovery and selective
 reads from ordinary conversations; the nest skill version is bumped to refresh
 existing installs after a native build. This is drafted guidance, not proof that
@@ -868,3 +878,9 @@ wire this into setup/run metadata before claiming legacy Welcome/Saved pilot
 work compatibility. Do not expose storage UUIDs in ordinary onboarding messages
 as a substitute for that runtime binding. Existing channel Canvas injection
 already carries metadata and a lookup route, not the full Canvas body.
+The read-only agent audit is available at `/tmp/aios-agent-context-seams.md`.
+It identifies instance-scoped create/update/store/spawn fields and ACP prompt
+assembly; `FLOWS.md` records the relay binding and partial-grant recovery
+contract. Existing Buzz private memory and bounded thread history are reusable;
+there is no evidence of an archive retaining every pre-compaction model/tool
+turn. Do not equate retained relay messages with lossless model history.

@@ -146,6 +146,25 @@ agent requests that source; an explicitly opted-in agent receives the full
 authorized document and its revision. Revoking context access denies future
 lookups/new-run loads in both modes. Historical prompts cannot be recalled.
 
+The source audit locates this setting on the private managed-agent instance,
+not its shareable persona. Persist the context ID, selected relay/workspace and
+loading mode together; absence in an old record means no newly granted access.
+New-agent setup proposes the canonical company context and **When needed**.
+The native setup boundary validates current context-management authority,
+performs the grant and verifies it before reporting access ready. A partial
+failure retains the created agent and a clear retry state rather than creating
+another identity. Existing agents need an explicit selection; do not broaden
+legacy private conversation access through an unrelated edit.
+
+At launch, bind non-secret context metadata to the actual agent/relay pair.
+Keep the owner signing secret out of the runner. The existing owner-signed
+agent attestation establishes identity; it does not grant company access.
+Each new full load uses the agent identity and current grant. Saved settings
+and settings applied to a running process are distinct; report necessary
+restart/application status. A relay change must never silently retarget an
+explicit company context. Legacy recovery must retain its selected context ID
+without showing storage IDs in ordinary onboarding messages.
+
 ### Four context layers, one agent experience
 
 The additional Kylon source check below sharpens F03–F09; it does not replace
