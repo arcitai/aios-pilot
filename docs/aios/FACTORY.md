@@ -44,8 +44,11 @@ no additional push trigger. Scheduled/manual full runs retain every dependency
 of `just ci` and disposable-database integration. **Run workflow** always runs
 the full matrix; scheduled runs omit expensive work only when a successful
 scheduled/manual full run already covers the same SHA. Failures remain eligible
-for retry. GitHub may delay a schedule, and its workflow must exist on the
-default branch before the timer becomes active.
+for retry. An unchanged interval starts only the lightweight cadence job, without
+a checkout, lane tests, verification matrix or acceptance runner. That control
+job still consumes Actions runtime. PR acceptance always runs, including when
+the cadence decision fails. GitHub may delay a schedule, and its workflow must
+exist on the default branch before the timer becomes active.
 
 For PRs, frontend/repository policy checks always run. Native desktop changes
 also select native checks; mobile changes select mobile checks. Shared backend,
