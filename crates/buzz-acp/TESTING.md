@@ -71,3 +71,21 @@ Goose and uses its provider to invoke the native developer shell. Both operate
 only on temporary local repositories, verify commit/tag signatures and identity,
 check unrelated-remote credential scoping, and assert keyfile removal. They do
 not replace authenticated relay clone/push/readback testing.
+
+## Browser MCP loopback fixture
+
+After building `buzz-acp` and locating Buzz's managed Node executable, run the
+opt-in macOS proof:
+
+```sh
+AIOS_TEST_ACP="$PWD/target/debug/buzz-acp" \
+AIOS_TEST_BROWSER_NODE="/absolute/path/to/managed/node" \
+python3 scripts/tests/test_aios_browser_mcp.py
+```
+
+The fixture starts a disposable loopback HTTP page and a headless Browser MCP
+server in a private process group. First run downloads the pinned MCP package
+and Chromium into a temporary data directory under the implementation's
+overall provisioning deadline. The test verifies JSON-only stdio,
+`browser_navigate`, and cleanup of the owned process group. It never connects to
+a user browser or navigates to an external page.
