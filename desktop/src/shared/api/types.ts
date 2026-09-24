@@ -365,6 +365,8 @@ export type ManagedAgent = {
   logPath: string;
   startOnAppLaunch: boolean;
   autoRestartOnConfigChange: boolean;
+  /** Local per-instance opt-in to Buzz's isolated Playwright MCP server. */
+  browserEnabled: boolean;
   backend: ManagedAgentBackend;
   backendAgentId: string | null;
   /** Who the agent should respond to. Maps to `buzz-acp --respond-to`. */
@@ -424,6 +426,8 @@ export type CreateManagedAgentInput = {
   envVars?: Record<string, string>;
   spawnAfterCreate?: boolean;
   startOnAppLaunch?: boolean;
+  /** Start a credential-scrubbed local Playwright MCP server with this agent. */
+  browserEnabled?: boolean;
   backend?: ManagedAgentBackend;
   /** Omitted uses the linked persona default, then `"owner-only"`. */
   respondTo?: RespondToMode;
@@ -710,6 +714,8 @@ export type UpdateManagedAgentInput = {
   respondTo?: RespondToMode;
   /** Absent = keep. Present = replace the allowlist (server-validated). */
   respondToAllowlist?: string[];
+  /** Absent = keep the current local browser preference. */
+  browserEnabled?: boolean;
   /** Tri-state: absent = don't touch; `null` = clear; `string` = set. Persisted in the locked update so access-change restarts snapshot the new effort. Send only when `effortTouched`. */
   effortLevel?: string | null;
 };

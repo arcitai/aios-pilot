@@ -196,6 +196,19 @@ fn reserved_keys_include_code_execution_surface() {
 }
 
 #[test]
+fn browser_runtime_selection_cannot_be_overridden_by_user_env() {
+    for key in [
+        "BUZZ_ACP_BROWSER_ENABLED",
+        "BUZZ_ACP_BROWSER_NODE_PATH",
+        "BUZZ_ACP_BROWSER_DATA_DIR",
+    ] {
+        assert!(is_reserved_env_key(key), "{key} should be reserved");
+        let agent = map(&[(key, "attacker-controlled")]);
+        assert!(merged_user_env(&BTreeMap::new(), &agent).is_empty());
+    }
+}
+
+#[test]
 fn reserved_keys_include_relay_url() {
     // Overriding the relay URL could redirect the agent to an
     // attacker-controlled relay.

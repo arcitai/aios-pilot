@@ -21,6 +21,7 @@ import {
   type AgentDefinitionSubmitOptions,
 } from "./AgentDefinitionDialog";
 import { WhereToRunSection } from "./WhereToRunSection";
+import { BrowserAccessField } from "./BrowserAccessField";
 import {
   canSubmitWhereToRun,
   emptyWhereToRunDraft,
@@ -42,6 +43,7 @@ type AgentDialogCreateProps = {
     input: CreatePersonaInput | UpdatePersonaInput,
     intent: AgentCreateIntent,
     backendIntent: BackendIntent | null,
+    browserEnabled: boolean,
   ) => Promise<boolean>;
 };
 
@@ -135,6 +137,7 @@ function AgentCreateDialogRouter({
   onSubmitDefinition,
 }: AgentDialogCreateProps) {
   const [runDraft, setRunDraft] = React.useState(emptyWhereToRunDraft);
+  const [browserEnabled, setBrowserEnabled] = React.useState(false);
   const initialValues = React.useMemo(
     () => providedInitialValues ?? createPersonaDialogState().initialValues,
     [providedInitialValues],
@@ -148,14 +151,26 @@ function AgentCreateDialogRouter({
     <AgentRunLocationProvider runLocation={runLocationForRunOn(runDraft.runOn)}>
       <AgentDefinitionDialog
         createRunSection={
-          <WhereToRunSection
-            draft={runDraft}
-            isPending={isDefinitionPending}
-            onDraftChange={(nextDraft) => {
-              setRunDraft(nextDraft);
-              onDirtyChange?.(true);
-            }}
-          />
+          <>
+            <WhereToRunSection
+              draft={runDraft}
+              isPending={isDefinitionPending}
+              onDraftChange={(nextDraft) => {
+                setRunDraft(nextDraft);
+                onDirtyChange?.(true);
+              }}
+            />
+            <BrowserAccessField
+              available={resolveBackendIntent(runDraft) === null}
+              disabled={isDefinitionPending}
+              id="create-agent-browser-access"
+              value={browserEnabled}
+              onChange={(value) => {
+                setBrowserEnabled(value);
+                onDirtyChange?.(true);
+              }}
+            />
+          </>
         }
         createSubmitBlocked={!canSubmitWhereToRun(runDraft)}
         description={copy.description}
@@ -170,6 +185,7 @@ function AgentCreateDialogRouter({
             input,
             "definition_start",
             resolveBackendIntent(runDraft),
+            resolveBackendIntent(runDraft) === null && browserEnabled,
           );
           if (submitted) {
             onDirtyChange?.(false);

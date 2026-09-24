@@ -397,7 +397,9 @@ function MemberActionsMenu({
                 ? getPairActionIcon(pairAction)
                 : getManagedAgentActionIcon(managedAgent)}
               {pairAction
-                ? MANAGED_AGENT_PAIR_ACTION_LABELS[pairAction]
+                ? pairAction === "stop" && managedAgent?.browserEnabled
+                  ? "Stop Agent and Browser"
+                  : MANAGED_AGENT_PAIR_ACTION_LABELS[pairAction]
                 : getManagedAgentPrimaryActionLabel(managedAgent)}
             </DropdownMenuItem>
             {onEditRespondTo ? (

@@ -130,6 +130,9 @@ export function AgentInstanceEditDialog({
   const [aiDefaultsOpen, setAiDefaultsOpen] = React.useState(false);
   const aiDefaultsTriggerRef = React.useRef<HTMLButtonElement>(null);
   const [acpCommand, setAcpCommand] = React.useState(agent.acpCommand);
+  const [browserEnabled, setBrowserEnabled] = React.useState(
+    agent.browserEnabled,
+  );
   const [agentCommand, setAgentCommand] = React.useState(agent.agentCommand);
   const [originalAgentCommand, setOriginalAgentCommand] = React.useState(
     agent.agentCommand,
@@ -194,6 +197,7 @@ export function AgentInstanceEditDialog({
     if (open) {
       setName(agent.name);
       setAcpCommand(agent.acpCommand);
+      setBrowserEnabled(agent.browserEnabled);
       setAgentCommand(agent.agentCommand);
       setOriginalAgentCommand(agent.agentCommand);
       setInheritHarness(
@@ -687,6 +691,8 @@ export function AgentInstanceEditDialog({
           acpCommand.trim() !== agent.acpCommand
             ? acpCommand.trim()
             : undefined,
+        browserEnabled:
+          browserEnabled !== agent.browserEnabled ? browserEnabled : undefined,
         agentCommand: agentCommandUpdate,
         // A non-inheriting selection is a deliberate pin — signal it so the
         // backend preserves a Custom/runtime command even when it maps to the
@@ -1176,6 +1182,11 @@ export function AgentInstanceEditDialog({
                       acpCommand={acpCommand}
                       agentArgs={agentArgs}
                       autoRestartOnConfigChange={autoRestartOnConfigChange}
+                      browserEnabled={browserEnabled}
+                      browserAvailable={
+                        agent.backend.type === "local" &&
+                        acpCommand.trim() === "buzz-acp"
+                      }
                       disabled={isSaving}
                       envVars={envVars}
                       fileSatisfiedEnvKeys={fileSatisfiedEnvKeys}
@@ -1201,6 +1212,7 @@ export function AgentInstanceEditDialog({
                       onAcpCommandChange={setAcpCommand}
                       onAgentArgsChange={setAgentArgs}
                       onAutoRestartChange={setAutoRestartOnConfigChange}
+                      onBrowserEnabledChange={setBrowserEnabled}
                       onEnvVarsChange={setEnvVars}
                       onInheritHarnessChange={setInheritHarness}
                       onParallelismChange={setParallelism}

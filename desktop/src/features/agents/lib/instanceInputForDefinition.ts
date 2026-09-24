@@ -112,6 +112,7 @@ export async function buildInstanceInputForDefinition(
   runtime: AcpRuntime,
   upload?: UploadMediaBytes,
   backendIntent?: BackendIntent,
+  browserEnabled = false,
 ): Promise<CreateManagedAgentInput> {
   const avatarUrl = await resolveManagedAgentAvatarUrl(
     persona.avatarUrl,
@@ -157,5 +158,6 @@ export async function buildInstanceInputForDefinition(
     spawnAfterCreate: true,
     startOnAppLaunch: true,
     backend: { type: "local" },
+    browserEnabled,
   };
 }

@@ -28,6 +28,7 @@ fn base() -> SpawnConfigSnapshot {
         idle_timeout_seconds: Some(600),
         max_turn_duration_seconds: Some(7200),
         parallelism: 1,
+        browser_enabled: false,
         effort_level: Some("high".into()),
         session_policy: "channel".into(),
         agent_skills_fingerprint: String::new(),
@@ -73,6 +74,7 @@ fn mutations() -> Vec<Mutation> {
             s.max_turn_duration_seconds = None
         }),
         ("parallelism", |s| s.parallelism = 8),
+        ("browser_enabled", |s| s.browser_enabled = true),
         ("effort_level", |s| s.effort_level = None),
         ("session_policy", |s| s.session_policy = "thread".into()),
     ]

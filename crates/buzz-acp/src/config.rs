@@ -267,6 +267,18 @@ pub struct CliArgs {
     #[arg(long, env = "BUZZ_ACP_MCP_COMMAND", default_value = "")]
     pub mcp_command: String,
 
+    /// Give this agent an isolated local Playwright browser MCP server.
+    #[arg(long, env = "BUZZ_ACP_BROWSER_ENABLED", default_value_t = false)]
+    pub enable_browser: bool,
+
+    /// Buzz-managed Node executable for the credential-scrubbed browser launcher.
+    #[arg(long, env = "BUZZ_ACP_BROWSER_NODE_PATH", hide = true)]
+    pub browser_node_path: Option<PathBuf>,
+
+    /// App-owned cache root for the browser launcher.
+    #[arg(long, env = "BUZZ_ACP_BROWSER_DATA_DIR", hide = true)]
+    pub browser_data_dir: Option<PathBuf>,
+
     /// Idle timeout: max seconds of silence before killing a turn.
     /// Resets on any agent stdout activity.
     #[arg(long, env = "BUZZ_ACP_IDLE_TIMEOUT")]
@@ -542,6 +554,9 @@ pub struct Config {
     pub agent_command: String,
     pub agent_args: Vec<String>,
     pub mcp_command: String,
+    pub browser_enabled: bool,
+    pub browser_node_path: Option<PathBuf>,
+    pub browser_data_dir: Option<PathBuf>,
     pub idle_timeout_secs: u64,
     pub max_turn_duration_secs: u64,
     pub agents: u32,
@@ -1155,6 +1170,9 @@ impl Config {
             agent_command,
             agent_args,
             mcp_command: args.mcp_command,
+            browser_enabled: args.enable_browser,
+            browser_node_path: args.browser_node_path,
+            browser_data_dir: args.browser_data_dir,
             idle_timeout_secs,
             max_turn_duration_secs,
             agents: args.agents,
@@ -1539,6 +1557,9 @@ mod tests {
             agent_command: "goose".into(),
             agent_args: vec!["acp".into()],
             mcp_command: "".into(),
+            browser_enabled: false,
+            browser_node_path: None,
+            browser_data_dir: None,
             idle_timeout_secs: DEFAULT_IDLE_TIMEOUT_SECS,
             max_turn_duration_secs: DEFAULT_MAX_TURN_DURATION_SECS,
             agents: 1,

@@ -5,6 +5,7 @@ mod git;
 mod git_runtime_tests;
 
 mod acp;
+mod browser_mcp;
 mod config;
 mod engram_fetch;
 mod filter;
@@ -2573,6 +2574,13 @@ pub fn run() -> Result<()> {
         Some("git-sign-nostr") => std::process::exit(git_sign_nostr::run()),
         _ => {}
     }
+    if is_subcommand("browser-mcp") {
+        let filtered = std::env::args_os()
+            .enumerate()
+            .filter(|(index, _)| *index != 1)
+            .map(|(_, arg)| arg);
+        return browser_mcp::run_cli(filtered);
+    }
     config::propagate_legacy_env_vars();
     tokio_main()
 }
@@ -2950,7 +2958,7 @@ async fn run_harness(
     let base_prompt_content = config.base_prompt_content.take();
     let cwd = current_working_directory()?;
     let ctx = Arc::new(PromptContext {
-        mcp_servers: build_mcp_servers(&config),
+        mcp_servers: build_mcp_servers(&config)?,
         initial_message: config.initial_message.clone(),
         idle_timeout: Duration::from_secs(config.idle_timeout_secs),
         max_turn_duration: Duration::from_secs(config.max_turn_duration_secs),
@@ -6042,68 +6050,94 @@ async fn run_models(args: ModelsArgs) -> Result<()> {
     Ok(())
 }
 
-fn build_mcp_servers(config: &Config) -> Vec<McpServer> {
-    if config.mcp_command.is_empty() {
-        return vec![];
+fn build_mcp_servers(config: &Config) -> Result<Vec<McpServer>> {
+    let mut servers = Vec::new();
+    if !config.mcp_command.is_empty() {
+        servers.push(McpServer {
+            name: std::path::Path::new(&config.mcp_command)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("mcp")
+                .to_string(),
+            command: config.mcp_command.clone(),
+            args: vec![],
+            env: {
+                let mut env = vec![
+                    EnvVar {
+                        name: "BUZZ_RELAY_URL".into(),
+                        value: config.relay_url.clone(),
+                    },
+                    EnvVar {
+                        name: "BUZZ_PRIVATE_KEY".into(),
+                        // bech32 encoding of a valid secret key is infallible.
+                        // Panic here is correct: injecting a bogus secret would cause
+                        // delayed, hard-to-diagnose agent failures downstream.
+                        value: config
+                            .keys
+                            .secret_key()
+                            .to_bech32()
+                            .expect("secret key bech32 encoding should never fail"),
+                    },
+                ];
+                // Forward BUZZ_AUTH_TAG (NIP-OA owner attestation credential)
+                // so the MCP server can attach it to every signed event.
+                if let Ok(auth_tag) = std::env::var("BUZZ_AUTH_TAG") {
+                    if !auth_tag.is_empty() {
+                        env.push(EnvVar {
+                            name: "BUZZ_AUTH_TAG".into(),
+                            value: auth_tag,
+                        });
+                    }
+                }
+                // Preserve the display-name contract for tools. Git authorship is
+                // already normalized by the harness bootstrap.
+                if let Ok(display_name) = std::env::var("BUZZ_ACP_DISPLAY_NAME") {
+                    if !display_name.is_empty() {
+                        env.push(EnvVar {
+                            name: "BUZZ_ACP_DISPLAY_NAME".into(),
+                            value: display_name,
+                        });
+                    }
+                }
+                for (name, value) in &config.persona_env_vars {
+                    if git::is_managed_env(name) {
+                        env.retain(|entry| entry.name != *name);
+                        env.push(EnvVar {
+                            name: name.clone(),
+                            value: value.clone(),
+                        });
+                    }
+                }
+                env
+            },
+        });
     }
-    vec![McpServer {
-        name: std::path::Path::new(&config.mcp_command)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("mcp")
-            .to_string(),
-        command: config.mcp_command.clone(),
-        args: vec![],
-        env: {
-            let mut env = vec![
-                EnvVar {
-                    name: "BUZZ_RELAY_URL".into(),
-                    value: config.relay_url.clone(),
-                },
-                EnvVar {
-                    name: "BUZZ_PRIVATE_KEY".into(),
-                    // bech32 encoding of a valid secret key is infallible.
-                    // Panic here is correct: injecting a bogus secret would cause
-                    // delayed, hard-to-diagnose agent failures downstream.
-                    value: config
-                        .keys
-                        .secret_key()
-                        .to_bech32()
-                        .expect("secret key bech32 encoding should never fail"),
-                },
-            ];
-            // Forward BUZZ_AUTH_TAG (NIP-OA owner attestation credential)
-            // so the MCP server can attach it to every signed event.
-            if let Ok(auth_tag) = std::env::var("BUZZ_AUTH_TAG") {
-                if !auth_tag.is_empty() {
-                    env.push(EnvVar {
-                        name: "BUZZ_AUTH_TAG".into(),
-                        value: auth_tag,
-                    });
-                }
-            }
-            // Preserve the display-name contract for tools. Git authorship is
-            // already normalized by the harness bootstrap.
-            if let Ok(display_name) = std::env::var("BUZZ_ACP_DISPLAY_NAME") {
-                if !display_name.is_empty() {
-                    env.push(EnvVar {
-                        name: "BUZZ_ACP_DISPLAY_NAME".into(),
-                        value: display_name,
-                    });
-                }
-            }
-            for (name, value) in &config.persona_env_vars {
-                if git::is_managed_env(name) {
-                    env.retain(|entry| entry.name != *name);
-                    env.push(EnvVar {
-                        name: name.clone(),
-                        value: value.clone(),
-                    });
-                }
-            }
-            env
-        },
-    }]
+
+    if config.browser_enabled {
+        let command = std::env::current_exe()
+            .context("resolve the bundled buzz-acp executable for Playwright MCP")?
+            .to_string_lossy()
+            .into_owned();
+        let mut args = vec!["browser-mcp".to_string()];
+        if let Some(node_path) = config.browser_node_path.as_deref() {
+            args.push("--node-path".into());
+            args.push(node_path.to_string_lossy().into_owned());
+        }
+        if let Some(data_dir) = config.browser_data_dir.as_deref() {
+            args.push("--data-dir".into());
+            args.push(data_dir.to_string_lossy().into_owned());
+        }
+        servers.push(McpServer {
+            name: "playwright".into(),
+            command,
+            args,
+            // The launcher must not receive the relay key, owner auth tag,
+            // provider credentials, or any other Buzz agent environment.
+            env: vec![],
+        });
+    }
+
+    Ok(servers)
 }
 
 #[cfg(test)]
@@ -9577,6 +9611,9 @@ mod build_mcp_servers_tests {
             agent_command: "goose".into(),
             agent_args: vec!["acp".into()],
             mcp_command: "test-mcp-server".into(),
+            browser_enabled: false,
+            browser_node_path: None,
+            browser_data_dir: None,
             idle_timeout_secs: config::DEFAULT_IDLE_TIMEOUT_SECS,
             max_turn_duration_secs: config::DEFAULT_MAX_TURN_DURATION_SECS,
             agents: 1,
@@ -9630,7 +9667,7 @@ mod build_mcp_servers_tests {
         )
         .unwrap();
         config.persona_env_vars.extend(git.env.iter().cloned());
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
         let env = &servers[0].env;
         for (name, value) in &git.env {
             let entries: Vec<_> = env.iter().filter(|entry| entry.name == *name).collect();
@@ -9661,7 +9698,7 @@ mod build_mcp_servers_tests {
     #[test]
     fn session_new_mcp_server_has_required_fields() {
         let config = test_config();
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
         assert_eq!(servers.len(), 1);
         let server = &servers[0];
         assert_eq!(server.name, "test-mcp-server");
@@ -9682,7 +9719,7 @@ mod build_mcp_servers_tests {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("BUZZ_AUTH_TAG", "test-attestation-tag");
         let config = test_config();
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
         std::env::remove_var("BUZZ_AUTH_TAG");
 
         let server = &servers[0];
@@ -9699,7 +9736,7 @@ mod build_mcp_servers_tests {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("BUZZ_AUTH_TAG", "");
         let config = test_config();
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
         std::env::remove_var("BUZZ_AUTH_TAG");
 
         let server = &servers[0];
@@ -9712,7 +9749,7 @@ mod build_mcp_servers_tests {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("BUZZ_ACP_DISPLAY_NAME", "Duncan");
         let config = test_config();
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
         std::env::remove_var("BUZZ_ACP_DISPLAY_NAME");
 
         let entry = servers[0]
@@ -9731,7 +9768,7 @@ mod build_mcp_servers_tests {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var("BUZZ_ACP_DISPLAY_NAME");
         let config = test_config();
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
 
         // Absent, not empty-valued: dev-mcp distinguishes the two and only
         // falls back to the npub when the key is missing or blank.
@@ -9749,7 +9786,7 @@ mod build_mcp_servers_tests {
         let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("BUZZ_ACP_DISPLAY_NAME", "");
         let config = test_config();
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
         std::env::remove_var("BUZZ_ACP_DISPLAY_NAME");
 
         assert!(
@@ -9765,7 +9802,7 @@ mod build_mcp_servers_tests {
     fn empty_mcp_command_returns_no_servers() {
         let mut config = test_config();
         config.mcp_command = "".into();
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
         assert!(
             servers.is_empty(),
             "empty mcp_command should produce no MCP servers"
@@ -9773,10 +9810,39 @@ mod build_mcp_servers_tests {
     }
 
     #[test]
+    fn browser_mcp_uses_buzz_acp_sidecar_without_any_mcp_environment() {
+        let mut config = test_config();
+        config.browser_enabled = true;
+        config.browser_node_path = Some(std::path::PathBuf::from("/managed/node"));
+        config.browser_data_dir = Some(std::path::PathBuf::from("/buzz/browser-cache"));
+
+        let servers = build_mcp_servers(&config).unwrap();
+        let browser = servers
+            .iter()
+            .find(|server| server.name == "playwright")
+            .expect("opted-in agent has the Playwright MCP server");
+        assert_eq!(
+            browser.command,
+            std::env::current_exe().unwrap().to_string_lossy().as_ref()
+        );
+        assert_eq!(
+            browser.args,
+            [
+                "browser-mcp",
+                "--node-path",
+                "/managed/node",
+                "--data-dir",
+                "/buzz/browser-cache"
+            ]
+        );
+        assert!(browser.env.is_empty(), "browser MCP env must be empty");
+    }
+
+    #[test]
     fn absolute_path_mcp_command_uses_file_stem_as_name() {
         let mut config = test_config();
         config.mcp_command = "/opt/bin/my-mcp-server".into();
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0].name, "my-mcp-server");
     }
@@ -9797,7 +9863,7 @@ mod build_mcp_servers_tests {
 
         // Confirm a non-empty command with no stem (e.g. just a dot) also falls back.
         config.mcp_command = ".".into();
-        let servers = build_mcp_servers(&config);
+        let servers = build_mcp_servers(&config).unwrap();
         assert_eq!(servers.len(), 1);
         assert_eq!(
             servers[0].name, "mcp",
@@ -9841,6 +9907,9 @@ mod error_outcome_emission_tests {
             agent_command: "true".into(),
             agent_args: vec![],
             mcp_command: "test-mcp-server".into(),
+            browser_enabled: false,
+            browser_node_path: None,
+            browser_data_dir: None,
             idle_timeout_secs: config::DEFAULT_IDLE_TIMEOUT_SECS,
             max_turn_duration_secs: config::DEFAULT_MAX_TURN_DURATION_SECS,
             agents: 1,

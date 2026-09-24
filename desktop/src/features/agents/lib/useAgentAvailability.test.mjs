@@ -76,7 +76,7 @@ for (const lifecycle of ["running", "stopped"]) {
     const isActive = isManagedAgentActive(agent);
     assert.equal(
       getManagedAgentPrimaryActionLabel(agent),
-      isActive ? "Stop" : "Start agent",
+      isActive ? "Stop Agent" : "Start agent",
     );
     const html = renderToStaticMarkup(
       createElement(AgentRuntimeAvatarControl, {

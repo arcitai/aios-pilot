@@ -194,6 +194,9 @@ pub struct CreateManagedAgentRequest {
     pub start_on_app_launch: bool,
     #[serde(default)]
     pub backend: BackendKind,
+    /// Opt this local instance into Buzz's isolated Playwright MCP server.
+    #[serde(default)]
+    pub browser_enabled: bool,
     /// `None` = caller expressed no preference: the definition's
     /// `respond_to` default applies when linked, `RespondTo::default()`
     /// otherwise. `Some` is an explicit instance-level choice and always
@@ -242,6 +245,9 @@ pub struct UpdateManagedAgentRequest {
     pub relay_url: Option<String>,
     #[serde(default)]
     pub acp_command: Option<String>,
+    /// Absent = keep the instance's current browser access preference.
+    #[serde(default)]
+    pub browser_enabled: Option<bool>,
     #[serde(default)]
     pub agent_command: Option<String>,
     /// True when the accompanying `agent_command` is a runtime/Custom command

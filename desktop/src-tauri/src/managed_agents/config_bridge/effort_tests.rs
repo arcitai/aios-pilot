@@ -48,6 +48,7 @@ pub(super) fn record() -> ManagedAgentRecord {
         system_prompt: None,
         model: None,
         env_vars: BTreeMap::new(),
+        browser_enabled: false,
         start_on_app_launch: false,
         auto_restart_on_config_change: true,
         runtime_pid: None,

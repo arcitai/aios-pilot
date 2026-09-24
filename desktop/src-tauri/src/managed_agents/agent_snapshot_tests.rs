@@ -40,6 +40,7 @@ fn minimal_record() -> ManagedAgentRecord {
             m.insert("API_KEY".to_string(), "secret123".to_string()); // MUST NOT appear
             m
         },
+        browser_enabled: false,
         start_on_app_launch: true,
         auto_restart_on_config_change: true,
         runtime_pid: Some(12345), // MUST NOT appear

@@ -363,6 +363,19 @@ pub async fn create_managed_agent(
         .filter(|value| !value.is_empty())
         .map(str::to_string);
     validate_create_definition(&name, requested_persona_id.as_deref(), &input)?;
+    let requested_acp_command = input
+        .acp_command
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(DEFAULT_ACP_COMMAND)
+        .to_string();
+    if input.browser_enabled && input.backend != BackendKind::Local {
+        return Err("Browser access is available only for agents running on this computer.".into());
+    }
+    if input.browser_enabled && requested_acp_command != DEFAULT_ACP_COMMAND {
+        return Err("Browser access requires Buzz ACP. Switch the ACP command back to Buzz ACP or turn browser access off.".into());
+    }
     if let Some(parallelism) = input.parallelism {
         if !(1..=32).contains(&parallelism) {
             return Err("parallelism must be between 1 and 32".to_string());
@@ -623,13 +636,7 @@ pub async fn create_managed_agent(
             auth_tag: auth_tag.clone(),
             relay_url: resolved_relay_url.clone(),
             avatar_url: resolved_avatar_url.clone(),
-            acp_command: input
-                .acp_command
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .unwrap_or(DEFAULT_ACP_COMMAND)
-                .to_string(),
+            acp_command: requested_acp_command.to_string(),
             agent_command,
             agent_command_override,
             agent_args,
@@ -672,6 +679,7 @@ pub async fn create_managed_agent(
             persona_team_dir: None,
             persona_name_in_team: None,
             env_vars: input.env_vars.clone(),
+            browser_enabled: input.browser_enabled,
             created_at: now_iso(),
             updated_at: now_iso(),
             last_started_at: None,

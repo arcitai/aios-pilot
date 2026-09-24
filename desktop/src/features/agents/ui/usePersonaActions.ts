@@ -177,6 +177,7 @@ export function usePersonaActions() {
     backendIntent?: BackendIntent | null,
     targetChannel?: Pick<Channel, "id" | "name"> | null,
     options?: { publishCatalogUpdates?: boolean },
+    browserEnabled = false,
   ): Promise<boolean> {
     if (isPersonaSubmitPending) {
       return false;
@@ -241,6 +242,7 @@ export function usePersonaActions() {
           runtime,
           undefined,
           startIntent ?? undefined,
+          browserEnabled,
         );
 
         try {

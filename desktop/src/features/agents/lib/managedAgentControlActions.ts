@@ -38,7 +38,7 @@ export function getManagedAgentPrimaryActionLabel(agent: ManagedAgent) {
   }
 
   if (isManagedAgentActive(agent)) {
-    return "Stop";
+    return agent.browserEnabled ? "Stop Agent and Browser" : "Stop Agent";
   }
 
   return "Start agent";

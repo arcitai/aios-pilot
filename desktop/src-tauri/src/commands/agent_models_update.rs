@@ -194,6 +194,19 @@ pub async fn update_managed_agent(
         if let Some(acp_command) = input.acp_command {
             record.acp_command = acp_command;
         }
+        if let Some(browser_enabled) = input.browser_enabled {
+            if browser_enabled && record.backend != crate::managed_agents::BackendKind::Local {
+                return Err(
+                    "Browser access is available only for agents running on this computer.".into(),
+                );
+            }
+            record.browser_enabled = browser_enabled;
+        }
+        if record.browser_enabled
+            && record.acp_command != crate::managed_agents::DEFAULT_ACP_COMMAND
+        {
+            return Err("Browser access requires Buzz ACP. Switch the ACP command back to Buzz ACP or turn browser access off.".into());
+        }
         // Harness edit: the persona's runtime is authoritative, so an explicit
         // `agent_command_override` is persisted ONLY when the user picks a
         // command that diverges from the persona, and the empty/whitespace

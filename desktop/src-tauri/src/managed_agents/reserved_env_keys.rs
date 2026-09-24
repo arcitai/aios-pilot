@@ -41,6 +41,11 @@ pub(crate) const RESERVED_ENV_KEYS: &[&str] = &[
     "BUZZ_ACP_AGENT_COMMAND",
     "BUZZ_ACP_AGENT_ARGS",
     "BUZZ_ACP_MCP_COMMAND",
+    // Browser server selection and its managed runtime paths are derived from
+    // the instance record and must not be overridden through user env vars.
+    "BUZZ_ACP_BROWSER_ENABLED",
+    "BUZZ_ACP_BROWSER_NODE_PATH",
+    "BUZZ_ACP_BROWSER_DATA_DIR",
     // Control-plane parallelism: the Desktop resolves the effective
     // worker-pool size (applying any per-harness cap) and writes it into
     // launch.policy_env. A user-supplied BUZZ_ACP_AGENTS would bypass the

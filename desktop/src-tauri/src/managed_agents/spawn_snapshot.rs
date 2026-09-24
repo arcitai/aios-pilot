@@ -135,6 +135,8 @@ pub(crate) struct SpawnConfigSnapshot {
     pub idle_timeout_seconds: Option<u64>,
     pub max_turn_duration_seconds: Option<u64>,
     pub parallelism: u32,
+    /// Browser MCP is wired at ACP session creation and changes only on restart.
+    pub browser_enabled: bool,
     /// The startup effort the harness will actually apply, resolved by
     /// [`effective_effort`]: the single effort key the harness-agnostic
     /// projection left in `descriptor.env` under the runtime's destination key.
@@ -257,6 +259,7 @@ impl SpawnConfigSnapshot {
             // pool and must badge. The diff surface consequently displays the
             // effective value — that is correct, it is what actually runs.
             parallelism: super::effective_parallelism(&descriptor.command, record.parallelism),
+            browser_enabled: record.browser_enabled,
             // Sole effort representation — see the field doc and the `env`
             // strip above. Reads the single projected effort key the descriptor
             // resolver left in `descriptor.env`, so the badge compares exactly

@@ -90,6 +90,7 @@ fn agent_record() -> ManagedAgentRecord {
         system_prompt: None,
         model: None,
         env_vars: Default::default(),
+        browser_enabled: false,
         start_on_app_launch: false,
         auto_restart_on_config_change: true,
         runtime_pid: None,

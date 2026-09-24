@@ -226,6 +226,7 @@ fn team_export_with_instance_and_memory_level_uses_supplied_entries() {
         provider: None,
         persona_source_version: None,
         env_vars: Default::default(),
+        browser_enabled: false,
         start_on_app_launch: false,
         auto_restart_on_config_change: true,
         runtime_pid: None,

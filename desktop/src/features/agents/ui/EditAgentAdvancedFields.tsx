@@ -28,11 +28,14 @@ import {
   structuredEnvKeys,
   type RuntimeCatalogStatus,
 } from "../lib/agentConfigCore";
+import { BrowserAccessField } from "./BrowserAccessField";
 
 export function EditAgentAdvancedFields({
   acpCommand,
   agentArgs,
   autoRestartOnConfigChange,
+  browserEnabled,
+  browserAvailable,
   disabled,
   envVars,
   fileSatisfiedEnvKeys,
@@ -55,11 +58,14 @@ export function EditAgentAdvancedFields({
   onInheritHarnessChange,
   onParallelismChange,
   onAutoRestartChange,
+  onBrowserEnabledChange,
   onSystemPromptChange,
 }: {
   acpCommand: string;
   agentArgs: string;
   autoRestartOnConfigChange: boolean;
+  browserEnabled: boolean;
+  browserAvailable: boolean;
   disabled: boolean;
   envVars: EnvVarsValue;
   fileSatisfiedEnvKeys: readonly string[];
@@ -106,6 +112,7 @@ export function EditAgentAdvancedFields({
   onInheritHarnessChange: (value: boolean) => void;
   onParallelismChange: (value: string) => void;
   onAutoRestartChange: (value: boolean) => void;
+  onBrowserEnabledChange: (value: boolean) => void;
   onSystemPromptChange: (value: string) => void;
 }) {
   // Numeric tuning descriptors — gate on catalog status so that loading/error
@@ -298,6 +305,14 @@ export function EditAgentAdvancedFields({
           />
         </div>
       </div>
+
+      <BrowserAccessField
+        available={browserAvailable}
+        disabled={disabled}
+        id="edit-agent-browser-access"
+        value={browserEnabled}
+        onChange={onBrowserEnabledChange}
+      />
 
       {/* System prompt override — hidden for linked instances; the persona
           definition is authoritative and the backend will reject any override. */}

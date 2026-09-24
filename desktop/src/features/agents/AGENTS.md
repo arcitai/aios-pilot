@@ -407,6 +407,19 @@ uses the fixed agent signer, origin-scoped Blossom auth, no redirects, byte caps
 and hash/descriptor verification; ordinary public external avatars remain
 unauthenticated passthrough. No image-reader proxy or tenant isolation exception.
 
+## Local browser access
+
+Playwright MCP is an opt-in `browser_enabled` preference on a managed agent
+instance; never copy it onto a shared persona. Accept it only for local agents
+using `buzz-acp`. The ACP server list must launch the bundled `buzz-acp
+browser-mcp` sidecar with no forwarded MCP environment, and that launcher must
+use Buzz-managed Node, `env_clear`, and app-owned npm/browser/profile paths.
+Describe the boundary accurately: inherited credentials are scrubbed from the
+Playwright/Chromium process environment, while the browser still runs as the
+user and is not an OS sandbox. Setup failures must remain visible in runtime
+logs with an actionable retry path. When browser access is on, label stopping
+the agent as stopping its browser too.
+
 ## Keep this file true
 
 **If you change how agent configuration is modeled, rendered, persisted,

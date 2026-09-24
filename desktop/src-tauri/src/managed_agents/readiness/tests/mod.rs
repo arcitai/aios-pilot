@@ -880,6 +880,7 @@ fn resolve_effective_agent_env_user_env_wins_over_structured_fields() {
         definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
+        browser_enabled: false,
         agent_skills: Vec::new(),
     };
 

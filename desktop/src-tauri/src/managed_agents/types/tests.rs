@@ -50,8 +50,50 @@ fn managed_agent_record_without_auth_tag_deserializes() {
     .expect("legacy agent record without auth_tag should deserialize");
 
     assert_eq!(record.auth_tag, None);
+    assert!(
+        !record.browser_enabled,
+        "legacy records default browser access off"
+    );
     assert_eq!(record.avatar_url, None);
     assert_eq!(record.pubkey, "abcd1234");
+}
+
+#[test]
+fn browser_preference_is_instance_local_and_false_is_omitted() {
+    let mut value: serde_json::Value = serde_json::from_str(
+        r#"{
+            "pubkey": "abcd1234",
+            "name": "test-agent",
+            "private_key_nsec": "nsec1fake",
+            "relay_url": "wss://localhost:3000",
+            "acp_command": "buzz-acp",
+            "agent_command": "goose",
+            "agent_args": [],
+            "mcp_command": "",
+            "turn_timeout_seconds": 320,
+            "system_prompt": null,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-01T00:00:00Z",
+            "last_started_at": null,
+            "last_stopped_at": null,
+            "last_exit_code": null,
+            "last_error": null
+        }"#,
+    )
+    .expect("legacy record JSON");
+
+    let legacy: ManagedAgentRecord = serde_json::from_value(value.clone())
+        .expect("legacy record without browser preference deserializes");
+    assert!(!legacy.browser_enabled);
+    let serialized = serde_json::to_value(&legacy).expect("serialize legacy record");
+    assert!(serialized.get("browser_enabled").is_none());
+
+    value["browser_enabled"] = serde_json::Value::Bool(true);
+    let opted_in: ManagedAgentRecord =
+        serde_json::from_value(value).expect("opted-in record deserializes");
+    assert!(opted_in.browser_enabled);
+    let round_trip = serde_json::to_value(opted_in).expect("serialize opted-in record");
+    assert_eq!(round_trip["browser_enabled"], true);
 }
 
 /// Agent records WITH an auth_tag round-trip correctly through serde.
@@ -775,6 +817,7 @@ fn summary_fixture(
         last_error_code: None,
         start_on_app_launch: false,
         auto_restart_on_config_change: false,
+        browser_enabled: false,
         log_path: String::new(),
         respond_to: RespondTo::OwnerOnly,
         respond_to_allowlist: Vec::new(),

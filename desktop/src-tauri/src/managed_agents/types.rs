@@ -144,6 +144,7 @@ impl AgentDefinition {
             provider: self.provider,
             persona_source_version: None,
             env_vars: self.env_vars,
+            browser_enabled: false,
             start_on_app_launch: false,
             auto_restart_on_config_change: true,
             runtime_pid: None,
@@ -342,6 +343,10 @@ pub struct ManagedAgentRecord {
     /// To "override" a persona env var: set the same key here.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env_vars: BTreeMap<String, String>,
+    /// Whether this local instance starts Buzz's isolated Playwright MCP server.
+    /// It is instance-only and defaults off for records written by older builds.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub browser_enabled: bool,
     #[serde(default = "default_start_on_app_launch")]
     pub start_on_app_launch: bool,
     /// Auto-restart this agent when its effective spawn config drifts from
@@ -609,6 +614,8 @@ pub struct ManagedAgentSummary {
     pub last_error_code: Option<i64>,
     pub start_on_app_launch: bool,
     pub auto_restart_on_config_change: bool,
+    /// Whether this instance has opted into Buzz's local Playwright MCP server.
+    pub browser_enabled: bool,
     pub log_path: String,
     pub respond_to: RespondTo,
     pub respond_to_allowlist: Vec<String>,
@@ -833,6 +840,10 @@ fn default_start_on_app_launch() -> bool {
 
 fn default_auto_restart_on_config_change() -> bool {
     true
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 fn default_record_active() -> bool {

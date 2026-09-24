@@ -95,6 +95,7 @@ pub(super) fn record_with(
         definition_parallelism: None,
         relay_mesh: None,
         effort_level: None,
+        browser_enabled: false,
         agent_skills: Vec::new(),
     }
 }

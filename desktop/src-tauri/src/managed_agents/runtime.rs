@@ -368,6 +368,7 @@ pub fn build_managed_agent_summary(
         last_error_code: record.last_error_code,
         start_on_app_launch: record.start_on_app_launch,
         auto_restart_on_config_change: record.auto_restart_on_config_change,
+        browser_enabled: record.browser_enabled,
         log_path,
         respond_to: record.respond_to,
         respond_to_allowlist: record.respond_to_allowlist.clone(),
@@ -566,6 +567,10 @@ pub fn spawn_agent_child(
         runtime_skill_dir,
     )?;
     let skills_fingerprint = super::agent_skills::agent_skills_fingerprint(selected_skills)?;
+
+    if record.browser_enabled && record.acp_command != super::DEFAULT_ACP_COMMAND {
+        return Err("Browser access requires Buzz ACP. Switch the ACP command back to Buzz ACP or turn browser access off.".into());
+    }
 
     let log_path = super::managed_agent_runtime_log_path(app, &runtime_key)?;
     append_log_marker(
@@ -811,6 +816,36 @@ pub fn spawn_agent_child(
     // Resolve once and stamp the same value onto the environment and snapshot.
     let acp_session_policy = super::effective_acp_session_policy(record, &personas);
     super::apply_acp_session_policy_env(&mut command, acp_session_policy);
+
+    // Browser access is instance-scoped, and this launcher is the only source
+    // for its paths. Apply it after user env so old/unfiltered records cannot
+    // inject a different executable or enable browsing behind the UI.
+    command.env(
+        "BUZZ_ACP_BROWSER_ENABLED",
+        if record.browser_enabled {
+            "true"
+        } else {
+            "false"
+        },
+    );
+    if record.browser_enabled {
+        if let Some(node_path) = super::buzz_managed_node_bin_path() {
+            command.env("BUZZ_ACP_BROWSER_NODE_PATH", node_path);
+        } else {
+            command.env_remove("BUZZ_ACP_BROWSER_NODE_PATH");
+        }
+        if let Some(data_dir) = dirs::cache_dir() {
+            command.env(
+                "BUZZ_ACP_BROWSER_DATA_DIR",
+                data_dir.join("Buzz").join("playwright-mcp"),
+            );
+        } else {
+            command.env_remove("BUZZ_ACP_BROWSER_DATA_DIR");
+        }
+    } else {
+        command.env_remove("BUZZ_ACP_BROWSER_NODE_PATH");
+        command.env_remove("BUZZ_ACP_BROWSER_DATA_DIR");
+    }
 
     crate::build_identity::apply_demo_config_home(&mut command)?;
     // Publish-first replay floor: written AFTER the `descriptor.env` loop, the

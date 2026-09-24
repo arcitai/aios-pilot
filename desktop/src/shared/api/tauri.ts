@@ -149,6 +149,7 @@ export type RawManagedAgent = {
   log_path: string;
   start_on_app_launch: boolean;
   auto_restart_on_config_change?: boolean;
+  browser_enabled?: boolean;
   backend: ManagedAgentBackend;
   backend_agent_id: string | null;
   // Pre-feature fixtures may omit these; mapped to "owner-only"/[] in fromRawManagedAgent.
@@ -613,6 +614,7 @@ export function fromRawManagedAgent(agent: RawManagedAgent): ManagedAgent {
     logPath: agent.log_path,
     startOnAppLaunch: agent.start_on_app_launch,
     autoRestartOnConfigChange: agent.auto_restart_on_config_change ?? true,
+    browserEnabled: agent.browser_enabled ?? false,
     backend: agent.backend,
     backendAgentId: agent.backend_agent_id,
     respondTo: agent.respond_to ?? "owner-only",
@@ -760,6 +762,7 @@ export async function createManagedAgent(
         envVars: input.envVars ?? {},
         spawnAfterCreate: input.spawnAfterCreate,
         startOnAppLaunch: input.startOnAppLaunch,
+        browserEnabled: input.browserEnabled ?? false,
         backend: input.backend,
         respondTo: input.respondTo,
         respondToAllowlist: input.respondToAllowlist,
@@ -978,7 +981,12 @@ export async function updateManagedAgent(
 ): Promise<{ agent: ManagedAgent; profileSyncError: string | null }> {
   const response = await invokeTauri<RawUpdateManagedAgentResponse>(
     "update_managed_agent",
-    { input },
+    {
+      input: {
+        ...input,
+        browserEnabled: input.browserEnabled,
+      },
+    },
   );
   return {
     agent: fromRawManagedAgent(response.agent),
