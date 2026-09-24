@@ -135,14 +135,59 @@ private context/history is not made public, and updating an older agent must
 not silently widen access to legacy conversation history. Agents need the
 same authorized lookup behavior from Welcome, ordinary channels and CLI.
 Reference text is data, not authority to change tools or permissions. This is
-the accepted target; the current full-document `business show` command alone
-does not yet implement selective retrieval or the loading setting.
+the accepted target. Checkpoint `21116f6` adds bounded CLI discovery/index/
+search/read; agent provisioning, the loading setting and runtime enforcement
+remain unimplemented. The CLI currently reads the complete bounded Canvas
+internally and returns selected text, not lazy server-side source retrieval.
 
 Acceptance adds two distinctive checks: a source body with a unique sentinel
 is absent from a default agent's initial prompt and appears only after the
 agent requests that source; an explicitly opted-in agent receives the full
 authorized document and its revision. Revoking context access denies future
 lookups/new-run loads in both modes. Historical prompts cannot be recalled.
+
+### Four context layers, one agent experience
+
+The additional Kylon source check below sharpens F03–F09; it does not replace
+the existing implementation order. Keep four separately owned forms of context:
+
+| Layer | Product owner | What reaches a run |
+| --- | --- | --- |
+| Company knowledge | Business, on the shared host | Small entrypoint and authorized index/search/read; optional full Business document |
+| Private agent memory | Agent identity and its authorized runtime storage | Relevant preferences/procedures with provenance; no automatic cross-agent sharing |
+| Conversation | Channel/thread history on the host | Current thread and bounded recent history; authorized search/open of older messages |
+| Live business data | Connection owner and host connector broker | Fresh results from selected accounts/actions; source, retrieval time and failures remain visible |
+
+**Full company context** applies only to the Business document. It does not
+grant or preload all mailboxes, joined channels, private agent memory or files.
+Distinguish a saved source snapshot from a live provider result. An agent can
+propose promoting a useful decision from a thread into Business, with source
+references and a revision check; the thread does not silently become the
+company's durable knowledge store. Default shared knowledge access does not
+grant every connected account or private conversation.
+
+Extend the existing Buzz execution path with scoped run records rather than a
+second agent framework. Carry actor, agent, initiating message, channel/thread,
+selected capabilities and output audience through human requests, handoffs,
+scheduled work and calls. Recheck effective grants before each retrieval/tool
+effect. Handoffs name the recipient and expected result, preserve provenance,
+and bound depth, concurrency, time and repeated activations. Agent access
+(who may use/manage it) is separate from what data/accounts it can access.
+
+Long histories should retain originals and offer bounded retrieval behind a
+small active view. First audit Buzz's existing history/compaction paths; add
+summaries with source references only where needed. A summary is fallible, and
+context inherited by branches or handoffs must preserve the original audience.
+Acceptance must include an old decision retrievable by source ID, denial after
+channel removal, and a cross-room handoff that cannot reveal a private source
+to a wider audience. This is pending platform work, not proof from the CLI.
+
+For connections, keep the initial product rule explicit: choose the account
+and actions in agent setup. Do not silently adopt Kylon's documented use of a
+requester's personal connection. If later supported, distinguish a temporary
+request-scoped delegation from a standing agent grant and show the actual
+account owner and output audience. Human approval must bind the exact external
+action; a changed recipient, payload or sending account requires new approval.
 
 ## Representative acceptance journey
 
@@ -190,6 +235,26 @@ describes app preview, revision, pinning, audience selection and publishing.
 The public documentation index did not provide a complete browser-handoff or
 phone API flow. We retain those capabilities as goals with explicit adapters
 and proof, without inventing the private implementation.
+
+#### Follow-up source check: context, permissions and orchestration
+
+Gustav supplied a summary on 24 September. Primary-source readback supports
+its overall direction but requires these qualifications:
+
+| Claim / flows | Source-backed finding | Product consequence / uncertainty |
+| --- | --- | --- |
+| Thread as the sole knowledge store; F03, F07, F09 | [Memory docs](https://docs.kylon.io/concepts/memory) and [tutorial](https://docs.kylon.io/tutorials/use-workspace-memory) distinguish durable agent memory, shared knowledge and conversation history; entries can be read individually. | Keep all four context layers above. The company document alone is not the whole memory system. |
+| Small working context; F07, F09 | [Fold, Don't Forget](https://kylon.io/blog/fold-dont-forget) describes summaries referencing retained originals, recent raw messages and tools to reopen detail. Branches retain their own view; audience boundaries matter. | This supports selective loading. It does not establish perfect recall or justify copying model-specific compaction thresholds. Audit/reuse Buzz first. |
+| Live sources instead of all indexing; F04, F05 | [Tools API](https://docs.kylon.io/proxy/tools-api) documents agent-linked connections, toolkit discovery and authorized provider calls. | Live retrieval is documented; the stronger assertion that Kylon never uses indexing, vectors or RAG is not established. |
+| Agent/account permissions; F05, F08 | [Permissions guide, 15 September](https://kylon.io/blog/how-permissions-work-in-kylon) separates current-thread context, joined-room search, who may use an agent and connection access. Workspace-wide connection sharing covers humans; agents are added individually. It also describes using the requester's own connections for their request. | Our account/action picker remains explicit. A standing grant may expose that account through the agent to its permitted users; disclose this. Room membership is not agent-use authority. |
+| Native coordination; F07, F14, F16 | [Activation architecture](https://kylon.io/blog/user-message-is-more-than-a-message) describes structured activations with access checks and bounded orchestration, spanning messages, workflows, follow-ups and delegated work. | Implement traceable scoped execution and handoffs; do not infer an uncontrolled chain of agents from marketing examples. |
+| Approval and credential isolation; F04, F14 | [Privacy architecture](https://kylon.io/blog/kylon-privacy-architecture) describes brokered credentials, command-time permission checks and approvals bound to an action fingerprint. | Useful design claims, not an independent security audit. Do not assume hosted-runtime isolation also describes BYO agents. |
+| Automatic source-scanning onboarding; F02 | The previously inspected Liam walkthrough establishes conversational context building. The newly supplied [video](https://www.youtube.com/watch?v=T2v2pf_uypE) was not retrieved in this check. | The assertion that every new workspace automatically scans all connections remains unverified. Our onboarding obtains selected authorized sources progressively and shows what it saves. |
+
+The articles are public descriptions, not access to Kylon's private code or a
+live product test. The comparison pages add positioning, not implementation
+proof. This check adds detail to the existing flow map rather than claiming
+Kylon parity from the current local pilot.
 
 ### OpenAgents: pinned source
 

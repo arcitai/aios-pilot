@@ -144,9 +144,20 @@ entrypoint to company knowledge, with selective retrieval as the default and
 full-document loading as an explicit agent setup option. The target contract
 and falsifiable prompt/read checks are in `FLOWS.md`. The lead has drafted a
 bounded index/search/read module in `buzz-business` and corresponding CLI
-commands. The first compile and focused tests pass; final source review and
-real typed-host proof remain pending. Automatic agent setup grants and the
+commands, now checkpointed in `21116f6`. Independent source review accepts the
+bounded CLI capability; 9 Business tests, 23 CLI tests, 7 Apps tests and the
+affected Clippy/build/help checks pass. Real typed-host proof remains pending.
+Automatic agent setup grants and the
 explicit full-context preference/runtime path are not implemented yet.
+
+The follow-up Kylon check distinguishes shared knowledge, private agent memory,
+conversation history and live connected data. `FLOWS.md` records primary
+sources, limitations and scoped activation/long-history acceptance. Full
+context opt-in means the Business document, not every mailbox or conversation.
+The docs support live retrieval, but not the blanket claim that no indexing or
+RAG exists. The newly supplied video was not retrieved; automatic scanning of
+all sources during onboarding is not established. Agent entrypoint guidance is
+drafted but remains uncommitted and not runtime proven.
 
 Lead checkout still has pre-existing uncommitted browser-MCP repair/test and
 Rust formatting-only changes; they were deliberately excluded from `adf2ac0`.
@@ -825,7 +836,8 @@ channel instead. A new CLI regression also rejects forum/ambiguous channel
 types. Final clippy is clean for both crates
 (`/tmp/aios-knowledge-clippy-final.log`) and the real CLI binary was rebuilt
 (`/tmp/aios-knowledge-cli-build-final.log`). The root file-size gate and scoped
-formatting pass. Independent CLI/retrieval source review is still running.
+formatting pass. Independent CLI/retrieval source review accepts checkpoint
+`21116f6`; `/tmp/aios-knowledge-cli-review.md` records its exact scope and limits.
 
 `test_aios_business_cli_live.py` is a new unexecuted real-CLI fixture for a
 fresh disposable host: adoption preserves documents/membership, agent access
