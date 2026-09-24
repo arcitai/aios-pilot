@@ -1,6 +1,8 @@
 import * as React from "react";
 import { Settings2, Sparkles } from "lucide-react";
 import { useManagedAgentsQuery } from "@/features/agents/hooks";
+import { useManagedAgentRuntimesQuery } from "@/features/agents/managedAgentRuntimeHooks";
+import { findManagedAgentRuntime } from "@/features/agents/managedAgentRuntimeStatus";
 import { AgentDefaultsDialog } from "@/features/agents/ui/AgentDefaultsDialog";
 import { AgentDialog } from "@/features/agents/ui/AgentDialog";
 import { pickWelcomeGuideAgentForRelay } from "@/features/onboarding/welcomeGuide";
@@ -25,11 +27,20 @@ export function BusinessAgentControls({
   onStarted: () => void;
 }) {
   const agents = useManagedAgentsQuery();
+  const runtimes = useManagedAgentRuntimesQuery();
   const huddle = useHuddle();
   const mainAgent = pickWelcomeGuideAgentForRelay(
     agents.data ?? [],
     scope.expectedRelayUrl,
   );
+  const runtime = mainAgent
+    ? findManagedAgentRuntime(
+        runtimes.data ?? [],
+        mainAgent.pubkey,
+        scope.expectedRelayUrl,
+      )
+    : undefined;
+  const needsSetup = runtime?.localSetup === false;
   const [pending, setPending] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [configOpen, setConfigOpen] = React.useState(false);
@@ -63,9 +74,15 @@ export function BusinessAgentControls({
         <div className="rounded-xl bg-muted/40 px-3 py-2.5">
           <p className="text-sm font-medium">{mainAgent.name}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            {mainAgent.status === "running" || mainAgent.status === "deployed"
-              ? "Your main agent is running."
-              : "Your main agent is stopped."}
+            {needsSetup
+              ? "Connect an AI model to get started."
+              : runtime?.lifecycle === "ready"
+                ? "Your main agent is ready."
+                : mainAgent.status === "deployed"
+                  ? "Your main agent is deployed on another computer."
+                  : mainAgent.status === "running"
+                    ? "Your main agent is connecting."
+                    : "Your main agent is stopped."}
           </p>
         </div>
       ) : (
@@ -89,7 +106,7 @@ export function BusinessAgentControls({
         {pending
           ? "Inviting your agent…"
           : started
-            ? "Ready — continue in the conversation"
+            ? "Continue in the conversation"
             : "Begin with my agent"}
       </Button>
       <Button
@@ -101,7 +118,7 @@ export function BusinessAgentControls({
         variant="outline"
       >
         <Settings2 />
-        {mainAgent ? "Main agent settings" : "Set up AI"}
+        {mainAgent && !needsSetup ? "Main agent settings" : "Set up AI"}
       </Button>
       {error ? (
         <p className="text-xs text-destructive" role="alert">
@@ -127,6 +144,7 @@ export function BusinessAgentControls({
         </p>
       ) : null}
       {mainAgent &&
+      !needsSetup &&
       (mainAgent.status === "running" || mainAgent.status === "deployed") ? (
         <BusinessVoiceAction
           channelId={channelId}

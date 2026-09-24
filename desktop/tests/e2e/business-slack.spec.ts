@@ -1,3 +1,7 @@
+import {
+  openBusinessOverview,
+  openPluginConnection,
+} from "../helpers/business-navigation";
 import { expect, test } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
 
@@ -89,8 +93,8 @@ test("Slack imports only the selected channel and retains its verified source af
   });
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Slack Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
-  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openPluginConnection(page, "Slack");
   const slack = page.locator('[data-provider="slack"]');
   await expect(
     slack.getByText("Not connected.", { exact: true }),
@@ -120,7 +124,7 @@ test("Slack imports only the selected channel and retains its verified source af
   ).toBeVisible();
   await channel.getByRole("button", { name: "Import recent messages" }).click();
   await expect(slack.getByRole("alert")).toContainText(
-    "already in your workspace",
+    "already saved in Business",
   );
   await slack.getByRole("button", { name: "Disconnect", exact: true }).click();
   await expect(
@@ -129,6 +133,7 @@ test("Slack imports only the selected channel and retains its verified source af
   await expect(slack.getByLabel("Slack bot token · manual setup")).toHaveValue(
     "",
   );
+  await openBusinessOverview(page);
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   const source = page
     .locator("details")

@@ -1,3 +1,4 @@
+import { openSavedWork } from "../helpers/business-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 import { waitForAnimations } from "../helpers/animations";
@@ -45,13 +46,15 @@ async function setup(page: Page) {
   await page.goto("/");
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Call Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openSavedWork(page);
+  await page.getByRole("button", { name: "Main agent", exact: true }).click();
   await page
     .getByRole("button", { name: "Begin with my agent", exact: true })
     .click();
   await expect(
     page.getByRole("button", {
-      name: "Ready — continue in the conversation",
+      name: "Continue in the conversation",
       exact: true,
     }),
   ).toBeDisabled();
@@ -150,9 +153,7 @@ test("incoming call remains available outside chat and declining never requests 
   page,
 }) => {
   const channelId = await setup(page);
-  await page
-    .getByRole("button", { name: "Company context", exact: true })
-    .click();
+  await page.getByTestId("open-business-view").click();
   const request = await ring(page, channelId);
   const dialog = page.getByRole("alertdialog");
   await expect(dialog).toContainText(

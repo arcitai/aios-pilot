@@ -44,7 +44,7 @@ export const Route = createFileRoute("/")({
 });
 
 function HomeRouteComponent() {
-  const { goChannel, goBusiness } = useAppNavigation();
+  const { goChannel } = useAppNavigation();
   const channelsQuery = useChannelsQuery();
   const identityQuery = useIdentityQuery();
   const channels = channelsQuery.data ?? [];
@@ -60,11 +60,9 @@ function HomeRouteComponent() {
         return;
       }
 
-      // Identity and runtime setup have completed. The first business agent
-      // becomes the user's next step; keep the welcome room available in Buzz.
-      void goBusiness({ replace: true });
+      void goChannel(welcomeChannelId, { replace: true });
     },
-    [goBusiness],
+    [goChannel],
   );
 
   React.useEffect(() => {

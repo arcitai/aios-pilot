@@ -1,3 +1,4 @@
+import { openSavedWork } from "../helpers/business-navigation";
 import { expect, test, type Page } from "@playwright/test";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 
@@ -46,7 +47,9 @@ async function setup(page: Page) {
   await page.goto("/");
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Voice Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openSavedWork(page);
+  await page.getByRole("button", { name: "Main agent", exact: true }).click();
   const action = page.getByTestId("business-voice-action");
   await expect(action).toBeVisible();
   expect(

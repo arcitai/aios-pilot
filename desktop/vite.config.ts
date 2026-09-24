@@ -3,6 +3,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { localBrowserProxy } from "./scripts/local-browser-proxy.mjs";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
+import { routes } from "./src/app/routes";
 
 const host = process.env.TAURI_DEV_HOST;
 
@@ -19,7 +20,7 @@ export default defineConfig(async ({ mode }) => {
         target: "react",
         routesDirectory: "./src/app/routes",
         generatedRouteTree: "./src/app/routeTree.gen.ts",
-        virtualRouteConfig: "./src/app/routes.ts",
+        virtualRouteConfig: routes,
         quoteStyle: "double",
         semicolons: true,
         routeTreeFileHeader: [

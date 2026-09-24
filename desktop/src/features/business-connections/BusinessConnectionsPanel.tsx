@@ -17,11 +17,14 @@ import {
 import {
   BUSINESS_CONNECTION_PROVIDERS,
   type BusinessConnectionProviderDescriptor,
+  type BusinessConnectionProviderId,
 } from "./providerRegistry";
 
 export type BusinessConnectionsPanelProps = BusinessConnectionScope & {
   onImportSource: (source: BusinessConnectionSource) => Promise<void>;
   onConnectionStatus?: (status: BusinessConnectionStatusReport) => void;
+  providerId?: BusinessConnectionProviderId;
+  showHeading?: boolean;
 };
 
 /** Local, read-only providers for importing source material. */
@@ -30,6 +33,8 @@ export function BusinessConnectionsPanel({
   expectedSignerPubkey,
   onImportSource,
   onConnectionStatus,
+  providerId,
+  showHeading = true,
 }: BusinessConnectionsPanelProps) {
   const scope = React.useMemo(
     () => ({ expectedRelayUrl, expectedSignerPubkey }),
@@ -78,17 +83,21 @@ export function BusinessConnectionsPanel({
   );
 
   return (
-    <section
-      className="min-w-0 space-y-5"
-      aria-labelledby="business-connections-title"
-    >
+    <section className="min-w-0 space-y-5" aria-label="Connection setup">
       <div>
-        <h2 id="business-connections-title" className="text-lg font-semibold">
-          Business connections
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Connect read-only sources for this community and identity.
-        </p>
+        {showHeading ? (
+          <>
+            <h2
+              id="business-connections-title"
+              className="text-lg font-semibold"
+            >
+              Business connections
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Connect read-only sources for this community and identity.
+            </p>
+          </>
+        ) : null}
         {busyAction && (
           <p className="sr-only" role="status" aria-live="polite">
             {`Working on ${busyAction.replace(":", " ")}.`}
@@ -97,39 +106,51 @@ export function BusinessConnectionsPanel({
       </div>
 
       <div className="grid gap-4">
-        <GitHubConnectionCard
-          scope={scope}
-          busyAction={busyAction}
-          runAction={runAction}
-          onImportSource={onImportSource}
-          onConnectionStatus={reportStatus}
-        />
-        <GoogleDriveConnectionCard
-          scope={scope}
-          busyAction={busyAction}
-          runAction={runAction}
-          onImportSource={onImportSource}
-          onConnectionStatus={reportStatus}
-        />
-        <NotionConnectionCard
-          scope={scope}
-          busyAction={busyAction}
-          runAction={runAction}
-          onImportSource={onImportSource}
-          onConnectionStatus={reportStatus}
-        />
-        <SlackConnectionCard
-          scope={scope}
-          busyAction={busyAction}
-          runAction={runAction}
-          onImportSource={onImportSource}
-          onConnectionStatus={reportStatus}
-        />
-        {plannedProviders.map((provider) => (
-          <ProviderCard key={provider.id} providerId={provider.id}>
-            <p className="text-sm text-muted-foreground">Not connected yet.</p>
-          </ProviderCard>
-        ))}
+        {(!providerId || providerId === "github") && (
+          <GitHubConnectionCard
+            scope={scope}
+            busyAction={busyAction}
+            runAction={runAction}
+            onImportSource={onImportSource}
+            onConnectionStatus={reportStatus}
+          />
+        )}
+        {(!providerId || providerId === "google") && (
+          <GoogleDriveConnectionCard
+            scope={scope}
+            busyAction={busyAction}
+            runAction={runAction}
+            onImportSource={onImportSource}
+            onConnectionStatus={reportStatus}
+          />
+        )}
+        {(!providerId || providerId === "notion") && (
+          <NotionConnectionCard
+            scope={scope}
+            busyAction={busyAction}
+            runAction={runAction}
+            onImportSource={onImportSource}
+            onConnectionStatus={reportStatus}
+          />
+        )}
+        {(!providerId || providerId === "slack") && (
+          <SlackConnectionCard
+            scope={scope}
+            busyAction={busyAction}
+            runAction={runAction}
+            onImportSource={onImportSource}
+            onConnectionStatus={reportStatus}
+          />
+        )}
+        {plannedProviders
+          .filter((provider) => !providerId || provider.id === providerId)
+          .map((provider) => (
+            <ProviderCard key={provider.id} providerId={provider.id}>
+              <p className="text-sm text-muted-foreground">
+                Not connected yet.
+              </p>
+            </ProviderCard>
+          ))}
       </div>
     </section>
   );

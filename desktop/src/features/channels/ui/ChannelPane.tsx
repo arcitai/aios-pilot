@@ -76,6 +76,7 @@ const HUDDLE_TRANSCRIPT_ROOT_STYLE = {
   "--channel-top-chrome-height": "0.25rem",
 } as React.CSSProperties;
 export const ChannelPane = React.memo(function ChannelPane({
+  showChannelIntro = true,
   activeChannel,
   agentPubkeys,
   agentPubkeysPending = false,
@@ -371,7 +372,8 @@ export const ChannelPane = React.memo(function ChannelPane({
     onOpenMembers,
     onWelcomeAddAgent: onAddAgent ? handleWelcomeAddAgent : undefined,
   });
-  const channelIntro = isHuddleTranscript ? null : standardChannelIntro;
+  const channelIntro =
+    isHuddleTranscript || !showChannelIntro ? null : standardChannelIntro;
   const { mainTimelineEntries, recentMentions, visibleMessages } =
     useChannelPaneMessages({
       activeChannel,

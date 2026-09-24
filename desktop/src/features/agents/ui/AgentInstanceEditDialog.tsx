@@ -66,7 +66,7 @@ import {
   selectionOnRuntimeChange,
   type RuntimeModelProviderSelection,
 } from "./runtimeModelProviderSelection";
-import { AgentCreationPreview } from "./AgentCreationPreview";
+import { EditAgentIdentity } from "./EditAgentIdentity";
 import { OwnerOnlyAccessField } from "./OwnerOnlyAccessField";
 import type { EnvVarsValue } from "./EnvVarsEditor";
 import { useRequiredCredentialState } from "./useRequiredCredentialState";
@@ -947,37 +947,21 @@ export function AgentInstanceEditDialog({
         }
       >
         <div className="grid gap-5 lg:grid-cols-[220px_minmax(0,1fr)]">
-          {/* Avatar is definition-level identity. hideEditControl suppresses
-              the internal pencil badge; the CTA below is the only edit path. */}
-          <div className="flex flex-col items-center gap-2">
-            <AgentCreationPreview
-              avatarUrl={previewAvatarUrl}
-              hideEditControl
-              label={previewLabel}
-              onClearAvatar={() => setAvatarUrl("")}
-              onUploadPendingChange={setIsAvatarUploadPending}
-              onSelectAvatar={setAvatarUrl}
-            />
-            {onEditLinkedPersona ? (
-              <Button
-                className="w-full"
-                disabled={isSaving}
-                onClick={() => {
-                  handleOpenChange(false);
-                  onEditLinkedPersona();
-                }}
-                size="sm"
-                type="button"
-                variant="outline"
-              >
-                Edit avatar
-              </Button>
-            ) : (
-              <p className="text-center text-xs text-muted-foreground">
-                Avatar is shared identity
-              </p>
-            )}
-          </div>
+          <EditAgentIdentity
+            avatarUrl={previewAvatarUrl}
+            disabled={isSaving}
+            label={previewLabel}
+            onAvatarChange={setAvatarUrl}
+            onUploadPendingChange={setIsAvatarUploadPending}
+            onEditDefinition={
+              onEditLinkedPersona
+                ? () => {
+                    handleOpenChange(false);
+                    onEditLinkedPersona();
+                  }
+                : undefined
+            }
+          />
           <div className="space-y-5">
             <div className="space-y-1.5">
               <label

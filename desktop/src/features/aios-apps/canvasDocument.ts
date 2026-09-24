@@ -1,3 +1,4 @@
+import { APP_WORKSPACE_MARKER_PREFIX } from "@/shared/lib/appWorkspaceChannel";
 import {
   MAX_APP_CANVAS_DOCUMENT_BYTES,
   parseAppDocument,
@@ -25,7 +26,7 @@ export function appCanvasMarker(
   businessChannelId: string,
   appId: AppId,
 ): string {
-  return `aios.app-document:v1:${encodeURIComponent(businessChannelId)}:${appId}`;
+  return `${APP_WORKSPACE_MARKER_PREFIX}${encodeURIComponent(businessChannelId)}:${appId}`;
 }
 
 /** Assert an empty Canvas head instead of sending an unconditional append. */

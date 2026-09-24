@@ -5,7 +5,7 @@ import { parseDocument } from "yaml";
 import {
   agentSkillStarters,
   customAgentSkillTemplate,
-} from "./agentSkillStarters.ts";
+} from "../../../shared/lib/agentSkillStarters.ts";
 
 function frontmatter(skillMd) {
   assert.ok(skillMd.startsWith("---\n"));

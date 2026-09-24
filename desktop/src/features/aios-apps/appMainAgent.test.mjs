@@ -334,6 +334,11 @@ test("rejects a marked app channel that is not private before inviting the agent
 
 test("does not invite the agent when the human's private app membership is missing", async () => {
   resetNative({
+    get_channel_members: ({ channelId }) => ({
+      members:
+        channelId === BUSINESS_ID ? businessMembers : [member(GUIDE_A, "bot")],
+      next_cursor: null,
+    }),
     create_channel: (args) => {
       appChannelCreated = true;
       return appChannelRaw({

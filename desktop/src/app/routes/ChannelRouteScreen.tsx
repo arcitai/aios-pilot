@@ -31,6 +31,7 @@ import type { RelayEvent } from "@/shared/api/types";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
 type ChannelRouteScreenProps = {
+  presentation?: "channel" | "embedded";
   autoSendDraftKey: string | null;
   channelId: string;
   searchHighlight: SearchHighlightNavigation | null | undefined;
@@ -112,6 +113,7 @@ async function fetchRouteTargetEvents(
 }
 
 export function ChannelRouteScreen({
+  presentation = "channel",
   autoSendDraftKey,
   channelId,
   searchHighlight,
@@ -310,6 +312,7 @@ export function ChannelRouteScreen({
 
   return (
     <ChannelScreen
+      presentation={presentation}
       activeChannel={activeChannel}
       autoSendDraftKey={autoSendDraftKey}
       currentIdentity={identityQuery.data}

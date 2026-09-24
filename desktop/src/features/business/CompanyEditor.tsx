@@ -53,8 +53,8 @@ export function CompanyEditor({
       <div>
         <h2 className="text-lg font-semibold">Your company, in your words</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          A shared reference for your main agent. You can correct it whenever
-          your business changes.
+          A shared reference for people and agents with access. Correct it
+          whenever your business changes.
         </p>
       </div>
       {fields.map(([field, label, placeholder]) => (

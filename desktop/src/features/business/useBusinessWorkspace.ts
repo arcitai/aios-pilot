@@ -10,7 +10,7 @@ import {
 } from "./workspace";
 import { serializeBusinessDocument, type BusinessDocument } from "./document";
 
-export function useBusinessWorkspace() {
+export function useBusinessWorkspace(contextId?: string) {
   const { activeCommunity } = useCommunities();
   const identity = useIdentityQuery();
   const client = useQueryClient();
@@ -19,7 +19,9 @@ export function useBusinessWorkspace() {
     expectedRelayUrl: activeCommunity?.relayUrl ?? "",
     expectedSignerPubkey: identity.data?.pubkey ?? "",
   };
-  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [selectedId, setSelectedId] = React.useState<string | null>(
+    contextId ?? null,
+  );
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [notice, setNotice] = React.useState<string | null>(null);
@@ -28,8 +30,11 @@ export function useBusinessWorkspace() {
     queryFn: findBusinessWorkspaces,
     enabled: Boolean(scope[0] && scope[1]),
   });
-  const channel =
-    channels.data?.find((item) => item.id === selectedId) ?? channels.data?.[0];
+  // An explicit resource link must never fall back to a different company's data.
+  const channel = selectedId
+    ? channels.data?.find((item) => item.id === selectedId)
+    : channels.data?.[0];
+  const unavailable = Boolean(selectedId && channels.isSuccess && !channel);
   const contextKey = ["business-context", ...scope, channel?.id];
   const context = useQuery({
     queryKey: contextKey,
@@ -58,6 +63,10 @@ export function useBusinessWorkspace() {
   });
 
   async function initialize(name: string) {
+    if (unavailable) {
+      setError("This business context is no longer available to your account.");
+      return;
+    }
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -125,7 +134,10 @@ export function useBusinessWorkspace() {
     channels,
     context,
     busy,
-    error,
+    error: unavailable
+      ? "This business context is no longer available to your account."
+      : error,
+    unavailable,
     notice,
     initialize,
     save,

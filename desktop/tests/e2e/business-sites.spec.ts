@@ -1,3 +1,7 @@
+import {
+  openBusinessOverview,
+  openSavedWork,
+} from "../helpers/business-navigation";
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
@@ -63,13 +67,15 @@ async function openSites(page: Page, mainAgent = false, advanced = true) {
   });
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Site Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openSavedWork(page);
   if (mainAgent) {
+    await page.getByRole("button", { name: "Main agent", exact: true }).click();
     await page
       .getByRole("button", { name: "Begin with my agent", exact: true })
       .click();
     await expect(page.getByTestId("business-agent-controls")).toContainText(
-      "Ready — continue in the conversation",
+      "Continue in the conversation",
     );
   }
   await page.getByRole("button", { name: "Apps", exact: true }).click();
@@ -130,9 +136,11 @@ test("Sites shares the Apps rail and preserves a private saved page across busin
       String(entry.payload?.description).includes("[aios.site-channel:v1]"),
   );
   expect(created?.payload?.visibility).toBe("private");
+  await openBusinessOverview(page);
   await page
     .getByRole("button", { name: "Company context", exact: true })
     .click();
+  await openSavedWork(page);
   await page.getByRole("button", { name: "Apps", exact: true }).click();
   await page.getByTestId("aios-app-nav-sites").click();
   await expect(page.getByLabel("HTML source", { exact: true })).toHaveValue(
@@ -191,6 +199,7 @@ test("a real self-hosted publisher previews, publishes and revokes a site from t
         .getByRole("status")
         .filter({ hasText: "Saved to the private Buzz canvas." }),
     ).toBeVisible();
+    await page.getByText("Hosting settings", { exact: true }).click();
     await page
       .getByLabel("Publisher operator token", { exact: true })
       .fill(publisher.token);

@@ -15,6 +15,8 @@ import type { ProfilePanelOpenOptions } from "@/shared/context/ProfilePanelConte
 import type { Channel } from "@/shared/api/types";
 import type { IdleAuxiliaryHeaderControls } from "./IdleAuxiliaryPanel";
 export type ChannelPaneProps = {
+  /** Embedded workspaces provide their own introduction and setup actions. */
+  showChannelIntro?: boolean;
   activeChannel: Channel | null;
   activityAgents?: BotActivityAgent[];
   agentPubkeys?: ReadonlySet<string>;

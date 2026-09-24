@@ -88,6 +88,7 @@ import type { ChannelScreenProps } from "./ChannelScreen.types";
 import { GuardedChannelPane } from "./GuardedChannelPane"; import { useNavigationGuard } from "./useNavigationGuard"; import * as searchForwarding from "./searchTargetForwarding";
 const EMPTY_RELAY_EVENTS: RelayEvent[] = [];
 export function ChannelScreen({
+  presentation = "channel",
   activeChannel,
   autoSendDraftKey,
   currentIdentity,
@@ -743,8 +744,8 @@ export function ChannelScreen({
       <ChannelScreenHeader
         activeChannel={activeChannel}
         activeChannelEphemeralDisplay={activeChannelEphemeralDisplay}
-        activeChannelTitle={activeChannelTitle}
-        actionsVariant={shouldCompactHeaderActions ? "compact" : "inline"}
+        activeChannelTitle={presentation === "embedded" ? "Conversation" : activeChannelTitle}
+        actionsVariant={presentation === "embedded" || shouldCompactHeaderActions ? "compact" : "inline"}
         activeDmAvatarUrl={activeDmAvatarUrl}
         activeDmHeaderParticipants={activeDmHeaderParticipants}
         activeDmPresenceStatus={activeDmPresenceStatus}
@@ -764,6 +765,7 @@ export function ChannelScreen({
       activeChannel,
       activeChannelEphemeralDisplay,
       activeChannelTitle,
+      presentation,
       shouldCompactHeaderActions,
       activeDmAvatarUrl,
       activeDmHeaderParticipants,
@@ -839,6 +841,7 @@ export function ChannelScreen({
               >
                 {searchForwarding.renderSearchAwareChannel(
                   <GuardedChannelPane
+                  showChannelIntro={presentation !== "embedded"}
                   activeChannel={activeChannel}
                   activityAgents={channelAgentSessionAgents}
                   agentPubkeys={agentPubkeys}

@@ -1,7 +1,6 @@
 import { z } from "zod";
 
-export const BUSINESS_CHANNEL_DESCRIPTION =
-  "AIOS business workspace · private company context and main-agent conversation. [aios.business-workspace:v1]";
+export { BUSINESS_CHANNEL_DESCRIPTION } from "@/shared/lib/appWorkspaceChannel";
 export const MAX_DOCUMENT_BYTES = 200_000;
 
 const text = z.string().max(12_000);

@@ -1,4 +1,12 @@
-import { Activity, Bot, Building2, Folders, Inbox, Zap } from "lucide-react";
+import {
+  Activity,
+  Bot,
+  Building2,
+  Folders,
+  Inbox,
+  Plug,
+  Zap,
+} from "lucide-react";
 import { useLocation } from "@tanstack/react-router";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 
@@ -101,10 +109,10 @@ export function AppSidebarPrimaryMenu({
   projectsOverviewActive,
   selectedView,
 }: AppSidebarPrimaryMenuProps) {
-  const isBusiness = useLocation({
-    select: (location) => location.pathname === "/business",
+  const pathname = useLocation({
+    select: (location) => location.pathname,
   });
-  const { goBusiness } = useAppNavigation();
+  const { goBusiness, goPlugins } = useAppNavigation();
   return (
     <>
       <SidebarHeader
@@ -117,7 +125,7 @@ export function AppSidebarPrimaryMenu({
             <SidebarMenuButton
               data-testid="open-business-view"
               onClick={() => void goBusiness()}
-              isActive={isBusiness}
+              isActive={pathname === "/business"}
               tooltip="Business"
             >
               <Building2 className="h-4 w-4" />
@@ -126,8 +134,19 @@ export function AppSidebarPrimaryMenu({
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton
+              data-testid="open-plugins-view"
+              onClick={() => void goPlugins()}
+              isActive={pathname === "/plugins"}
+              tooltip="Plugins"
+            >
+              <Plug className="h-4 w-4" />
+              <SidebarMenuLabel>Plugins</SidebarMenuLabel>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton
               className="data-[active=true]:font-normal"
-              isActive={selectedView === "home" && !isBusiness}
+              isActive={selectedView === "home" && pathname === "/"}
               onClick={onSelectHome}
               tooltip="Inbox"
               type="button"

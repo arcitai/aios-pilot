@@ -10,6 +10,15 @@ type BridgeEvent = { callback: number; payload: unknown };
 const PREFIX = "/__aios";
 const SERIALIZE_TO_IPC = "__TAURI_TO_IPC_KEY__";
 
+class LocalBackendError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
 export async function installLocalBrowserBridge() {
   if (import.meta.env.MODE !== "browser" || "__TAURI_INTERNALS__" in window)
     return;
@@ -39,10 +48,11 @@ export async function installLocalBrowserBridge() {
     });
     const value = await response.json();
     if (!response.ok)
-      throw new Error(
+      throw new LocalBackendError(
         typeof value.error === "string"
           ? value.error
           : `Local backend returned ${response.status}`,
+        response.status,
       );
     return value;
   }
@@ -110,16 +120,37 @@ export async function installLocalBrowserBridge() {
   }
 
   try {
-    const health = await post("health", {}, 10_000);
+    const deadline = Date.now() + 120_000;
+    let health: { service?: unknown; mode?: unknown };
+    for (;;) {
+      try {
+        health = await post("health", {}, 10_000);
+        break;
+      } catch (error) {
+        if (
+          Date.now() >= deadline ||
+          !(
+            error instanceof TypeError ||
+            (error instanceof LocalBackendError && error.status === 503)
+          )
+        )
+          throw error;
+        notice(
+          "Starting the local app… Waiting for the backend or macOS keychain approval.",
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
     if (
       health.service !== "aios-browser-backend" ||
       health.mode !== "real-native"
     )
       throw new Error("Unexpected localhost backend");
     ({ clientId } = await post("connect", {}, 10_000));
+    notice(null);
   } catch (cause) {
     notice(
-      "The local backend is not ready. Start scripts/aios-browser, then reload this page.",
+      "The local backend is not ready. Check the development terminal and any macOS keychain prompt, then reload this page.",
     );
     throw cause;
   }

@@ -1,6 +1,6 @@
 ---
 name: AIOS Pilot
-version: 1
+version: 2
 ---
 
 # A quiet business workspace
@@ -9,6 +9,13 @@ Gustav's direction, reaffirmed 24 September 2026: preserve the actual Buzz
 look and conversation experience, with minimal visual noise. The audience is
 nontechnical people doing business work. The main agent is the home base;
 context, connections and useful apps support that conversation.
+
+On 24 September Gustav corrected the information architecture: Business is
+the knowledge page, Plugins sits immediately below it in the main sidebar,
+and apps attach to channels. Welcome owns conversational onboarding. Keep
+Buzz's visual identity; use the four supplied Codex Plugins/Skills screenshots
+for a searchable library, quiet installed rows and a small category switch.
+The Linux Codex wrapper is a reference, not reusable source for Codex's UI.
 
 ## Reference and identity
 
@@ -24,6 +31,16 @@ and platform behavior; it does not replace Buzz's visual identity.
 - Make the current task and its next action obvious. Keep one primary action
   in each active task area, with secondary actions visually quieter.
 - Put conversations and actual work ahead of settings, status tiles and copy.
+- The main sidebar is the global navigation. No Business top bar containing
+  Main agent, Context, Sources, Connections and Apps. Context and sources are
+  Business content/detail views. No permanent extra app sidebar by default.
+- A channel may have its own named document/app tabs beside Conversation.
+  This is local resource navigation, not a second product navigation bar.
+- Plugins can group Connections and Skills inside its own library. Installed,
+  connected and assigned describe different states and must not be conflated.
+  Agent creation/editing owns selection of permitted tools, accounts and skills
+  from this same library. Inline connection setup preserves the agent draft;
+  users should not need a competing assignment flow elsewhere.
 - Use ordinary spacing and dividers before introducing another card. Avoid
   repeated headings, icon boxes, success banners, badges and explanatory text.
 - Keep setup, connection details, revision IDs, export formats and code behind
@@ -64,3 +81,8 @@ agent setup/skills, app editing, Sites, tables, workflows and voice states.
 Inspect real interactions and capture meaningful comparable desktop/narrow
 views. Record findings and remaining limitations in docs/aios/STATUS.md, repair
 in scope, and refresh affected proof. No extra owner approval is introduced.
+
+Plugins is workspace-owned, independently of Business. Included instruction packages
+and runtime skill-discovery support remain distinct. Phase one shows supported
+local adapters and bundled skills; host catalog management and per-agent account
+grants arrive with the permission model, not as inactive controls.

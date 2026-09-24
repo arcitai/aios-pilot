@@ -1,3 +1,7 @@
+import {
+  openBusinessOverview,
+  openPluginConnection,
+} from "../helpers/business-navigation";
 import { expect, test } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
 
@@ -79,8 +83,8 @@ test("Notion import retains attribution, rejects duplicates and never saves the 
   });
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Notion Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
-  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openPluginConnection(page, "Notion");
   const notion = page.locator('[data-provider="notion"]');
   await expect(
     notion.getByText("Not connected.", { exact: true }),
@@ -107,7 +111,7 @@ test("Notion import retains attribution, rejects duplicates and never saves the 
     .getByRole("button", { name: "Import page", exact: true })
     .click();
   await expect(notion.getByRole("alert")).toContainText(
-    "already in your workspace",
+    "already saved in Business",
   );
   await page.screenshot({
     path: "test-results/aios-notion-connection.png",
@@ -118,6 +122,7 @@ test("Notion import retains attribution, rejects duplicates and never saves the 
     notion.getByText("Not connected.", { exact: true }),
   ).toBeVisible();
   await expect(notion.getByLabel("Notion connection token")).toHaveValue("");
+  await openBusinessOverview(page);
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   const source = page
     .locator("details")

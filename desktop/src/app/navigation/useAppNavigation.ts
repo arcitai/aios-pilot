@@ -99,6 +99,18 @@ export function useAppNavigation() {
     [commitNavigation],
   );
 
+  const goPlugins = React.useCallback(
+    (behavior?: NavigationBehavior) =>
+      commitNavigation({ to: "/plugins" }, behavior),
+    [commitNavigation],
+  );
+
+  const goSavedWork = React.useCallback(
+    (context: string, behavior?: NavigationBehavior) =>
+      commitNavigation({ to: "/saved-work", search: { context } }, behavior),
+    [commitNavigation],
+  );
+
   const goPulse = React.useCallback(
     (behavior?: NavigationBehavior) =>
       commitNavigation(
@@ -466,6 +478,8 @@ export function useAppNavigation() {
     closeWorkflowDetail,
     goAgents,
     goBusiness,
+    goPlugins,
+    goSavedWork,
     goChannel,
     goDuplicateWorkflow,
     goEditWorkflow,

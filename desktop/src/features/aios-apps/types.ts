@@ -100,11 +100,11 @@ export function createDesignStarterHtml(
     <title>${name}</title>
     <style>
       * { box-sizing: border-box; }
-      body { margin: 0; background: #f6f6f3; color: #23251f; font: 16px/1.6 Inter, system-ui, sans-serif; }
+      body { margin: 0; background: #f6f6f3; color: #23251f; font: 1rem/1.6 Inter, system-ui, sans-serif; }
       main { width: min(100% - 40px, 880px); margin: 64px auto; }
-      .eyebrow { color: #60675a; font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
-      h1 { max-width: 720px; margin: 20px 0; font-size: clamp(38px, 8vw, 72px); line-height: 1.02; letter-spacing: -.055em; }
-      p { max-width: 620px; color: #5a5e54; font-size: 18px; }
+      .eyebrow { color: #60675a; font-size: 0.75rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
+      h1 { max-width: 720px; margin: 20px 0; font-size:clamp(2.375rem, 8vw, 4.5rem); line-height: 1.02; letter-spacing: -.055em; }
+      p { max-width: 620px; color: #5a5e54; font-size: 1.125rem; }
       .card { margin-top: 44px; padding: 24px; border: 1px solid #dedfd8; border-radius: 18px; background: #fff; }
     </style>
   </head>

@@ -1,6 +1,120 @@
 # AIOS implementation status
 
-Updated during the night of 23–24 September 2026 (Europe/Copenhagen).
+Updated 24 September 2026 (Europe/Copenhagen).
+
+## Pause, reassessment and revised plan — 24 September morning
+
+Gustav requested a development pause, an audit against Kylon/OpenAgents, and
+autonomous resumption only after a coherent plan. Both active workers stopped
+at preserved checkpoints. Lead made no implementation edits during the audit.
+The revised contract and ordered acceptance are in `AIOS_PILOT.md`, with
+`DESIGN.md` v2. Plugins, including connections and skills, now replaces the
+proposed Connections sidebar item and sits directly below Business.
+The latest correction places capability selection in agent creation/editing,
+using the same Plugins catalog. The user expanded research to daily work and
+operational flows too. Two existing workers completed read-only Kylon and
+OpenAgents flow research on GPT-6 Luna/max before implementation resumed.
+
+Read-only audit result: REVISE the information architecture and data ownership.
+Retain the working Buzz shell, signed relay, context/history/CAS, provider
+adapters, skill validator/staging, app editors, publisher and CLI. Do not merge
+OpenAgents' identity/backend or use Codex's proprietary app as source code.
+
+Observed gaps:
+
+- At the pause, Business embedded a chat and every app/connection in a top navigation.
+  Real localhost screenshot confirms three nested navigation/header layers in
+  Sites, technical storage copy and competing create buttons.
+- Business context is durable relay data, but its private-channel adapter leaks
+  into product navigation. It lacks a canonical host-owned context reference
+  and a complete team/agent grant flow independent of a conversation.
+- Apps are separately private child channels. Membership is not inherited from
+  a working channel; UI placement alone cannot make them shared channel tabs.
+  Sites/CLI/Tables also enforce Business-specific parent markers.
+- Connections are local read-only import adapters with scoped OS-keyring
+  credentials, not host-owned shared tool execution. Imported sources are
+  durable server data; live provider refresh and agent grants remain work.
+- Skills exist in private local agent definitions, but are buried in specialist
+  editing; there is no central installed library/package lifecycle yet.
+- Localhost is a real backend development surface, not a headless production
+  browser client. The user's VM/Mac mini host model remains explicit work.
+- Static Sites, isolated headless MCP, in-app calls and same-host local-model
+  proof do not establish authenticated generated apps, shared browser handoff,
+  external phone calls or a physical second-machine deployment.
+
+Reference review: Kylon workspace/rooms/memory/connections/agent-access docs;
+walkthrough transcript 1:21–1:33; OpenAgents local pinned workspace navigation,
+knowledge/integrations routers and selfhosting README; user Codex screenshots;
+Codex Linux README and architecture/license boundary. See contract links.
+
+Preserved checkpoints: lead `4067f99` plus uncommitted repairs (typecheck and
+file-size gate pass before pause); Tables worker has 13 staged new files plus
+two small unstaged follow-ups, no commit; Browser worker has one uncommitted
+~500-line MCP revision, not formatted/built/tested. Do not call either accepted.
+No worker-owned builds/runtimes remain. Real localhost/native companion stays running.
+
+Next execution follows the contract: separate Business/Plugins/Welcome first,
+then shared context and channel-app server boundaries. Do not resume the old
+Business-only Tables host or hidden child-channel membership-copy approach.
+
+Expanded audit completed: `FLOWS.md` maps F01–F22 across setup, knowledge,
+plugins/agent capabilities, daily work, collaboration, files, tasks, automations,
+browser, voice, app data/preview/sharing, CLI, remote machines and recovery.
+Kylon reading covered 25 public pages plus its index; the walkthrough sections
+around 2:00, 2:12 and 3:01–3:11 supplement onboarding. OpenAgents reading traced
+14 UI/API/runner/storage flows at the pinned revision, with representative lead
+readback. Source observations and unknowns are distinguished from our target.
+The lead reviewed first-slice readiness and resumes the bounded navigation
+patch under the revised contract. Further independent review remains useful
+feedback; platform capability and final acceptance remain incomplete.
+
+## Navigation slice — implemented and verified
+
+Business is now a standalone knowledge overview with focused company/source
+editing, history and conflict recovery. Plugins is directly beneath it in the
+main sidebar, with search, four existing connection adapters and the same three
+included skill bundles used by agent setup. Skill inspection is read-only;
+agent creation/editing still applies the selected instructions and checks the
+Rust runtime capability. No per-agent provider grant is claimed yet.
+
+The old private business/app channels are hidden from the conversation list,
+while an explicit Saved pilot work link keeps existing documents and agent
+conversation accessible. Explicit unavailable context links fail visibly and
+never fall back to another company's data. This is transitional recovery, not
+the final channel-app data model. Existing ACLs and saved documents are intact.
+First-run pending Welcome navigation again opens its ordinary channel.
+
+Localhost readback on the real native backend confirms the existing Browser
+Studio context, Plugins/Skills navigation and unsaved-edit guard. Focused browser
+fixtures pass company/source editing, conflict/restore, four connector import
+flows, legacy app autosave/drafts, calls and agent settings (31 tests); three
+new navigation tests pass, and the real loopback publisher preview/publish/revoke
+and runtime-sensitive skill editor also pass. The typography check found old
+fixed-pixel text in app editors; it now uses Buzz rem-based text tokens, with
+standalone exports using rem units. App/preview browser tests were rerun.
+Unit checks: 60 context/provider/Welcome/skill checks and 30 app/Sites checks pass.
+Typecheck, e2e build, file-size ratchet and px-text check pass. This is frontend
+and existing-adapter evidence; no new host grants or headless-host proof.
+
+Evidence logs: `/tmp/aios-nav-v2-e2e.log`,
+`/tmp/aios-nav-v2-navigation-test.log`, `/tmp/aios-nav-v2-final-e2e.log`,
+`/tmp/aios-nav-v2-publisher-test.log`, `/tmp/aios-nav-v2-skills-e2e.log`,
+`/tmp/aios-nav-v2-unit.log`, `/tmp/aios-nav-v2-apps-unit.log`.
+The combined acceptance run passes all 36 affected smoke flows, including the
+real loopback publisher; the specialist-skill editor separately passes its
+integration test. Final log: `/tmp/aios-nav-v2-acceptance.log`.
+The Markdown-preview duplicate heading found earlier was fixed. Independent
+review found an in-flight import destination race (also found by the lead),
+misleading catalog copy and missing selected-pane semantics. All three are
+fixed. The delayed import regression proves switching companies prevents a
+late provider result from writing either context; alongside adjacent tests,
+8/8 pass in `/tmp/aios-nav-v2-import-race.log`. Independent follow-up review
+accepted this bounded navigation slice with no remaining findings. This does
+not accept later host, permission or channel-resource features.
+Actual localhost additionally reopened prior Slides and Calendar documents and
+continued from Business into the ordinary Welcome channel. No data migration
+or ACL expansion happened in this slice.
+Snapshot before navigation edits: `/var/folders/7g/xcm5r8yx0896jskb9w0wz8yw0000gn/T/aios-before-navigation-cuteu_3l`.
 
 ## Current state
 
@@ -11,14 +125,14 @@ Updated during the night of 23–24 September 2026 (Europe/Copenhagen).
 - Business context, sources/history, main-agent creation and settings,
   GitHub/Notion/Slack, per-app Slides/Calendar/Design, business CLI, and a local
   self-hosted relay with backup/restore are integrated and tested.
-- The isolated macOS package was built with Mesh and signature-verified from
-  clean `fd68911`. Later skills, Sites and Slack-link fixes must be included
-  in the next package. Native window interaction remains unavailable
-  while the computer is locked. Detailed evidence and limits are below.
+- The last isolated macOS package was signature-verified at `fd68911` and is
+  now outdated. Packaging is deferred. The real localhost UI uses the native
+  backend; company context, Slides and Calendar survived a process restart.
 - Skills, Apps access and integrated Sites have landed. Google Drive is wired
   and its selected-document browser flow passes. Its credential race fix is
   integrated and 50 connection checks pass. Active work includes app/Sites agent actions,
-  browser use, tables and workflow approvals. Incoming-call recovery now passes. The full
+  browser use, tables and workflow approvals. Worker implementation is paused
+  at the reassessment checkpoint above. Incoming-call recovery now passes. The full
   platform is not complete; [FEATURES](FEATURES.md) tracks the wider outcome.
 - An hourly heartbeat in the lead task resumes authorized work until the
   product goal is verified or meaningful progress requires a missing external
@@ -44,14 +158,15 @@ the same worker for revisions. They return isolated commits; lead integrates.
 
 ## Next work
 
-1. Complete agent-facing app/Sites CLI and exercise real agent-created output.
-2. Finish Drive credential-generation fencing, then rerun its native checks.
-3. Verify Publisher hosting/restore against real Docker volumes and finish
-   durable workflow approvals, isolated browser use and private typed tables.
-4. Make the actual app available at localhost for development and browser testing.
-   Continue multi-computer operation and data-backed app contracts. Review the
-   whole UI for minimal Buzz-style presentation. Desktop packaging is deferred
-   until the product is ready, per the owner's 24 September instruction.
+1. Exercise real model-created Apps/Sites output in the integrated application.
+   CLI contracts and private relay writes already pass; guided UI is integrated.
+2. Finish the observed browser MCP socket-path defect and bounded provisioning,
+   integrate private Tables, and run the corrected call fixture on isolated services.
+3. Verify combined workflow approval changes against an isolated relay. Preserve
+   the completed Publisher backup/restore and Drive credential-fencing evidence.
+4. Continue multi-computer operation and authenticated data-backed app contracts.
+   Review the whole UI for minimal Buzz-style presentation using the working real
+   localhost application. Desktop packaging remains deferred until product readiness.
 
 ## Proof
 
@@ -534,3 +649,51 @@ No OS security prompt was accepted and no existing credentials were changed.
 Guided Apps fbcf80f is also ready for lead integration. Broader platform work,
 minimal onboarding, Tables and full UI review continue; this is a checkpoint,
 not completion of the AIOS product.
+
+## Lead checkpoint — 09:32 local: real localhost restart and integrations
+
+- Workflow approval gates (`5f734d1`), opt-in browser MCP (`96ca6ad`), guided
+  Apps (`3ca150a`) and isolated calls fixture (`4067f99`) are integrated.
+- The user approved the macOS keyring prompts. The browser companion now starts
+  successfully at `http://127.0.0.1:1437/#/business`, with the real Rust backend
+  and separate `aios-browser-local` identity. No desktop package was produced.
+- A live startup defect was repaired: Wry owns a non-configurable global `ipc`
+  and Tauri makes `runCallback` read-only. The hidden host now uses local names
+  and its debug callback Map to forward foreign channel completion, leaving
+  native callbacks intact. Readiness retries native setup; frontend startup
+  waits up to two minutes for transient unavailability.
+- `desktop/scripts/browser-api-smoke.mjs` passes against that actual process:
+  identity read (no credential output), origin/session denial, native event
+  roundtrip, WebSocket ownership denial and channel-end callback cleanup.
+- In Codex's browser after a full native process restart, company `Browser Studio`,
+  its saved summary and priorities, Slides `Browser Studio — localhost proof` /
+  `Rigtig lokal gemning`, and Calendar `Lokal browser-test` (09:00–09:30) were
+  read back. These are synthetic local fixtures, not private company data.
+- Guided Apps now renders its private conversation. A new browser regression
+  exposed conversation/receipt loss during Load agent changes; moving the panel
+  outside the document loading branch preserves it and its retry state. All six
+  Apps browser cases now pass, including load-result and dirty-draft refusal.
+- Main-agent status no longer equates a running setup listener with AI readiness.
+  Sites hosting settings are collapsed; publication state and errors remain
+  visible, and user-facing copy omits keyring/canvas/tombstone internals.
+- Read evidence: 24 Apps/access JS checks; six native browser transport tests;
+  four browser MCP native checks; 171 workflow unit checks (two ignored);
+  TypeScript and E2E build. The combined E2E run had 20 passes and one genuine
+  guided-App failure, repaired and rerun as six Apps passes. The other 15
+  unchanged cases include real Publisher preview/publish/revoke and synthetic
+  voice/incoming-call flows. Logs: `/tmp/aios-integrated-native.log`,
+  `/tmp/aios-guided-apps-tests.log`, `/tmp/aios-workflows-lead.log`,
+  `/tmp/aios-integrated-e2e.log`, `/tmp/aios-guided-app-retest.log`,
+  `/tmp/aios-browser-host-test.log`, `/tmp/aios-browser-api-live.log`.
+- Browser MCP's real fixture initialized, listed tools and cleaned up its process
+  group, but navigation exposed a macOS socket-path length failure. The browser
+  worker owns that repair plus an overall provisioning deadline. Lead fixed the
+  managed Node npx path, installation stdout contamination, required app cache,
+  network limits and Windows moved-value bug; no navigation success is claimed.
+- Remaining visual findings from the real UI: generated app-storage channel names
+  clutter the global sidebar; business conversation repeats ordinary channel
+  setup cards and places onboarding below the composer at laptop width. Address
+  these in the full minimal-Buzz design review.
+- Resource allocation: Tables is lightweight only. Browser worker owns the single
+  heavy slot (Cargo jobs=1 and one browser fixture at a time). Lead's native dev
+  server remains running; avoid rebuilding it unnecessarily after keyring approval.

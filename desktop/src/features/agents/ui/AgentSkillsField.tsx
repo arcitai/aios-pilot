@@ -6,7 +6,7 @@ import type { AgentSkillCapability } from "../lib/agentConfigCore";
 import {
   agentSkillStarters,
   customAgentSkillTemplate,
-} from "./agentSkillStarters";
+} from "@/shared/lib/agentSkillStarters";
 
 type AgentSkillsFieldProps = {
   skills: AgentSkill[];

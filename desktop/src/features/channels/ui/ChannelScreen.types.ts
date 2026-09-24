@@ -9,6 +9,8 @@ import type {
 import type { IdleAuxiliaryHeaderControls } from "./IdleAuxiliaryPanel";
 
 export type ChannelScreenProps = {
+  /** The parent workspace supplies its own onboarding and identity. */
+  presentation?: "channel" | "embedded";
   activeChannel: Channel | null;
   /**
    * When non-null, the main channel composer auto-submits once on mount after

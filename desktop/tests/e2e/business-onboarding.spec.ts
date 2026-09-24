@@ -1,7 +1,8 @@
+import { openSavedWork } from "../helpers/business-navigation";
 import { expect, test } from "@playwright/test";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 
-test("main agent settings open inside the business conversation", async ({
+test("legacy main agent settings remain reachable with saved conversation", async ({
   page,
 }) => {
   await installMockBridge(page, {
@@ -20,12 +21,11 @@ test("main agent settings open inside the business conversation", async ({
   await page
     .getByLabel("What is your business called?")
     .fill("Onboarding Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openSavedWork(page);
+  await page.getByRole("button", { name: "Main agent", exact: true }).click();
   await expect(
-    page.getByText(
-      "Your business context and conversation with your main agent.",
-      { exact: true },
-    ),
+    page.getByText("Saved pilot work", { exact: true }),
   ).toBeVisible();
   await expect(
     page.getByText(/\[aios\.business-workspace:v1\]/),
@@ -36,14 +36,14 @@ test("main agent settings open inside the business conversation", async ({
   const dialog = page.getByTestId("edit-agent-dialog");
   await expect(dialog).toBeVisible();
   await expect(page.locator("#edit-agent-llm-provider")).toBeVisible();
-  await expect(page).toHaveURL(/\/business$/);
+  await expect(page).toHaveURL(/\/saved-work\?context=/);
   await page.screenshot({
     path: "test-results/aios-main-agent-settings.png",
     animations: "disabled",
   });
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("business-workspace")).toContainText(
+  await expect(page.getByTestId("saved-work-workspace")).toContainText(
     "Onboarding Studio",
   );
 });
@@ -55,14 +55,16 @@ test("missing-agent recovery exposes AI settings without discarding the workspac
   await page.goto("/");
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Setup Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openSavedWork(page);
+  await page.getByRole("button", { name: "Main agent", exact: true }).click();
   await page.getByRole("button", { name: "Set up AI", exact: true }).click();
   const dialog = page.getByTestId("agent-ai-defaults-dialog");
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("These settings apply to all agents");
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByTestId("business-workspace")).toContainText(
+  await expect(page.getByTestId("saved-work-workspace")).toContainText(
     "Setup Studio",
   );
 });
@@ -76,12 +78,14 @@ test("begin creates one scoped main agent before membership, kickoff and start",
   await page
     .getByLabel("What is your business called?")
     .fill("First conversation");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openSavedWork(page);
+  await page.getByRole("button", { name: "Main agent", exact: true }).click();
   await page
     .getByRole("button", { name: "Begin with my agent", exact: true })
     .click();
   const controls = page.getByTestId("business-agent-controls");
-  await expect(controls).toContainText("Ready — continue in the conversation");
+  await expect(controls).toContainText("Continue in the conversation");
   const log = await page.evaluate(() => window.__BUZZ_E2E_COMMAND_LOG__ ?? []);
   const creations = log.filter((row) => row.command === "create_managed_agent");
   expect(creations).toHaveLength(1);
@@ -113,9 +117,8 @@ test("begin creates one scoped main agent before membership, kickoff and start",
   expect(addIndex).toBeGreaterThan(createIndex);
   expect(sendIndex).toBeGreaterThan(addIndex);
   expect(startIndex).toBeGreaterThan(sendIndex);
-  await page
-    .getByRole("button", { name: "Company context", exact: true })
-    .click();
+  await page.getByTestId("open-business-view").click();
+  await openSavedWork(page);
   await page.getByRole("button", { name: "Main agent", exact: true }).click();
   await expect(
     controls.getByRole("button", { name: "Main agent settings" }),
@@ -129,7 +132,9 @@ test("retry after profile sync failure reuses the created main agent", async ({
   await page.goto("/");
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Retry Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openSavedWork(page);
+  await page.getByRole("button", { name: "Main agent", exact: true }).click();
   await page.evaluate(() => {
     const native = (
       window as unknown as {
@@ -162,7 +167,7 @@ test("retry after profile sync failure reuses the created main agent", async ({
   ).toContainText("was created");
   await begin.click();
   await expect(page.getByTestId("business-agent-controls")).toContainText(
-    "Ready — continue in the conversation",
+    "Continue in the conversation",
   );
   const count = await page.evaluate(
     () =>

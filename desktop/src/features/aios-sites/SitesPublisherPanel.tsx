@@ -3,7 +3,6 @@ import {
   ExternalLink,
   Globe2,
   KeyRound,
-  LockKeyhole,
   PlugZap,
   ShieldCheck,
   Unplug,
@@ -46,10 +45,9 @@ export function SitesPublisherPanel({
           <Globe2 className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="text-sm font-semibold">Publisher connection</h2>
+          <h2 className="text-sm font-semibold">Share your site</h2>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            Preview temporarily or publish a saved snapshot to a static Sites
-            publisher.
+            Publish a saved version and share its link.
           </p>
         </div>
         {publisher.isDisconnecting ? (
@@ -68,7 +66,7 @@ export function SitesPublisherPanel({
           </span>
         ) : publisher.isChecking ? (
           <span className="text-2xs text-muted-foreground" role="status">
-            Checking keyring…
+            Checking connection…
           </span>
         ) : (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-muted/60 px-2.5 py-1 text-2xs text-muted-foreground">
@@ -77,8 +75,11 @@ export function SitesPublisherPanel({
         )}
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)]">
-        <form className="space-y-3" onSubmit={connect}>
+      <details className="group">
+        <summary className="cursor-pointer text-xs font-medium text-muted-foreground">
+          Hosting settings
+        </summary>
+        <form className="mt-3 max-w-lg space-y-3" onSubmit={connect}>
           <div className="space-y-1.5">
             <label
               className="text-xs font-medium"
@@ -148,27 +149,16 @@ export function SitesPublisherPanel({
                 <Unplug />
                 {publisher.isDisconnecting ? "Disconnecting…" : "Disconnect"}
               </Button>
-              <p className="text-2xs text-muted-foreground">
-                Token stays in the OS keyring.
-              </p>
             </div>
           )}
         </form>
 
-        <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-relaxed">
-          <p className="flex items-center gap-1.5 font-medium text-foreground">
-            <LockKeyhole className="size-3.5 text-amber-700" /> Publisher-wide
-            administrator access
-          </p>
-          <p className="mt-1.5 text-muted-foreground">
-            This token can publish or revoke every site on this publisher. It
-            does not grant Buzz channel membership. Buzz stores it in the OS
-            keyring, scoped to this publisher address, community, and identity.
-            The token is kept out of browser storage, logs, links, and exported
-            site files.
-          </p>
-        </div>
-      </div>
+        <p className="mt-3 max-w-lg text-xs leading-relaxed text-muted-foreground">
+          This administrator token can publish or remove any site on this host.
+          It is saved securely on this computer and is never included in a
+          shared site.
+        </p>
+      </details>
 
       {publisher.error ? (
         <p
@@ -195,12 +185,12 @@ export function SitesPublisherPanel({
           {siteId ? (
             <p className="mt-1 text-2xs text-muted-foreground">
               {publisher.siteStatus === null && publisher.connected
-                ? "Checking publisher readback…"
+                ? "Checking publication…"
                 : published
                   ? publisher.isPublishedCurrent
-                    ? "The saved canvas matches the published snapshot."
-                    : "A published snapshot exists; the current draft differs or is not saved."
-                  : "This site has no active publication."}
+                    ? "Your latest saved version is published."
+                    : "Your published site has an earlier version."
+                  : "This site is private."}
             </p>
           ) : null}
         </div>
@@ -254,8 +244,8 @@ export function SitesPublisherPanel({
       </div>
       {siteId && publisher.connected && !publisher.canPublish ? (
         <p className="text-2xs text-muted-foreground">
-          Save this draft to its Buzz canvas before publishing. Preview can use
-          the current unsaved draft.
+          Save your changes before publishing. You can preview your current
+          draft.
         </p>
       ) : null}
 
@@ -267,10 +257,8 @@ export function SitesPublisherPanel({
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke this public site?</AlertDialogTitle>
             <AlertDialogDescription>
-              The publisher will replace its active pointer with a revocation
-              tombstone. Buzz will then check that the public URL returns HTTP
-              404. Your private Buzz canvas and its version history remain
-              available.
+              The shared link will stop working. Your private site and its saved
+              versions will remain available, so you can publish it again later.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

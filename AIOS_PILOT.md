@@ -13,9 +13,11 @@ the current task and one primary next action; reveal setup and technical
 details only when useful. Perform a final design-skill review across the real
 product flows and fix findings before delivery. `DESIGN.md` owns these visual
 and interaction rules.
-The first agent is the user's persistent home base: it learns the business,
-helps connect tools, proposes source-backed company context, accepts corrections,
-and only then helps create specialist agents and useful apps. Kylon is a
+The first agent learns the business in a Welcome conversation, helps connect
+tools, proposes source-backed company context, accepts corrections, and then
+helps create specialist agents and useful apps. It remains an ordinary agent
+that can work in other channels. Business is the shared knowledge surface,
+not the conversation or a container for the entire product. Kylon is a
 behavioral reference, not a source of private implementation. Agent Native and
 OpenAgents are possible sources of bounded modules, not replacement products.
 
@@ -37,19 +39,97 @@ Do not publish to GitHub, buy services or connect private accounts merely to
 fill a missing live credential. Use isolated test data and continue independent
 work. Record limitations rather than presenting mocks as real integrations.
 
+## Product structure — revised 24 September 2026
+
+This revision incorporates Gustav's explicit architecture correction, request
+to pause and reassess before building, and four supplied Codex Plugins/Skills
+screenshots. The implementation order below supersedes the original
+Business-tab layout and its one-private-channel-per-app assumption. Continue
+autonomously after the plan is reviewed; no owner approval gate is requested.
+
+- Main sidebar: Business, Plugins directly beneath Business, Inbox, Agents,
+  existing enabled workspace destinations, then channels and direct messages.
+- Business: company knowledge, attributed sources, history and explicit access.
+  A normal page like Inbox/Agents, with no chat header, huddle, channel-created
+  events, app launcher, or product-wide top navigation. A simple overview with
+  focused edit/detail views avoids a second permanent sidebar.
+- Plugins: a workspace-owned catalog, independent of Business. One searchable
+  library for connections and skills. A small local
+  category selector is appropriate here, as in the supplied screenshots.
+  Installed packages and connected accounts are visible here; the library does
+  not become a separate agent-assignment workflow.
+  Connection is a plugin capability; skill is an instruction bundle. Installing
+  either does not implicitly grant an agent new data or account access.
+- Agent creation/editing: a coherent Tools & skills section selects from that
+  same library. Show the chosen account, available actions and skill version;
+  choose business context and channels explicitly. Missing connection setup
+  returns to the preserved agent draft. Save deliberately applies the selection.
+  A skill alone grants no account, channel or operating-system access.
+- Channels: conversation is the default. The user can add named Calendar,
+  Slides, Design, Sites or Tables tabs to that channel. These tabs are resources
+  used by its people and agents. Multiple app instances must be possible;
+  an app's type is not its identity. Adding tabs is intentional, not automatic.
+- Onboarding: first host/workspace setup, then one Welcome conversation with
+  the first ordinary agent. It gathers context progressively and directs the
+  user to Plugins only when a connection is useful. Existing Welcome and prior
+  onboarding history remain reachable; restarting must not create duplicates.
+
 ## Architecture decisions
+
+For new resources, the explicit context/plugin/agent grants below supersede
+VISION.md's upstream channel-membership-only rule. Existing channel data keeps
+its current ACLs until an additive, verified migration is ready.
+
+Packaged skills are instructions selected by the user. Runtime skill discovery
+is a separate capability whose sole authority remains the Rust runtime catalog.
+Unknown or unsettled runtime metadata is neither unsupported nor successfully
+applied; the UI must preserve that distinction.
 
 Keep Buzz's Rust relay, Nostr-signed events, membership enforcement, Tauri/React
 desktop, ACP agents and existing CLI. Nostr is a message/auth protocol; the
 product does not require a blockchain or cryptocurrency purchase.
 
-Use one dedicated private channel as the first business workspace. Its canvas
-can hold the versioned structured context document during the pilot, reusing
-the existing relay storage, history, membership gate and conflict detection.
-Do not overwrite ordinary channel canvases or the Welcome canvas. UI and CLI
-must use the same document contract. This is a bounded initial storage adapter;
-domain types must not depend on a canvas UI. Secrets never belong in the context
-document, channel messages, exported apps or browser storage.
+The host is the canonical home of shared data. A Mac mini or Linux VM runs the
+Buzz relay, Postgres, media storage and enabled agent/connector services. A
+work computer joins that workspace with its own identity. Agent runners may
+be on the host or explicitly paired machines. Joining a workspace does not
+grant control over the host's filesystem or every agent/account.
+
+The current business document uses a dedicated private channel Canvas as its
+storage adapter. Its data and history already persist on the relay; this
+does not make Business a chat page. Retain this working adapter during the
+navigation correction, behind a context repository interface. Do not overwrite
+ordinary channel canvases or Welcome. UI, CLI and agents use one document
+contract. Explicit relay/workspace, actor, context and resource IDs travel
+through every operation; never infer business access merely from a channel.
+
+The next server slice owns a durable workspace context reference, explicit
+grants and typed channel-app resources in the existing relay/Postgres unit.
+App rows have stable IDs, parent channel IDs, type/schema version, title,
+document revision and archived status. Parent membership is checked by the
+server on list/read/write and live delivery; removal revokes future access.
+Human owner/admin policy governs attachment and archival; app editing follows
+the channel's supported write policy. Do not simulate inheritance by copying
+membership lists into child channels. Existing private app documents remain
+under their current ACL until an explicit, verified migration/attachment.
+
+The shared context reference does not make previously private knowledge
+workspace-public. Context grants are separate from plugin, agent and channel
+membership. New grants and imported data must show their actual destination.
+Use the native signed-event pipeline, tenant binding, rate limits and
+transactional revision preconditions. New shared resources and grants should
+use Nostr kinds and the existing event/query bridge, following AGENTS.md;
+reserve HTTP-specific adapters for genuine provider/app-delivery boundaries.
+Reuse the existing `buzz-business` validator. Extract app/Sites schemas from
+CLI-only code before adding another validator.
+
+Secrets never belong in context documents, channel messages, exported apps or
+browser storage. Existing connection credentials are currently client-local
+OS-keyring entries, not shared host connections. Evolve the provider adapters
+into a host-owned connector service within the relay deployment, with separate
+personal/workspace ownership, per-agent grants, bounded provider operations,
+revocation and source-refresh provenance. Do not copy client credentials as
+part of navigation changes or claim a shared proxy already exists.
 
 Initial shared document contract (JSON in the dedicated channel canvas):
 
@@ -75,8 +155,121 @@ Front-end ownership: `desktop/src/features/business/` and shared API adapters.
 Reusable apps: `desktop/src/features/aios-apps/`; editor components consume
 explicit values/callbacks, not hidden global credentials or provider clients.
 Each app declares id, title, capabilities and document schema/version.
-Each app must have a usable local editing/output path; provider integrations
-remain adapters with explicit unconfigured states.
+Each app must have a usable editing/output path; provider integrations remain
+adapters with explicit unconfigured states. App editors consume a document,
+revision and callbacks, independently of the surrounding page. Remove the
+Business-only app host once channel attachment and legacy recovery are ready.
+
+Plugin packages have an identity/version, source, declared capabilities,
+runtime requirements and inspectable instructions/assets. Reuse existing
+SKILL.md validation/staging; make a central library and explicit assignments
+instead of a second per-agent skill implementation. Start with bundled and
+user-imported packages. Do not present an invented marketplace or unavailable
+integration as installed. Pin package revisions; separate install, authorize,
+assign, disable and remove. Updates retain an identifiable rollback version.
+
+The browser development bridge is a debug-only local companion, not the
+production web host. A later headless web adapter must serve the same React
+application and authenticated domain APIs without depending on macOS Keychain,
+Tauri windows or exposing arbitrary native IPC. Keep desktop and web adapters
+at the edges; no second chat/auth/backend stack from OpenAgents is needed.
+
+Static Sites publishing remains separate from authenticated data-backed apps.
+Generated app access requires scoped server data operations and a separate
+preview/public origin. Neither a table editor nor static HTML proves that
+full-stack generated apps, shared browser control or external phone calls work.
+
+## Reassessment and implementation order
+
+The audit basis is lead HEAD `4067f99` plus the preserved uncommitted localhost,
+Apps and navigation repairs. Detailed proof and worker WIP are in
+`docs/aios/STATUS.md`; `docs/aios/FEATURES.md` retains the broader scope.
+`docs/aios/FLOWS.md` maps the whole product (F01–F22), reference evidence,
+cross-flow permissions and representative acceptance journey. It includes
+daily collaboration, files, one-off follow-ups, automation, browser, publishing,
+voice and operations as well as onboarding. The order below does not narrow
+that scope to the first visible navigation repair.
+
+| Order | Deliverable | Acceptance before moving on |
+| --- | --- | --- |
+| 1 | Separate Business, Plugins and Welcome; preserve the real Buzz shell | Main sidebar is the only global navigation. Business opens saved knowledge without chat chrome. Plugins sits immediately below it. Existing context, sources, drafts and conversation history survive navigation/restart. |
+| 2 | Host-owned context reference and permission-aware knowledge access | Two independent client identities on one isolated host see only granted context, same revisions and attributed sources. Outsider and revoked-member reads/writes fail. Backup/restore preserves the context reference and history. |
+| 3 | Typed channel-app instances and additive legacy migration | Add two named apps to an ordinary channel; a second admitted member and an invited agent use the same saved documents through UI/CLI. Remove membership and prove denial. Existing channel Canvas is untouched; legacy drafts remain recoverable. |
+| 4 | Plugins library, agent capability selection and host connections | Search, inspect and import a skill in Plugins; select its pinned version and allowed connected tools while creating/editing an agent. Inline setup preserves the agent draft. A supported runtime uses the selected version; removing a grant denies future calls. A host-side fixture proves source import and agent use without handing credentials to the model. |
+| 5 | Coherent onboarding through first useful result | Create/join host, choose/configure one agent, start Welcome, describe company, optionally import source, confirm saved context, create a specialist and a channel app. Repeat/restart reuses IDs and acknowledged requests. |
+| 6 | Remote clients and agent operation | Headless host runs without a desktop session. Browser and CLI join with separate identities. Test invitation, reconnect, remote runner stop/restart and local model path; distinguish two-client same-machine tests from a physical second-machine proof. |
+| 7 | Complete wider capabilities and review | Integrate verified Tables, browser, workflow approvals and voice; then authenticated app data and publishing. Review real laptop/narrow flows, denied/failed/recovery states, CLI parity and operational docs. Desktop packaging stays deferred until the product is ready. |
+
+Orders are dependencies, not independent feature races. The first slice can
+reuse the current adapters while the bounded server contract is prepared.
+For this first slice, Business presents an overview and focused company/source
+editing with history/conflict recovery. Plugins offers searchable supported
+connections and the included skill catalog used in agent setup. Current local
+source-import adapters stay honestly labeled; do not expose nonfunctional
+agent connection grant controls. Only current adapters and bundled skills are
+exposed in this slice; full catalog management, host provider authorization and
+per-agent provider grants belong to phase four. Installed, connected and
+assigned are distinct states. Restore ordinary Welcome entry. Preserve
+existing private app documents through an explicitly temporary Saved drafts
+route and prior conversation links until channel-resource migration is ready.
+This compatibility route is not the final app organization. No data or ACL
+migration is part of the navigation patch.
+One writer per overlapping checkout; at most two lightweight workers and one
+heavy build/test after the prior OOM. Workers remain GPT-6 Luna/max as requested.
+The lead retains architecture/integration judgment and real-interface review.
+Preserve checkpoint changes before broad refactoring. Migrations are additive,
+transactional and idempotent; old Canvas/event history is not deleted. Do not
+run migrations against the user's local data before isolated representative
+fixtures and a recoverable backup exist.
+
+## Rechecked references and what they support
+
+- [Kylon workspace](https://docs.kylon.io/concepts/workspace),
+  [rooms](https://docs.kylon.io/concepts/rooms), and
+  [memory](https://docs.kylon.io/concepts/memory): workspace scope is distinct
+  from room work and durable shared knowledge. This supports separate surfaces,
+  not putting the whole product inside Business.
+- [Kylon connections](https://docs.kylon.io/concepts/connections) and
+  [agent access](https://docs.kylon.io/agents/access): managed proxy operations
+  and agent-specific access are separate responsibilities. Our local import
+  adapters are a foundation, not equivalent capability.
+- [Kylon agent setup](https://docs.kylon.io/agents/bring-your-own-agent) and
+  [Tools API](https://docs.kylon.io/proxy/tools-api): profiles configure skills,
+  memory and connections; tool access follows agent-linked connections. The
+  exact combined creation flow above is Gustav's product choice, not a claim
+  that we exercised Kylon's private UI.
+- [Walkthrough, 1:21:30](https://www.youtube.com/watch?v=ONd2UNBmQ40&t=4890s):
+  inspected transcript through 1:34 and 2:00–2:03. Team/agent setup leads to Welcome, then
+  connections help populate company context. This is behavioral evidence,
+  not access to Kylon's implementation. At 1:33:35 the presenter describes
+  pinning apps to a channel; at 2:00 he describes persona, skills and connections
+  together. These support Gustav's chosen channel tabs and agent capability flow.
+- [OpenAgents](https://github.com/openagents-org/openagents), local reference
+  `fd523077a000f9f17efa2ca4fa8cf7628610305d`: inspected workspace README,
+  navigation, knowledge and integration routers. Useful separation of persistent
+  hub, runners, knowledge, files and shared browser. It also has Slack/Telegram/
+  Lark chat bridges, so calling it entirely without integrations would be
+  inaccurate. Those bridges are not a general business-data connector layer.
+  Its Skills view queues installs for a chosen agent and waits for the runner
+  to report success/failure; the agent profile shows enabled skills. Preserve
+  that distinction between requested configuration and applied runtime state.
+- [Codex Linux architecture](https://github.com/ilysenko/codex-desktop-linux/blob/main/docs/architecture.md)
+  and [repository](https://github.com/ilysenko/codex-desktop-linux): community
+  wrapper/packaging around the upstream app; the README explicitly limits its
+  MIT license to community-owned material. It is not an open-source source tree
+  of the proprietary Plugins UI. Use Gustav's screenshots for interaction and
+  hierarchy; implement our own components and open package contract.
+
+Spec readiness: READY for the first bounded navigation slice after lead review
+of the expanded F01–F22 flow map and source evidence. Input, scope, reference
+limits, existing local authority, recovery and replacement UI proof are explicit
+above. No data/ACL migration is authorized by this slice. The lead keeps coupled
+architecture/design judgment; existing read-only workers use the requested
+GPT-6 Luna/max. An independent plan review may supply further corrections;
+it is not an extra user approval gate. The native plan update succeeded (the
+tool exposes no independent state readback); no native goal was requested.
+The platform itself remains incomplete. Existing authority covers local work,
+not public hosting, paid services or connecting private accounts for tests.
 
 ## Work allocation
 

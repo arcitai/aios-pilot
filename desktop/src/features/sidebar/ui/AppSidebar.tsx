@@ -1,6 +1,10 @@
 // biome-ignore format: keep compact to stay within file size limit
 import * as React from "react";
 import { FeatureGate } from "@/shared/features";
+import {
+  isAppWorkspaceChannel,
+  isBusinessContextChannel,
+} from "@/shared/lib/appWorkspaceChannel";
 import { SidebarDndContext } from "@/features/sidebar/ui/SidebarDnd";
 
 import { AddCommunityDialog } from "@/features/communities/ui/AddCommunityDialog";
@@ -305,7 +309,13 @@ export function AppSidebar({
     });
 
   const streamChannels = React.useMemo(
-    () => channels.filter((channel) => channel.channelType === "stream"),
+    () =>
+      channels.filter(
+        (channel) =>
+          channel.channelType === "stream" &&
+          !isAppWorkspaceChannel(channel) &&
+          !isBusinessContextChannel(channel),
+      ),
     [channels],
   );
 

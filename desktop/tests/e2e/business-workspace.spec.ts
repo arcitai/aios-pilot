@@ -1,3 +1,8 @@
+import {
+  openBusinessOverview,
+  openPluginConnection,
+  openSavedWork,
+} from "../helpers/business-navigation";
 import { expect, test } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
 import { waitForAnimations } from "../helpers/animations";
@@ -9,7 +14,7 @@ test("private company context, source and first agent stay inside Buzz", async (
   await page.goto("/");
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Example Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
   await expect(page.getByTestId("business-workspace")).toBeVisible();
   await page
     .getByRole("button", { name: "Company context", exact: true })
@@ -24,6 +29,7 @@ test("private company context, source and first agent stay inside Buzz", async (
   await expect(
     page.getByRole("status").filter({ hasText: "Saved" }),
   ).toBeVisible();
+  await openBusinessOverview(page);
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   await page.getByLabel("Source title", { exact: true }).fill("Our services");
   await page
@@ -31,6 +37,7 @@ test("private company context, source and first agent stay inside Buzz", async (
     .fill("We offer website strategy, design and ongoing care.");
   await page.getByRole("button", { name: "Add source", exact: true }).click();
   await expect(page.getByText("Our services", { exact: true })).toBeVisible();
+  await openBusinessOverview(page);
   await page
     .getByRole("button", { name: "Company context", exact: true })
     .click();
@@ -39,14 +46,15 @@ test("private company context, source and first agent stay inside Buzz", async (
   );
   await waitForAnimations(page);
   await page.screenshot({ path: "test-results/aios-company-context.png" });
+  await openSavedWork(page);
   await page.getByRole("button", { name: "Main agent", exact: true }).click();
   await page
     .getByRole("button", { name: "Begin with my agent", exact: true })
     .click();
   await expect(page.getByTestId("business-agent-controls")).toContainText(
-    "Ready — continue in the conversation",
+    "Continue in the conversation",
   );
-  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await openPluginConnection(page, "GitHub");
   await expect(
     page
       .locator('[data-provider="github"]')
@@ -69,7 +77,7 @@ test("sources can be corrected, removed and recovered without discarding another
   await page.goto("/");
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Source Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   await page.getByLabel("Source title", { exact: true }).fill("Our offer");
   await page
@@ -132,7 +140,7 @@ test("a competing context edit cannot silently overwrite saved business data", a
   await page
     .getByLabel("What is your business called?")
     .fill("Conflict Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
   await page
     .getByRole("button", { name: "Company context", exact: true })
     .click();
@@ -193,7 +201,7 @@ test("unsaved source changes can be kept and text files are reviewed before impo
   await page.goto("/");
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("File Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   await page.getByLabel("Import a text document").setInputFiles({
     name: "meeting.md",
@@ -204,7 +212,7 @@ test("unsaved source changes can be kept and text files are reviewed before impo
     "meeting.md",
   );
   await page
-    .getByRole("button", { name: "Company context", exact: true })
+    .getByRole("button", { name: "Back to business", exact: true })
     .click();
   await page.getByRole("button", { name: "Keep editing", exact: true }).click();
   await expect(page.getByLabel("Source text", { exact: true })).toHaveValue(
@@ -235,13 +243,15 @@ test("starting the main agent publishes the request before launching a stopped r
   await page.goto("/");
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("Agent Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openSavedWork(page);
+  await page.getByRole("button", { name: "Main agent", exact: true }).click();
   await page
     .getByRole("button", { name: "Begin with my agent", exact: true })
     .click();
   await expect(
     page.getByRole("button", {
-      name: "Ready — continue in the conversation",
+      name: "Continue in the conversation",
       exact: true,
     }),
   ).toBeDisabled();
@@ -276,7 +286,7 @@ test("a supported saved version can recover a damaged company canvas", async ({
   await page
     .getByLabel("What is your business called?")
     .fill("Starting Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
   await page
     .getByRole("button", { name: "Company context", exact: true })
     .click();
@@ -408,8 +418,8 @@ test("verified connection imports one attributed source and disconnect keeps the
   await page
     .getByLabel("What is your business called?")
     .fill("Connected Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
-  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openPluginConnection(page, "GitHub");
   const github = page.locator('[data-provider="github"]');
   await expect(page.getByText("Not connected.", { exact: true })).toBeVisible();
   await page
@@ -442,10 +452,11 @@ test("verified connection imports one attributed source and disconnect keeps the
     .getByRole("button", { name: "Import README", exact: true })
     .click();
   await expect(github.getByRole("alert")).toContainText(
-    "already in your workspace",
+    "already saved in Business",
   );
   await page.getByRole("button", { name: "Disconnect", exact: true }).click();
   await expect(page.getByText("Not connected.", { exact: true })).toBeVisible();
+  await openBusinessOverview(page);
   await page.getByRole("button", { name: "Sources", exact: true }).click();
   const source = page.locator("details").filter({ hasText: "company README" });
   await source.locator("summary").click();

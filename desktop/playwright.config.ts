@@ -19,6 +19,8 @@ export default defineConfig({
     {
       name: "smoke",
       testMatch: [
+        "**/business-navigation.spec.ts",
+        "**/plugins-import-race.spec.ts",
         "**/business-workspace.spec.ts",
         "**/business-connections.spec.ts",
         "**/business-slack.spec.ts",

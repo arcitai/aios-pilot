@@ -557,69 +557,65 @@ export function AppsWorkspaceView({
           {workspace.document &&
           workspace.phase !== "loading" &&
           workspace.phase !== "blocked" ? (
-            <>
-              <div className="aios-app-editor-shell" hidden={!activeEntry}>
-                <div hidden={selectedApp !== "slides"}>
-                  <SlidesEditor
-                    document={workspace.document.documents.slides}
-                    companyName={companyName}
-                    onChange={(next) =>
-                      workspace.updateDocument("slides", next)
-                    }
-                  />
-                </div>
-                <div hidden={selectedApp !== "calendar"}>
-                  <CalendarEditor
-                    document={workspace.document.documents.calendar}
-                    onChange={(next) =>
-                      workspace.updateDocument("calendar", next)
-                    }
-                    onDraftDirtyChange={setCalendarDraftDirty}
-                  />
-                </div>
-                <div hidden={selectedApp !== "design"}>
-                  <DesignEditor
-                    document={workspace.document.documents.design}
-                    onChange={(next) =>
-                      workspace.updateDocument("design", next)
-                    }
-                  />
-                </div>
+            <div className="aios-app-editor-shell" hidden={!activeEntry}>
+              <div hidden={selectedApp !== "slides"}>
+                <SlidesEditor
+                  document={workspace.document.documents.slides}
+                  companyName={companyName}
+                  onChange={(next) => workspace.updateDocument("slides", next)}
+                />
               </div>
-              <div hidden={!activeEntry}>
-                {AIOS_APP_REGISTRY.map(({ id, title }) => (
-                  <div hidden={selectedApp !== id} key={id}>
-                    <AppMainAgentPanel
-                      key={`${channelId}:${scope?.expectedRelayUrl ?? ""}:${scope?.expectedSignerPubkey ?? ""}:${id}`}
-                      appId={id}
-                      appTitle={title}
-                      businessChannelId={channelId}
-                      disabled={
-                        workspace.phase === "error" &&
-                        workspace.errorStage === "load"
-                      }
-                      isDirty={dirty}
-                      onLoadLatest={() => {
-                        if (!dirty) workspace.reload();
-                      }}
-                      renderConversation={renderConversation}
-                      scope={
-                        scope
-                          ? {
-                              expectedRelayUrl: scope.expectedRelayUrl,
-                              expectedSignerPubkey: scope.expectedSignerPubkey,
-                            }
-                          : null
-                      }
-                      sharedStorageActive={
-                        appDocumentStore === canvasAppDocumentStore
-                      }
-                    />
-                  </div>
-                ))}
+              <div hidden={selectedApp !== "calendar"}>
+                <CalendarEditor
+                  document={workspace.document.documents.calendar}
+                  onChange={(next) =>
+                    workspace.updateDocument("calendar", next)
+                  }
+                  onDraftDirtyChange={setCalendarDraftDirty}
+                />
               </div>
-            </>
+              <div hidden={selectedApp !== "design"}>
+                <DesignEditor
+                  document={workspace.document.documents.design}
+                  onChange={(next) => workspace.updateDocument("design", next)}
+                />
+              </div>
+            </div>
           ) : null}
+          <div hidden={!activeEntry}>
+            {AIOS_APP_REGISTRY.map(({ id, title }) => (
+              <div hidden={selectedApp !== id} key={id}>
+                <AppMainAgentPanel
+                  key={`${channelId}:${scope?.expectedRelayUrl ?? ""}:${scope?.expectedSignerPubkey ?? ""}:${id}`}
+                  appId={id}
+                  appTitle={title}
+                  businessChannelId={channelId}
+                  disabled={
+                    workspace.phase === "loading" ||
+                    workspace.phase === "blocked" ||
+                    (workspace.phase === "error" &&
+                      workspace.errorStage === "load")
+                  }
+                  isDirty={dirty}
+                  onLoadLatest={() => {
+                    if (!dirty) workspace.reload();
+                  }}
+                  renderConversation={renderConversation}
+                  scope={
+                    scope
+                      ? {
+                          expectedRelayUrl: scope.expectedRelayUrl,
+                          expectedSignerPubkey: scope.expectedSignerPubkey,
+                        }
+                      : null
+                  }
+                  sharedStorageActive={
+                    appDocumentStore === canvasAppDocumentStore
+                  }
+                />
+              </div>
+            ))}
+          </div>
           {uniqueExtensionApps
             .filter(({ id }) => visitedExtensions.has(id))
             .map(({ id, render }) => (

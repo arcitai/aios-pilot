@@ -1,3 +1,7 @@
+import {
+  openBusinessOverview,
+  openSavedWork,
+} from "../helpers/business-navigation";
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { installMockBridge } from "../helpers/bridge";
@@ -53,7 +57,7 @@ async function holdFirstAppSave(page: Page) {
   });
 }
 
-async function openApps(page: Page) {
+async function openApps(page: Page, mainAgent = false) {
   await installMockBridge(page);
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
   await page.route("http://127.0.0.1:4173/", async (route) => {
@@ -69,7 +73,17 @@ async function openApps(page: Page) {
   await page.goto("/");
   await page.getByTestId("open-business-view").click();
   await page.getByLabel("What is your business called?").fill("App Studio");
-  await page.getByRole("button", { name: "Create my workspace" }).click();
+  await page.getByRole("button", { name: "Create company context" }).click();
+  await openSavedWork(page);
+  if (mainAgent) {
+    await page.getByRole("button", { name: "Main agent", exact: true }).click();
+    await page
+      .getByRole("button", { name: "Begin with my agent", exact: true })
+      .click();
+    await expect(page.getByTestId("business-agent-controls")).toContainText(
+      "Continue in the conversation",
+    );
+  }
   await page.getByRole("button", { name: "Apps", exact: true }).click();
   await expect(page.getByTestId("aios-apps-workspace")).toBeVisible();
   await expect(page.getByLabel("Deck title", { exact: true })).toBeVisible();
@@ -127,12 +141,14 @@ test("slides save to a separate private app document and survive leaving the app
   expect(envelope.appId).toBe("slides");
   expect(envelope.document.title).toBe("Customer story");
   expect(appWrite?.channelId).not.toBe(envelope.businessChannelId);
+  await openBusinessOverview(page);
   await page
     .getByRole("button", { name: "Company context", exact: true })
     .click();
   await expect(page.getByLabel("Company name", { exact: true })).toHaveValue(
     "App Studio",
   );
+  await openSavedWork(page);
   await page.getByRole("button", { name: "Apps", exact: true }).click();
   await expect(page.getByLabel("Deck title", { exact: true })).toHaveValue(
     "Customer story",
@@ -143,6 +159,82 @@ test("slides save to a separate private app document and survive leaving the app
   const download = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export HTML", exact: true }).click();
   expect((await download).suggestedFilename()).toBe("customer-story.html");
+});
+
+test("guided Slides work keeps the conversation beside a revision-safe app result", async ({
+  page,
+}) => {
+  await openApps(page, true);
+  await page.getByLabel("Deck title", { exact: true }).fill("Before the agent");
+  await expect(page.getByTestId("aios-apps-embedded-save-status")).toHaveText(
+    "Saved privately",
+  );
+  const panel = page.getByTestId("apps-main-agent-slides");
+  const request = panel.getByLabel("What should it create?", { exact: true });
+  await request.fill(
+    "Prepare a customer introduction based on our company context.",
+  );
+  await panel
+    .getByRole("button", { name: "Ask main agent", exact: true })
+    .click();
+  await expect(request).toHaveValue("");
+  await expect(
+    page.getByTestId("apps-main-agent-conversation-slides"),
+  ).toBeVisible();
+
+  // Deterministic agent-result fixture. Real CLI writes have a separate relay test.
+  await page.evaluate(async () => {
+    const native = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke: (
+            command: string,
+            args?: Record<string, unknown>,
+          ) => Promise<unknown>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const sent = (window.__BUZZ_E2E_COMMAND_LOG__ ?? []).findLast(
+      (row) =>
+        row.command === "send_channel_message" &&
+        String(row.payload?.content).includes(
+          "help me build or improve this slides app",
+        ),
+    );
+    if (!sent) throw new Error("Missing saved Slides request");
+    const channelId = sent.payload?.channelId;
+    const canvas = (await native.invoke("get_canvas", { channelId })) as {
+      content: string;
+      event_id: string;
+    };
+    const envelope = JSON.parse(canvas.content);
+    envelope.document.title = "Customer introduction from the agent";
+    await native.invoke("set_canvas", {
+      channelId,
+      content: JSON.stringify(envelope),
+      expectedRevision: canvas.event_id,
+    });
+  });
+  await panel
+    .getByRole("button", { name: "Load agent changes", exact: true })
+    .click();
+  await expect(page.getByLabel("Deck title", { exact: true })).toHaveValue(
+    "Customer introduction from the agent",
+  );
+  await page.clock.install();
+  await page
+    .getByLabel("Deck title", { exact: true })
+    .fill("My unfinished title");
+  await expect(
+    panel.getByRole("button", { name: "Load agent changes", exact: true }),
+  ).toBeDisabled();
+  await request.fill("Improve this draft.");
+  await expect(
+    panel.getByRole("button", { name: "Ask main agent", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByLabel("Deck title", { exact: true })).toHaveValue(
+    "My unfinished title",
+  );
 });
 
 test("an unfinished Calendar event is guarded across business navigation and retained between apps", async ({
@@ -308,9 +400,7 @@ test("discarding the workspace cancels a queued save that has not reached storag
     .getByLabel("Deck title", { exact: true })
     .fill("Discard queued version");
   await page.clock.runFor(600);
-  await page
-    .getByRole("button", { name: "Company context", exact: true })
-    .click();
+  await page.getByTestId("open-business-view").click();
   await page
     .getByRole("button", { name: "Discard draft", exact: true })
     .click();
@@ -324,6 +414,7 @@ test("discarding the workspace cancels a queued save that has not reached storag
       ),
     )
     .toBe(true);
+  await openSavedWork(page);
   await page.getByRole("button", { name: "Apps", exact: true }).click();
   await expect(page.getByLabel("Deck title", { exact: true })).toHaveValue(
     "Already submitted",

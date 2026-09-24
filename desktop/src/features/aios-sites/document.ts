@@ -1,8 +1,9 @@
 import { z } from "zod";
+import { SITE_WORKSPACE_MARKER } from "@/shared/lib/appWorkspaceChannel";
 
 export const SITE_DOCUMENT_KIND = "aios.site" as const;
 export const SITE_SCHEMA_VERSION = 1 as const;
-export const SITE_CHANNEL_MARKER = "[aios.site-channel:v1]";
+export const SITE_CHANNEL_MARKER = SITE_WORKSPACE_MARKER;
 export const MAX_SITE_DOCUMENT_BYTES = 200_000;
 export const MAX_SITE_TITLE_CODE_UNITS = 120;
 export const MAX_SITE_HTML_CODE_UNITS = 120_000;
