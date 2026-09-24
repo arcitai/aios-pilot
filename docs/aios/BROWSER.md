@@ -59,9 +59,11 @@ With the real launcher and relay running:
 node desktop/scripts/browser-api-smoke.mjs
 ```
 
-This exercises the real backend, origin/session denial, native event roundtrip,
-per-tab socket ownership and channel completion. It uses temporary transport
-sessions, does not create business data, and logs no keys or identity values.
+This exercises the real backend, origin/session denial, captured relay/signer
+scope on membership and people-search commands, native event roundtrip,
+per-tab socket ownership and channel completion. Rejected membership requests
+target a random nonexistent context. It uses temporary transport sessions,
+does not create business data, and logs no keys or identity values.
 Deterministic mocked browser regressions are still useful; they are not proof
 of real persistence or model execution. Current manual evidence and limits are
 recorded in [Status](STATUS.md).

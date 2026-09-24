@@ -6,6 +6,7 @@ import { CompanyEditor } from "./CompanyEditor";
 import { SourceEditor } from "./SourceEditor";
 import { BusinessOverview } from "./BusinessOverview";
 import { ContextHistory } from "./ContextHistory";
+import { BusinessAccess } from "./BusinessAccess";
 import { useBusinessWorkspace } from "./useBusinessWorkspace";
 import { useDraftGuard } from "./useDraftGuard";
 
@@ -68,6 +69,12 @@ export function BusinessWorkspace() {
           ) : null}
           {workspace.channel ? (
             <>
+              <BusinessAccess
+                key={`access:${workspace.channel.id}`}
+                contextId={workspace.channel.id}
+                companyName={document?.company.name || workspace.channel.name}
+                scope={workspace.canvasScope}
+              />
               <ContextHistory
                 key={workspace.channel.id}
                 channelId={workspace.channel.id}

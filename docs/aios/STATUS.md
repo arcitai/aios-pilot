@@ -724,3 +724,43 @@ not completion of the AIOS product.
 - Resource allocation: Tables is lightweight only. Browser worker owns the single
   heavy slot (Cargo jobs=1 and one browser fixture at a time). Lead's native dev
   server remains running; avoid rebuilding it unnecessarily after keyring approval.
+
+## Business access UI — verified with native scope fences
+
+The lead added a compact Access dialog to the standalone Business page. It
+reads the dedicated context group's roster, offers owner/admin-controlled
+explicit teammate selection, and confirms the data/history scope before a
+grant or removal. Agent skills and account selection remain a separate agent
+setup responsibility. No users are invited automatically and no legacy data
+or membership was migrated. Legacy group grants explicitly include any
+conversation history already stored with that context.
+
+Seven affected browser fixture flows pass in
+`/tmp/aios-access-acceptance.log`: add/remove/cancel with captured context and
+identity, agent exclusion from the human picker, denied-grant retry, ordinary
+member read-only controls, accepted-write/readback-failure recovery, keyboard
+focus and adjacent navigation/draft guards. Typecheck, e2e build, changed-file
+Biome, px-text and differential file-size checks pass. Real localhost inspection
+read Browser Studio's existing owner roster and checked the dialog layout;
+no real membership was changed. Independent code review accepted the bounded
+UI/native scope slice with no remaining finding. Lead reconciled the final
+seven passing browser results after fixing a duplicate React key detected in
+the real localhost console; keyboard close restores focus to Access.
+
+Native scope fences for `remove_channel_member` and both `search_users` query
+paths are integrated in `4cba4c3` (worker `7900a43`). The actual Tauri companion
+compiled and restarted successfully. A real RPC regression fails before the
+fix because stale-scope removal reaches the relay; the unchanged test passes
+afterward for relay and signer mismatch on get/add/remove members and search,
+as well as origin/session/event/socket boundaries. Logs:
+`/tmp/aios-access-native-before.log`, `/tmp/aios-access-native-after.log`, and
+`/tmp/aios-browser-access-restart.log`. The random nonexistent context used by
+this test caused no real membership changes. The running companion keeps the
+same browser-development profile and saved data. Typed-context registration,
+server owner/admin policy and its isolated relay proof remain separate work;
+this UI slice does not claim them or fine source-level permissions.
+
+The backend worker owns the single heavy-build slot again. The other existing
+worker is resuming its paused Browser MCP repair as source/format work only,
+with test/build scheduling still coordinated by the lead. Its candidate is
+not yet accepted. No additional worker tasks were created.

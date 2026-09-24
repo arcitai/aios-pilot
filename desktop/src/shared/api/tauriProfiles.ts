@@ -1,4 +1,5 @@
 import { invokeTauri } from "@/shared/api/tauri";
+import type { CanvasScope } from "./canvasTypes";
 import type {
   Profile,
   UpdateProfileInput,
@@ -123,11 +124,13 @@ export async function searchUsers(
   query: string,
   limit = 8,
   cursor?: string | null,
+  scope?: CanvasScope,
 ): Promise<UserSearchPage> {
   const response = await invokeTauri<RawSearchUsersResponse>("search_users", {
     query,
     limit,
     cursor: cursor ?? null,
+    ...scope,
   });
   return {
     users: response.users.map(fromRawUserSearchResult),

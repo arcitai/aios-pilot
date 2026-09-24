@@ -353,12 +353,7 @@ export async function addChannelMembers(
   return invokeTauri<RawAddChannelMembersResult>("add_channel_members", input);
 }
 
-export async function removeChannelMember(
-  channelId: string,
-  pubkey: string,
-): Promise<void> {
-  await invokeTauri("remove_channel_member", { channelId, pubkey });
-}
+export { removeChannelMember } from "./tauriChannelMemberships";
 
 export async function changeChannelMemberRole(
   channelId: string,

@@ -1,5 +1,6 @@
 // Exercise the actual running native development companion. Never logs identities or credentials.
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 const origin = "http://127.0.0.1:1437";
 async function post(route, body, headers = {}) {
   const response = await fetch(`${origin}/__aios/${route}`, {
@@ -38,6 +39,49 @@ try {
   const identity = await rpc(owner, "get_identity");
   assert.equal(identity.body.ok, true);
   assert.match(identity.body.value.pubkey, /^[a-f0-9]{64}$/);
+  const relay = await rpc(owner, "get_relay_ws_url");
+  assert.equal(relay.body.ok, true);
+  // These rejected requests target a disposable, nonexistent resource. A
+  // stale scope must fail before searching or submitting a membership event.
+  const absentContext = randomUUID();
+  for (const [command, args] of [
+    ["get_channel_members", { channelId: absentContext }],
+    ["add_channel_members", { channelId: absentContext, pubkeys: [] }],
+    [
+      "remove_channel_member",
+      { channelId: absentContext, pubkey: "0".repeat(64) },
+    ],
+    ["search_users", { query: "aios-scope-fixture", limit: 1 }],
+  ]) {
+    for (const [scope, reason] of [
+      [
+        {
+          expectedRelayUrl: "ws://127.0.0.1:1",
+          expectedSignerPubkey: identity.body.value.pubkey,
+        },
+        /active community changed/,
+      ],
+      [
+        {
+          expectedRelayUrl: relay.body.value,
+          expectedSignerPubkey: "0".repeat(64),
+        },
+        /active identity changed/,
+      ],
+    ]) {
+      const result = await rpc(owner, command, { ...args, ...scope });
+      assert.equal(
+        result.body.ok,
+        false,
+        `${command} must reject a stale scope`,
+      );
+      assert.match(
+        String(result.body.error),
+        reason,
+        `${command} must reject before its effect`,
+      );
+    }
+  }
   assert.equal(
     (await rpc(owner, "browser_dev_channel_end", { callback: 1, index: 0 }))
       .status,
@@ -94,7 +138,7 @@ try {
     "Native channel completion must reach the browser and release its callback",
   );
   console.log(
-    "PASS: real backend, origin/session denial, event roundtrip, socket ownership and channel cleanup",
+    "PASS: real backend, origin/session denial, captured membership/search scope, event roundtrip, socket ownership and channel cleanup",
   );
 } finally {
   for (const clientId of clients) await post("disconnect", { clientId });
