@@ -23,6 +23,8 @@ in `TESTING.md`; never use a running personal workspace database as a fixture.
 
 `ops/factory.Dockerfile` builds the Linux toolchain image. The verification command
 creates writable Hermit, Cargo and Flutter caches in ignored `.factory-build/`.
+It also puts executable temporary build/test files there instead of the
+container's small, non-executable `/tmp` mount.
 Git must support credential `authtype` (Git 2.46 or newer). Run containers with
 `--init` so process lifecycle tests can reap orphaned children correctly.
 Use a disposable checkout with sufficient disk, non-root execution, bounded CPU
