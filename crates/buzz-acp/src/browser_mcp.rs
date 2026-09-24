@@ -832,7 +832,7 @@ mod tests {
         let snapshot = unix_process_snapshot().expect("read process table after timeout");
         assert!(snapshot
             .get(&child_pid)
-            .map_or(true, |process| process.zombie));
+            .is_none_or(|process| process.zombie));
     }
 
     #[test]
