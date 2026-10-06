@@ -1,3 +1,7 @@
+> **Archived 2026-10-06.** AIOS Pilot is retained only as a public source archive.
+> No development, maintenance or issue resolution is planned. The instructions
+> and plans below are historical. Do not resume work without a new explicit request.
+
 # AIOS implementation status
 
 Updated 24 September 2026 (Europe/Copenhagen).

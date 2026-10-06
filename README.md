@@ -1,13 +1,15 @@
-# AIOS Pilot
+# AIOS Pilot — archived
 
-An open-source workspace application developed by [Arcitai](https://github.com/arcitai).
-This is an independently maintained fork of [Buzz](https://github.com/block/buzz),
-evolving into its own product. AIOS Pilot is the working name; it is separate
-from the personal AIOS plugin and owner-home setup.
+Archived on 2026-10-06. This public repository preserves Arcitai's experimental
+fork of [Buzz](https://github.com/block/buzz) for historical reference and possible
+future reuse. There is no active development, maintenance, support or planned
+issue resolution. Other tools and open-source setups have replaced this pilot.
 
-The app brings together conversational onboarding, business context, agents,
-connections, modular channel apps and self-hosted collaboration. It is under
-active development, not a claim of production readiness.
+The source and Git history remain available. Clone or fork this repository if
+you decide to revisit it. The documentation below records the experiment as it
+was; development plans and setup instructions are historical, not active work.
+
+AIOS Pilot is separate from the personal AIOS plugin and owner-context setup.
 
 Start with the [product contract](AIOS_PILOT.md), [flow map](docs/aios/FLOWS.md),
 [capability map](docs/aios/FEATURES.md) and [development status](docs/aios/STATUS.md).
